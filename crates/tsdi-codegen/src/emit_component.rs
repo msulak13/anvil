@@ -15,10 +15,10 @@
 //!    valid TypeScript, then [`oxc_codegen`] to canonicalize formatting.
 //! 5. Prepend the banner + source comment.
 //!
-//! M4 supports unscoped bindings only — both `@Provides` static methods
-//! and `@Inject` constructors (the IR for both already exists from M1).
-//! `Scope::Singleton` returns [`EmitError::SingletonNotYetSupported`]
-//! until M6, which adds the `??=` lazy-cache field.
+//! M6 supports both `Scope::Unscoped` (fresh instance per call) and
+//! `Scope::Singleton` (lazily cached on a private field via `??=`). The
+//! cache field's name is `_<lower-camel name>` and its type is
+//! `<Type> | undefined`.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
@@ -42,8 +42,6 @@ use crate::{banner_for, EmitError, Result};
 /// # Errors
 ///
 /// - [`EmitError::Invalid`] if validation produces any diagnostics.
-/// - [`EmitError::SingletonNotYetSupported`] if any binding is `Scope::Singleton`
-///   (deferred to M6).
 /// - [`EmitError::BadComponentPath`] if the component's `module` field has
 ///   no parent directory (shouldn't happen post-M2, but guarded for safety).
 /// - [`EmitError::EmittedSyntaxError`] if the string-built TS fails to
@@ -62,15 +60,6 @@ pub fn emit_component(
     });
     if !diagnostics.is_empty() {
         return Err(EmitError::Invalid(diagnostics));
-    }
-
-    // M4 limitation: emit unscoped bindings only.
-    for b in graph.bindings.values() {
-        if matches!(b.scope, Scope::Singleton) {
-            return Err(EmitError::SingletonNotYetSupported {
-                key_name: class_name_of(&b.key).to_owned(),
-            });
-        }
     }
 
     let component_path = PathBuf::from(&component.class.module.0);
@@ -213,6 +202,17 @@ fn build_ts_source(
 
     writeln!(s, "export class {dagger_name} extends {comp_name} {{").expect("write to String");
 
+    // First: declare cache fields for every singleton binding, in topo order
+    // so the field declarations match the factory order users will read.
+    for k in bindings_topo {
+        let b = &graph.bindings[k];
+        if matches!(b.scope, Scope::Singleton) {
+            let class_name = class_name_of(k);
+            let field = cache_field_name(class_name);
+            writeln!(s, "  private {field}: {class_name} | undefined;").expect("write to String");
+        }
+    }
+
     for k in bindings_topo {
         let b = &graph.bindings[k];
         let class_name = class_name_of(k);
@@ -231,9 +231,18 @@ fn build_ts_source(
             }
         };
 
+        let return_stmt = if matches!(b.scope, Scope::Singleton) {
+            let field = cache_field_name(class_name);
+            // `??=` returns the assigned value, so this is shorter than an
+            // `if (this._x === undefined) ...; return this._x` chain.
+            format!("return this.{field} ??= {body_expr}")
+        } else {
+            format!("return {body_expr}")
+        };
+
         writeln!(
             s,
-            "  private {factory}(): {class_name} {{ return {body_expr}; }}"
+            "  private {factory}(): {class_name} {{ {return_stmt}; }}"
         )
         .expect("write to String");
     }
@@ -267,6 +276,25 @@ fn build_ts_source(
 /// convention, so we just prefix `get`.
 fn factory_name(class_name: &str) -> String {
     format!("get{class_name}")
+}
+
+/// `Heater` → `_heater`. Used for the lazy-cache private field on
+/// singleton bindings. Lowercases only the first character so multi-word
+/// class names (`HotPump` → `_hotPump`) keep their internal capitalization.
+fn cache_field_name(class_name: &str) -> String {
+    let mut chars = class_name.chars();
+    match chars.next() {
+        Some(first) => {
+            let mut out = String::with_capacity(class_name.len() + 1);
+            out.push('_');
+            for c in first.to_lowercase() {
+                out.push(c);
+            }
+            out.push_str(chars.as_str());
+            out
+        }
+        None => "_".to_owned(),
+    }
 }
 
 /// Compute a TS import specifier (no extension, forward slashes,

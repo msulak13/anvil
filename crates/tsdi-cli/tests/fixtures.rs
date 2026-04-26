@@ -1,15 +1,16 @@
-//! Golden-file integration test for the M4 emitter.
+//! Golden-file integration tests for the emitter.
 //!
-//! Walks `tests/fixtures/<case>/input/`, copies it into a tempdir, runs
-//! `tsdi build --entry <component>.ts`, and diffs the produced
-//! `<component>.tsdi.ts` against `expected/<component>.tsdi.ts`.
+//! Each test copies a `tests/fixtures/<case>/input/` directory into a
+//! tempdir, runs `tsdi build --entry <component>.ts`, and diffs the
+//! produced `<component>.tsdi.ts` against `expected/<component>.tsdi.ts`.
 //!
 //! Set `BLESS=1` to overwrite the expected file with whatever the
 //! emitter produced (use sparingly, and review the diff before
 //! committing).
 //!
-//! M4 covers `01_simple_provides` only; later milestones add
-//! `02_inject_ctor` (M6) and `03_singleton_scope` (M6).
+//! Fixtures:
+//! - `01_simple_provides` — `@Inject` ctor chain, `Scope::Unscoped` (M4).
+//! - `03_singleton_scope` — `@Singleton @Inject` Heater shared by Pump (M6).
 
 use std::path::{Path, PathBuf};
 
@@ -62,9 +63,12 @@ fn write_tsdi_stub(root: &Path) {
     .unwrap();
 }
 
-#[test]
-fn fixture_01_simple_provides() {
-    let fixture = repo_root().join("tests/fixtures/01_simple_provides");
+/// Run one fixture: copy input into a tempdir, build, diff produced
+/// against expected. `entry_file` is the component source filename
+/// (e.g. `"coffee-component.ts"`); the produced output is the same name
+/// with `.ts` swapped for `.tsdi.ts`.
+fn run_fixture(case: &str, entry_file: &str) {
+    let fixture = repo_root().join("tests/fixtures").join(case);
     let input = fixture.join("input");
     let expected_dir = fixture.join("expected");
     std::fs::create_dir_all(&expected_dir).unwrap();
@@ -74,7 +78,7 @@ fn fixture_01_simple_provides() {
     copy_dir_recursive(&input, &work);
     write_tsdi_stub(&work);
 
-    let entry = work.join("coffee-component.ts");
+    let entry = work.join(entry_file);
     Command::cargo_bin("tsdi")
         .unwrap()
         .arg("build")
@@ -83,10 +87,11 @@ fn fixture_01_simple_provides() {
         .assert()
         .success();
 
-    let produced = std::fs::read_to_string(work.join("coffee-component.tsdi.ts"))
-        .expect("emitter should have written coffee-component.tsdi.ts");
+    let out_name = entry_file.trim_end_matches(".ts").to_owned() + ".tsdi.ts";
+    let produced = std::fs::read_to_string(work.join(&out_name))
+        .unwrap_or_else(|_| panic!("emitter should have written {out_name}"));
 
-    let expected_file = expected_dir.join("coffee-component.tsdi.ts");
+    let expected_file = expected_dir.join(&out_name);
     if std::env::var_os("BLESS").is_some() {
         std::fs::write(&expected_file, &produced).unwrap();
         return;
@@ -99,6 +104,16 @@ fn fixture_01_simple_provides() {
     let expected = std::fs::read_to_string(&expected_file).unwrap();
     assert_eq!(
         produced, expected,
-        "emitted file does not match expected. Run with BLESS=1 to refresh."
+        "emitted file does not match expected for fixture `{case}`. Run with BLESS=1 to refresh."
     );
+}
+
+#[test]
+fn fixture_01_simple_provides() {
+    run_fixture("01_simple_provides", "coffee-component.ts");
+}
+
+#[test]
+fn fixture_03_singleton_scope() {
+    run_fixture("03_singleton_scope", "coffee-component.ts");
 }

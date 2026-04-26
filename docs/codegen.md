@@ -163,7 +163,7 @@ export function createCoffeeShop(): CoffeeShop {
 }
 ```
 
-## Emission pipeline (M4)
+## Emission pipeline
 
 The emitter takes a validated `ComponentDecl` plus the project's `ModuleDecl`s and `@Inject` self-bindings and runs:
 
@@ -176,6 +176,6 @@ The emitter takes a validated `ComponentDecl` plus the project's `ModuleDecl`s a
 
 The string-build step is permitted because the parse step that follows enforces structural correctness. Driving `oxc_ast::AstBuilder` directly is also acceptable but not required — see `CLAUDE.md`'s "Don't emit unparsed TS" rule.
 
-### Singleton support
+### Singleton support (M6)
 
-M4 emits `Scope::Unscoped` only. A `Scope::Singleton` binding causes `EmitError::SingletonNotYetSupported`; the `??=` lazy-cache field shape lands in M6.
+Both `Scope::Unscoped` and `Scope::Singleton` are emitted. Singleton bindings get a private `_<lowerCamel>: <Type> | undefined` cache field, declared in topo order at the top of the dagger class, and a factory body of `return this._<x> ??= <expr>`. Unscoped bindings emit a plain `return <expr>`. The cache field type is intentionally `T | undefined` (not bare `T`) so the dagger class compiles cleanly under `strictPropertyInitialization`.

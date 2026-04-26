@@ -1,8 +1,8 @@
 //! TypeScript code emitter for the tsdi DI framework.
 //!
 //! M4 lands the first real emitter for `@Component` + `@Module` +
-//! `@Provides` + `@Inject` ctors at `Scope::Unscoped`. Singleton
-//! caching arrives in M6.
+//! `@Provides` + `@Inject` ctors at `Scope::Unscoped`. M6 adds
+//! `Scope::Singleton` (lazy `??=` cache field).
 //!
 //! # Strategy
 //!
@@ -37,13 +37,6 @@ pub enum EmitError {
     /// Validation produced one or more diagnostics; the graph is unsafe to emit.
     #[error("graph failed validation ({} diagnostic(s))", .0.len())]
     Invalid(Vec<Diagnostic>),
-    /// The graph contains a [`tsdi_core::ir::Scope::Singleton`] binding.
-    /// Singleton emission lands in M6.
-    #[error("singleton scope is not yet supported (binding `{key_name}`); lands in M6")]
-    SingletonNotYetSupported {
-        /// The class name of the offending binding.
-        key_name: String,
-    },
     /// The component's source path has no parent directory. Should not
     /// happen post-M2; guarded for safety.
     #[error("component source path has no parent directory: {0}")]

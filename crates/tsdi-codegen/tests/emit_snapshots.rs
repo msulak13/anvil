@@ -152,36 +152,64 @@ fn emit_inject_ctor_chain() {
 }
 
 #[test]
-fn singleton_binding_is_rejected_in_m4() {
+fn emit_singleton_caches_via_lazy_field() {
+    // Singleton component with a singleton Heater dep + an unscoped Pump
+    // that depends on Heater. Heater should get a private cache field +
+    // `??=` factory; Pump should be a plain `return new Pump(...)`.
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().to_path_buf();
-    let comp_path: String = root.join("c.ts").to_string_lossy().into_owned();
-    let h_path: String = root.join("h.ts").to_string_lossy().into_owned();
-    let h_key = class_key(&h_path, "H");
+    let comp_path: String = root
+        .join("shop-component.ts")
+        .to_string_lossy()
+        .into_owned();
+    let heater_path: String = root.join("heater.ts").to_string_lossy().into_owned();
+    let pump_path: String = root.join("pump.ts").to_string_lossy().into_owned();
+
+    let heater_key = class_key(&heater_path, "Heater");
+    let pump_key = class_key(&pump_path, "Pump");
+
+    let inject_classes = vec![
+        Binding {
+            key: heater_key.clone(),
+            provider: Provider::InjectCtor {
+                class: class_ref(&heater_path, "Heater"),
+            },
+            scope: Scope::Singleton,
+            deps: vec![],
+            source: span_of(&heater_path),
+        },
+        Binding {
+            key: pump_key.clone(),
+            provider: Provider::InjectCtor {
+                class: class_ref(&pump_path, "Pump"),
+            },
+            scope: Scope::Unscoped,
+            deps: vec![heater_key.clone()],
+            source: span_of(&pump_path),
+        },
+    ];
 
     let component = ComponentDecl {
-        class: class_ref(&comp_path, "C"),
+        class: class_ref(&comp_path, "Shop"),
         modules: vec![],
         scope: Scope::Singleton,
-        entry_points: vec![EntryPoint {
-            name: "h".into(),
-            key: h_key.clone(),
-            source: span_of(&comp_path),
-        }],
+        entry_points: vec![
+            EntryPoint {
+                name: "pump".into(),
+                key: pump_key,
+                source: span_of(&comp_path),
+            },
+            EntryPoint {
+                name: "heater".into(),
+                key: heater_key,
+                source: span_of(&comp_path),
+            },
+        ],
         source: span_of(&comp_path),
     };
-    let inject = vec![Binding {
-        key: h_key,
-        provider: Provider::InjectCtor {
-            class: class_ref(&h_path, "H"),
-        },
-        scope: Scope::Singleton,
-        deps: vec![],
-        source: span_of(&h_path),
-    }];
-    let err = emit_component(&component, &[], &inject, "0.0.1").unwrap_err();
-    let msg = format!("{err}");
-    assert!(msg.contains("singleton"), "got: {msg}");
+
+    let out = emit_component(&component, &[], &inject_classes, "0.0.1").unwrap();
+    insta::assert_snapshot!(out);
 }
 
 #[test]
