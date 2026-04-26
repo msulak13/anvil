@@ -1,0 +1,50 @@
+---
+source: crates/tsdi-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "coffee_module.ts",
+    modules: [
+        ModuleDecl {
+            class: ClassRef {
+                module: ModulePath(
+                    "<self>",
+                ),
+                name: "CoffeeModule",
+            },
+            provides: [
+                Binding {
+                    key: Class {
+                        module: ModulePath(
+                            "./pump",
+                        ),
+                        name: "Pump",
+                    },
+                    provider: ProvidesMethod {
+                        module: ClassRef {
+                            module: ModulePath(
+                                "<self>",
+                            ),
+                            name: "CoffeeModule",
+                        },
+                        method: "providePump",
+                    },
+                    scope: Unscoped,
+                    deps: [],
+                    source: SourceSpan {
+                        path: "coffee_module.ts",
+                        start: 154,
+                        end: 213,
+                    },
+                },
+            ],
+            source: SourceSpan {
+                path: "coffee_module.ts",
+                start: 121,
+                end: 223,
+            },
+        },
+    ],
+    components: [],
+    inject_classes: [],
+}

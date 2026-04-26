@@ -1,0 +1,29 @@
+[package]
+name = "tsdi-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for the tsdi TypeScript DI framework."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "tsdi"
+path = "src/main.rs"
+
+[dependencies]
+tsdi-core.workspace = true
+tsdi-parser.workspace = true
+tsdi-codegen.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+miette.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
+insta.workspace = true

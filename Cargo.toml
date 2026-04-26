@@ -1,0 +1,63 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tsdi-core",
+    "crates/tsdi-parser",
+    "crates/tsdi-codegen",
+    "crates/tsdi-cli",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.95"
+license = "Apache-2.0"
+repository = "https://github.com/mike/typescript-di"
+homepage = "https://github.com/mike/typescript-di"
+authors = ["typescript-di contributors"]
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[workspace.dependencies]
+# Internal crates
+tsdi-core = { path = "crates/tsdi-core", version = "0.0.1" }
+tsdi-parser = { path = "crates/tsdi-parser", version = "0.0.1" }
+tsdi-codegen = { path = "crates/tsdi-codegen", version = "0.0.1" }
+
+# External crates pinned at workspace level for consistency
+oxc_allocator = "0.127"
+oxc_ast = "0.127"
+oxc_ast_visit = "0.127"
+oxc_parser = "0.127"
+oxc_span = "0.127"
+oxc_codegen = "0.127"
+oxc_resolver = "11"
+
+petgraph = "0.6"
+miette = { version = "7.4", features = ["fancy"] }
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+notify = "6.1"
+glob = "0.3"
+anyhow = "1.0"
+
+# Test deps
+insta = { version = "1.41", features = ["json", "yaml"] }
+assert_cmd = "2.0"
+predicates = "3.1"
+tempfile = "3.13"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

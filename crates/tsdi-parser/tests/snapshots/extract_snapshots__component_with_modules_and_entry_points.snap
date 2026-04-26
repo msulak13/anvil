@@ -1,0 +1,63 @@
+---
+source: crates/tsdi-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "coffee_shop.ts",
+    modules: [],
+    components: [
+        ComponentDecl {
+            class: ClassRef {
+                module: ModulePath(
+                    "<self>",
+                ),
+                name: "CoffeeShop",
+            },
+            modules: [
+                ClassRef {
+                    module: ModulePath(
+                        "./coffee_module",
+                    ),
+                    name: "CoffeeModule",
+                },
+            ],
+            scope: Singleton,
+            entry_points: [
+                EntryPoint {
+                    name: "pump",
+                    key: Class {
+                        module: ModulePath(
+                            "./pump",
+                        ),
+                        name: "Pump",
+                    },
+                    source: SourceSpan {
+                        path: "coffee_shop.ts",
+                        start: 315,
+                        end: 337,
+                    },
+                },
+                EntryPoint {
+                    name: "heater",
+                    key: Class {
+                        module: ModulePath(
+                            "./heater",
+                        ),
+                        name: "Heater",
+                    },
+                    source: SourceSpan {
+                        path: "coffee_shop.ts",
+                        start: 350,
+                        end: 376,
+                    },
+                },
+            ],
+            source: SourceSpan {
+                path: "coffee_shop.ts",
+                start: 275,
+                end: 386,
+            },
+        },
+    ],
+    inject_classes: [],
+}

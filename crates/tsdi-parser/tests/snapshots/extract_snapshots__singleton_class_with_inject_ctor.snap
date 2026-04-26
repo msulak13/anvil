@@ -1,0 +1,34 @@
+---
+source: crates/tsdi-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "heater.ts",
+    modules: [],
+    components: [],
+    inject_classes: [
+        Binding {
+            key: Class {
+                module: ModulePath(
+                    "<self>",
+                ),
+                name: "Heater",
+            },
+            provider: InjectCtor {
+                class: ClassRef {
+                    module: ModulePath(
+                        "<self>",
+                    ),
+                    name: "Heater",
+                },
+            },
+            scope: Singleton,
+            deps: [],
+            source: SourceSpan {
+                path: "heater.ts",
+                start: 129,
+                end: 145,
+            },
+        },
+    ],
+}

@@ -1,0 +1,41 @@
+---
+source: crates/tsdi-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "pump.ts",
+    modules: [],
+    components: [],
+    inject_classes: [
+        Binding {
+            key: Class {
+                module: ModulePath(
+                    "<self>",
+                ),
+                name: "Pump",
+            },
+            provider: InjectCtor {
+                class: ClassRef {
+                    module: ModulePath(
+                        "<self>",
+                    ),
+                    name: "Pump",
+                },
+            },
+            scope: Unscoped,
+            deps: [
+                Class {
+                    module: ModulePath(
+                        "./heater",
+                    ),
+                    name: "Heater",
+                },
+            ],
+            source: SourceSpan {
+                path: "pump.ts",
+                start: 140,
+                end: 178,
+            },
+        },
+    ],
+}

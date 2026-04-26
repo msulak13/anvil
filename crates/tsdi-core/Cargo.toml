@@ -1,0 +1,21 @@
+[package]
+name = "tsdi-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core IR, dependency graph, and validation rules for the tsdi TypeScript DI framework."
+
+[lints]
+workspace = true
+
+[dependencies]
+petgraph.workspace = true
+miette.workspace = true
+thiserror.workspace = true
+serde = { workspace = true, optional = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
