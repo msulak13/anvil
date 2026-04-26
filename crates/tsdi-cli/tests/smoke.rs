@@ -22,11 +22,14 @@ fn bare_invocation_exits_success() {
 }
 
 #[test]
-fn watch_subcommand_reports_not_yet_implemented() {
+fn watch_without_entry_or_config_errors() {
+    use tempfile::TempDir;
+    let tmp = TempDir::new().unwrap();
     Command::cargo_bin("tsdi")
         .unwrap()
+        .current_dir(tmp.path())
         .arg("watch")
         .assert()
         .failure()
-        .stderr(contains("not yet implemented"));
+        .stderr(contains("no --entry or --config"));
 }

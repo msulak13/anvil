@@ -21,6 +21,10 @@ tsdi-codegen.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 miette.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+glob.workspace = true
+notify.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true

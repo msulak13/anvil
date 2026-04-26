@@ -5,13 +5,23 @@
 //!
 //! M4: `build` lands — same pipeline as `check`, but on success it
 //! invokes `tsdi-codegen` and writes one `<component>.tsdi.ts` next to
-//! each component's source file. `watch`/`explain` remain stubs (M5+).
+//! each component's source file.
+//!
+//! M5: `explain` traces a key's resolution; `watch` re-emits affected
+//! components on filesystem change. All four subcommands accept either
+//! `--entry <path>` (single ad-hoc invocation) or `--config <path>`
+//! (a `tsdi.config.json` or `package.json` whose `tsdi` field describes
+//! the project's entries). Without either, the CLI tries to discover a
+//! config in the current working directory.
 //!
 //! Diagnostic rendering is intentionally a CLI concern: `tsdi-core` emits
 //! structured `Diagnostic` values and never touches disk. The CLI loads
 //! source contents on demand and dresses them into `miette::Report`s.
 
+mod config;
 mod diagnostics;
+mod explain;
+mod watch;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -22,6 +32,8 @@ use tsdi_core::graph::{build_and_validate, DependencyGraph, GraphInput};
 use tsdi_core::ir::{Binding, ComponentDecl, ModuleDecl};
 use tsdi_core::validate::Diagnostic;
 use tsdi_parser::symbols::{ProjectGraph, ProjectResolver};
+
+use crate::config::Config;
 
 /// Code-generation toolchain for the tsdi TypeScript DI framework.
 #[derive(Debug, Parser)]
@@ -35,30 +47,58 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Generate component implementations for the configured entries.
-    Build {
-        /// Path to a `.ts` file containing a `@Component` to emit.
-        #[arg(long)]
-        entry: PathBuf,
-        /// Optional `tsconfig.json` to honor `paths` / `baseUrl`.
-        #[arg(long)]
-        tsconfig: Option<PathBuf>,
-    },
-    /// Watch sources and re-emit on change (M5).
-    Watch,
+    Build(BuildArgs),
+    /// Watch sources and re-emit on change.
+    Watch(WatchArgs),
     /// Validate the binding graph without emitting code.
-    Check {
-        /// Path to a `.ts` file containing a `@Component` to validate.
-        #[arg(long)]
-        entry: PathBuf,
-        /// Optional `tsconfig.json` to honor `paths` / `baseUrl`.
-        #[arg(long)]
-        tsconfig: Option<PathBuf>,
-    },
-    /// Trace how a key is resolved (M5+).
-    Explain {
-        /// The key to explain (currently free-form; structured form lands in M5).
-        key: String,
-    },
+    Check(CheckArgs),
+    /// Trace how a key is resolved through the binding graph.
+    Explain(ExplainArgs),
+}
+
+/// Argument shape shared by `build`/`check`/`watch`. Either pass
+/// `--entry` (and optionally `--tsconfig`) or `--config <path>`. With
+/// neither, the CLI looks for `tsdi.config.json` / `package.json` in
+/// the current directory.
+#[derive(Debug, clap::Args)]
+struct ProjectArgs {
+    /// Path to a `.ts` file containing a `@Component` to operate on.
+    #[arg(long, conflicts_with = "config")]
+    entry: Option<PathBuf>,
+    /// Optional `tsconfig.json` to honor `paths` / `baseUrl`.
+    #[arg(long)]
+    tsconfig: Option<PathBuf>,
+    /// Path to a `tsdi.config.json` (or `package.json` with a `tsdi`
+    /// field).
+    #[arg(long)]
+    config: Option<PathBuf>,
+}
+
+#[derive(Debug, clap::Args)]
+struct BuildArgs {
+    #[command(flatten)]
+    project: ProjectArgs,
+}
+
+#[derive(Debug, clap::Args)]
+struct CheckArgs {
+    #[command(flatten)]
+    project: ProjectArgs,
+}
+
+#[derive(Debug, clap::Args)]
+struct WatchArgs {
+    #[command(flatten)]
+    project: ProjectArgs,
+}
+
+#[derive(Debug, clap::Args)]
+struct ExplainArgs {
+    /// Key name to trace (e.g. `Pump`). Matches against every binding
+    /// in the project's graph; the first hit by lex order wins.
+    key: String,
+    #[command(flatten)]
+    project: ProjectArgs,
 }
 
 fn main() -> ExitCode {
@@ -71,40 +111,153 @@ fn main() -> ExitCode {
             );
             ExitCode::SUCCESS
         }
-        Some(Command::Check { entry, tsconfig }) => match run_check(entry.as_path(), tsconfig) {
-            Ok(_) => ExitCode::SUCCESS,
-            Err(CheckError::Diagnostics(n)) => {
-                eprintln!("validation failed: {n} diagnostic(s)");
-                ExitCode::from(1)
+        Some(Command::Check(args)) => run_with_exit(|| {
+            let entries = resolve_entries(&args.project)?;
+            let mut totals = (0usize, 0usize);
+            for entry in &entries {
+                let summary = run_check(entry.as_path(), tsconfig_for(&args.project))?;
+                totals.0 += summary.components;
+                totals.1 += summary.bindings;
             }
-            Err(CheckError::Other(err)) => {
-                eprintln!("error: {err:#}");
-                ExitCode::from(2)
+            if entries.len() > 1 {
+                println!(
+                    "ok across {} entry file(s): {} component(s), {} binding(s)",
+                    entries.len(),
+                    totals.0,
+                    totals.1,
+                );
             }
-        },
-        Some(Command::Build { entry, tsconfig }) => match run_build(entry.as_path(), tsconfig) {
-            Ok(_) => ExitCode::SUCCESS,
-            Err(CheckError::Diagnostics(n)) => {
-                eprintln!("validation failed: {n} diagnostic(s)");
-                ExitCode::from(1)
+            Ok(())
+        }),
+        Some(Command::Build(args)) => run_with_exit(|| {
+            let entries = resolve_entries(&args.project)?;
+            let mut total_components = 0usize;
+            for entry in &entries {
+                let summary = run_build(entry.as_path(), tsconfig_for(&args.project))?;
+                total_components += summary.components;
             }
-            Err(CheckError::Other(err)) => {
-                eprintln!("error: {err:#}");
-                ExitCode::from(2)
+            if entries.len() > 1 {
+                println!(
+                    "emitted across {} entry file(s): {} component(s)",
+                    entries.len(),
+                    total_components,
+                );
             }
-        },
-        Some(Command::Watch | Command::Explain { .. }) => {
-            eprintln!("subcommand not yet implemented; see docs/cli.md");
+            Ok(())
+        }),
+        Some(Command::Explain(args)) => run_with_exit(|| {
+            let entries = resolve_entries(&args.project)?;
+            // Explain is a single-entry inspection tool: error on >1 entry to
+            // keep the output unambiguous.
+            let entry = match entries.as_slice() {
+                [e] => e.clone(),
+                _ => {
+                    return Err(CheckError::Other(anyhow::anyhow!(
+                        "explain requires exactly one entry; got {}",
+                        entries.len()
+                    )))
+                }
+            };
+            let ir = load_project(entry.as_path(), tsconfig_for(&args.project))?;
+            explain::run(&args.key, &ir)?;
+            Ok(())
+        }),
+        Some(Command::Watch(args)) => run_with_exit(|| {
+            let entries = resolve_entries(&args.project)?;
+            let watch_root = watch_root_for(&args.project, &entries)?;
+            watch::run(&watch::Plan {
+                entries,
+                tsconfig: tsconfig_for(&args.project),
+                watch_root,
+            })
+            .map_err(|e| CheckError::Other(anyhow::Error::from(e)))?;
+            Ok(())
+        }),
+    }
+}
+
+/// Convert a `Result<(), CheckError>` produced by a subcommand into an
+/// exit code with the standard mapping (0 ok, 1 validation, 2 tooling).
+fn run_with_exit(f: impl FnOnce() -> Result<(), CheckError>) -> ExitCode {
+    match f() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(CheckError::Diagnostics(n)) => {
+            eprintln!("validation failed: {n} diagnostic(s)");
+            ExitCode::from(1)
+        }
+        Err(CheckError::Other(err)) => {
+            eprintln!("error: {err:#}");
             ExitCode::from(2)
         }
     }
+}
+
+/// Resolve the set of entry `.ts` files for the requested operation.
+///
+/// Precedence:
+/// 1. `--entry <path>` (one entry, no glob expansion).
+/// 2. `--config <path>` → load + expand `entries` glob.
+/// 3. Discover `tsdi.config.json` / `package.json` in cwd.
+fn resolve_entries(args: &ProjectArgs) -> Result<Vec<PathBuf>, CheckError> {
+    if let Some(entry) = &args.entry {
+        let abs = std::fs::canonicalize(entry)
+            .map_err(|e| anyhow::anyhow!("failed to canonicalize {}: {e}", entry.display()))?;
+        return Ok(vec![abs]);
+    }
+    if let Some(cfg_path) = &args.config {
+        let cfg = Config::load(cfg_path).map_err(CheckError::Other)?;
+        return cfg.expand_entries().map_err(CheckError::Other);
+    }
+    let cwd =
+        std::env::current_dir().map_err(|e| anyhow::anyhow!("cannot read current dir: {e}"))?;
+    if let Some(cfg) = Config::discover(&cwd).map_err(CheckError::Other)? {
+        return cfg.expand_entries().map_err(CheckError::Other);
+    }
+    Err(CheckError::Other(anyhow::anyhow!(
+        "no --entry or --config given, and no tsdi.config.json / package.json#tsdi in {}",
+        cwd.display()
+    )))
+}
+
+/// Pick the tsconfig for the resolver. If `--config` was supplied, its
+/// embedded `tsconfig` field wins; otherwise we honor `--tsconfig`.
+fn tsconfig_for(args: &ProjectArgs) -> Option<PathBuf> {
+    if let Some(cfg_path) = &args.config {
+        if let Ok(cfg) = Config::load(cfg_path) {
+            return cfg.tsconfig;
+        }
+    }
+    args.tsconfig.clone()
+}
+
+/// Pick the directory the watcher should observe. Honors the config's
+/// `rootDir` if a config was used; otherwise falls back to the entries'
+/// nearest common ancestor (or the first entry's parent).
+fn watch_root_for(args: &ProjectArgs, entries: &[PathBuf]) -> Result<PathBuf, CheckError> {
+    if let Some(cfg_path) = &args.config {
+        return Ok(Config::load(cfg_path).map_err(CheckError::Other)?.root_dir);
+    }
+    // Discovery path: re-run discover() so root_dir matches the project
+    // structure rather than cwd.
+    let cwd =
+        std::env::current_dir().map_err(|e| anyhow::anyhow!("cannot read current dir: {e}"))?;
+    if args.entry.is_none() {
+        if let Some(cfg) = Config::discover(&cwd).map_err(CheckError::Other)? {
+            return Ok(cfg.root_dir);
+        }
+    }
+    // Fallback: the first entry's parent.
+    let first = entries
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("no entries"))?;
+    Ok(first.parent().unwrap_or(first).to_path_buf())
 }
 
 /// Outcome categories of `tsdi check`/`tsdi build`. Distinguishing
 /// "validation produced diagnostics" (exit code 1) from "the tool itself
 /// errored" (exit code 2) lets CI differentiate genuine pipeline failures
 /// from "the user's graph is broken".
-enum CheckError {
+pub(crate) enum CheckError {
     /// `n` validation diagnostics were rendered.
     Diagnostics(usize),
     /// The check pipeline itself failed before producing diagnostics.
@@ -118,13 +271,19 @@ impl<E: Into<anyhow::Error>> From<E> for CheckError {
 }
 
 /// Aggregated IR for a project, ready to feed to validation/codegen.
-struct ProjectIr {
-    modules: Vec<ModuleDecl>,
-    components: Vec<ComponentDecl>,
-    inject_classes: Vec<Binding>,
+pub(crate) struct ProjectIr {
+    pub(crate) modules: Vec<ModuleDecl>,
+    pub(crate) components: Vec<ComponentDecl>,
+    pub(crate) inject_classes: Vec<Binding>,
+    /// The set of source files the parser walked. Used by watch mode
+    /// to recompute the "changed file → affected components" mapping.
+    pub(crate) files: Vec<PathBuf>,
 }
 
-fn load_project(entry: &Path, tsconfig: Option<PathBuf>) -> Result<ProjectIr, CheckError> {
+pub(crate) fn load_project(
+    entry: &Path,
+    tsconfig: Option<PathBuf>,
+) -> Result<ProjectIr, CheckError> {
     let resolver = ProjectResolver::new(tsconfig);
     let project: ProjectGraph =
         ProjectGraph::build_from_entry(entry, &resolver).map_err(anyhow::Error::from)?;
@@ -137,10 +296,12 @@ fn load_project(entry: &Path, tsconfig: Option<PathBuf>) -> Result<ProjectIr, Ch
         components.extend(parsed.components.iter().cloned());
         inject_classes.extend(parsed.inject_classes.iter().cloned());
     }
+    let files: Vec<PathBuf> = project.files.keys().map(PathBuf::from).collect();
     Ok(ProjectIr {
         modules,
         components,
         inject_classes,
+        files,
     })
 }
 
@@ -239,14 +400,11 @@ fn output_path_for(component_module: &str) -> Result<PathBuf, CheckError> {
 
 /// Result of a successful `tsdi check` run, returned for tests to inspect.
 struct CheckSummary {
-    #[allow(dead_code)]
     components: usize,
-    #[allow(dead_code)]
     bindings: usize,
 }
 
 /// Result of a successful `tsdi build` run.
 struct BuildSummary {
-    #[allow(dead_code)]
     components: usize,
 }
