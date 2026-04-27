@@ -72,6 +72,34 @@ export function Inject<T extends abstract new (...args: never[]) => unknown>(
 }
 
 /**
+ * Marks an abstract method on a `@Module` class as an alias-binding from
+ * the method's return type to its single parameter type. The codegen
+ * emits a factory that delegates straight to the parameter type's
+ * factory — useful for binding an interface to one concrete impl.
+ *
+ * The method must be `abstract`, take exactly one parameter, and declare
+ * an explicit return type. It must not also be `@Provides`.
+ *
+ * @example
+ * ```ts
+ * import { Module, Binds } from "tsdi";
+ * import { Heater } from "./heater";
+ * import { ElectricHeater } from "./electric-heater";
+ *
+ * @Module
+ * export abstract class CoffeeModule {
+ *   @Binds abstract heater(impl: ElectricHeater): Heater;
+ * }
+ * ```
+ */
+export function Binds<This, Args extends readonly unknown[], Return>(
+  target: (this: This, ...args: Args) => Return,
+  _ctx: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,
+): (this: This, ...args: Args) => Return {
+  return target;
+}
+
+/**
  * Configuration for a `@Component`.
  */
 export interface ComponentConfig {

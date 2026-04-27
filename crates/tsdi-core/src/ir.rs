@@ -119,6 +119,16 @@ pub enum Provider {
         /// The method name on the module.
         method: String,
     },
+    /// An abstract `@Binds` method on a `@Module` class. The binding's
+    /// `key` is the method's return type; this provider redirects all
+    /// requests for that key to the [`Binding`] for `target`.
+    ///
+    /// At codegen time the factory body is just `return this.<getTarget>()`,
+    /// inheriting whatever scope the target binding has.
+    Binds {
+        /// The implementation key this binding aliases.
+        target: Key,
+    },
 }
 
 /// A single binding in the dependency graph.

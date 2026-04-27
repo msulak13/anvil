@@ -1,0 +1,56 @@
+---
+source: crates/tsdi-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "heater_module.ts",
+    modules: [
+        ModuleDecl {
+            class: ClassRef {
+                module: ModulePath(
+                    "<self>",
+                ),
+                name: "HeaterModule",
+            },
+            provides: [
+                Binding {
+                    key: Class {
+                        module: ModulePath(
+                            "./heater",
+                        ),
+                        name: "Heater",
+                    },
+                    provider: Binds {
+                        target: Class {
+                            module: ModulePath(
+                                "./electric_heater",
+                            ),
+                            name: "ElectricHeater",
+                        },
+                    },
+                    scope: Unscoped,
+                    deps: [
+                        Class {
+                            module: ModulePath(
+                                "./electric_heater",
+                            ),
+                            name: "ElectricHeater",
+                        },
+                    ],
+                    source: SourceSpan {
+                        path: "heater_module.ts",
+                        start: 215,
+                        end: 286,
+                    },
+                },
+            ],
+            source: SourceSpan {
+                path: "heater_module.ts",
+                start: 182,
+                end: 296,
+            },
+        },
+    ],
+    components: [],
+    inject_classes: [],
+}

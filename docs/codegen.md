@@ -95,6 +95,21 @@ private getDatabase(): Database {
 
 Modules are referenced statically — `@Provides` methods must be `static`. This is enforced by the parser (M1).
 
+## `@Binds` delegation (M7)
+
+For a `Provider::Binds { target }`, the alias factory **never constructs** anything; it forwards to the target's factory:
+
+```ts
+// User: @Binds static bindHeater(impl: ElectricHeater): Heater { return impl; }
+private getHeater(): Heater {
+  return this.getElectricHeater();
+}
+```
+
+The target's binding (here, `ElectricHeater` via `Provider::InjectCtor`) is what owns the `new` and the cache field. Because the alias has its own scope flag, you *can* set `@Singleton` on a `@Binds` method, but typically the implementation's scope is what you want; leave the alias `Unscoped` and let the target govern caching.
+
+`@Binds` methods must be `static`. TC39 Stage-3 decorators cannot decorate abstract methods (TS error 1249), so the user writes a static method with a trivial body (`return impl;`). The body still has to compile, but `tsdi-codegen` ignores it and emits the delegate above.
+
 ## Output ordering
 
 Methods are emitted in **topological order with stable ties broken by `Key` lexicographic order**, so two identical inputs produce byte-identical outputs. This stability matters for `insta` snapshots and for `git diff` under watch mode.

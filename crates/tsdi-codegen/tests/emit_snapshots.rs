@@ -213,6 +213,67 @@ fn emit_singleton_caches_via_lazy_field() {
 }
 
 #[test]
+fn emit_binds_alias_delegates_to_target() {
+    // @Module exposes a @Binds method that aliases ElectricHeater to Heater.
+    // ElectricHeater has an @Inject ctor (no deps). Component requests Heater.
+    // Codegen should emit: getHeater() returns this.getElectricHeater().
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let comp_path: String = root
+        .join("shop-component.ts")
+        .to_string_lossy()
+        .into_owned();
+    let mod_path: String = root.join("heater-module.ts").to_string_lossy().into_owned();
+    let heater_path: String = root.join("heater.ts").to_string_lossy().into_owned();
+    let electric_path: String = root
+        .join("electric-heater.ts")
+        .to_string_lossy()
+        .into_owned();
+
+    let heater_key = class_key(&heater_path, "Heater");
+    let electric_key = class_key(&electric_path, "ElectricHeater");
+
+    let module = ModuleDecl {
+        class: class_ref(&mod_path, "HeaterModule"),
+        provides: vec![Binding {
+            key: heater_key.clone(),
+            provider: Provider::Binds {
+                target: electric_key.clone(),
+            },
+            scope: Scope::Unscoped,
+            deps: vec![electric_key.clone()],
+            source: span_of(&mod_path),
+        }],
+        source: span_of(&mod_path),
+    };
+
+    let inject_classes = vec![Binding {
+        key: electric_key.clone(),
+        provider: Provider::InjectCtor {
+            class: class_ref(&electric_path, "ElectricHeater"),
+        },
+        scope: Scope::Unscoped,
+        deps: vec![],
+        source: span_of(&electric_path),
+    }];
+
+    let component = ComponentDecl {
+        class: class_ref(&comp_path, "Shop"),
+        modules: vec![class_ref(&mod_path, "HeaterModule")],
+        scope: Scope::Unscoped,
+        entry_points: vec![EntryPoint {
+            name: "heater".into(),
+            key: heater_key,
+            source: span_of(&comp_path),
+        }],
+        source: span_of(&comp_path),
+    };
+
+    let out = emit_component(&component, &[module], &inject_classes, "0.0.1").unwrap();
+    insta::assert_snapshot!(out);
+}
+
+#[test]
 fn validation_failure_short_circuits() {
     // Missing binding: Pump entry-point with no provider for Pump.
     let tmp = TempDir::new().unwrap();

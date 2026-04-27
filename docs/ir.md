@@ -65,15 +65,17 @@ How an instance for a `Key` is produced.
 
 ```rust
 pub enum Provider {
-    InjectCtor    { class: ClassRef },
+    InjectCtor     { class: ClassRef },
     ProvidesMethod { module: ClassRef, method: String },
-    // Binds { target: Key },  // v0.2 / M7
+    Binds          { target: Key },
 }
 ```
 
 - **`InjectCtor`** — class with class-level `@Inject` decorator. The constructor's parameter types become the binding's `deps`. The codegen emits `new ClassName(deps...)`.
 - **`ProvidesMethod`** — static method on a `@Module`. The codegen emits `ModuleName.methodName(deps...)`.
-- **`Binds`** — interface→implementation aliasing. Deferred to M7.
+- **`Binds`** (M7) — alias binding. The owning `@Module` exposes a `static` method whose single parameter type is the implementation and whose return type is the alias. The binding's `key` is the return type (the alias); `target` is the parameter type (the implementation). `deps` is `vec![target]` so the topo walk visits the target's binding before the alias's factory references it. Codegen emits `return this.<getTarget>()` — no `new` is performed by the alias factory; the target's scope governs caching.
+
+  TC39 Stage-3 decorators cannot decorate abstract methods (TS error 1249), so `@Binds` methods are `static` with a body. `tsdi-codegen` ignores the body and emits the delegate; the body still has to compile (e.g. `return impl;`) so the user's `tsc` accepts the source file.
 
 ## `SourceSpan`
 

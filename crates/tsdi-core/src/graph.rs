@@ -287,6 +287,7 @@ fn missing_for_dep(missing: Key, requested_by: Key, binding: &Binding) -> Diagno
     let provider_kind = match &binding.provider {
         Provider::InjectCtor { .. } => "@Inject ctor",
         Provider::ProvidesMethod { .. } => "@Provides method",
+        Provider::Binds { .. } => "@Binds method",
     };
     Diagnostic {
         kind: DiagnosticKind::MissingBinding {

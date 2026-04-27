@@ -154,6 +154,80 @@ fn legacy_inject_on_constructor_is_rejected() {
 }
 
 #[test]
+fn module_with_binds_method() {
+    let src = r#"
+        import { Module, Binds } from "tsdi";
+        import { Heater } from "./heater";
+        import { ElectricHeater } from "./electric_heater";
+
+        @Module
+        export class HeaterModule {
+            @Binds static bindHeater(impl: ElectricHeater): Heater { return impl; }
+        }
+    "#;
+    let parsed = parse_source(src, "heater_module.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}
+
+#[test]
+fn binds_must_be_static() {
+    let src = r#"
+        import { Module, Binds } from "tsdi";
+        import { Heater } from "./heater";
+        import { ElectricHeater } from "./electric_heater";
+
+        @Module
+        export class HeaterModule {
+            @Binds bindHeater(impl: ElectricHeater): Heater { return impl; }
+        }
+    "#;
+    let err = parse_source(src, "heater_module.ts").unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("must be a static method"),
+        "unexpected error: {msg}"
+    );
+}
+
+#[test]
+fn binds_requires_return_type() {
+    let src = r#"
+        import { Module, Binds } from "tsdi";
+        import { ElectricHeater } from "./electric_heater";
+
+        @Module
+        export class HeaterModule {
+            @Binds static bindHeater(impl: ElectricHeater) { return impl; }
+        }
+    "#;
+    let err = parse_source(src, "heater_module.ts").unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("must declare an explicit return type"),
+        "unexpected error: {msg}"
+    );
+}
+
+#[test]
+fn binds_requires_exactly_one_parameter() {
+    let src = r#"
+        import { Module, Binds } from "tsdi";
+        import { Heater } from "./heater";
+
+        @Module
+        export class HeaterModule {
+            @Binds static bindHeater(): Heater { return null as any; }
+        }
+    "#;
+    let err = parse_source(src, "heater_module.ts").unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("exactly one parameter"),
+        "unexpected error: {msg}"
+    );
+}
+
+#[test]
 fn entry_point_requires_return_type() {
     let src = r#"
         import { Component } from "tsdi";

@@ -79,6 +79,7 @@ fn provider_label(p: &Provider) -> &'static str {
     match p {
         Provider::InjectCtor { .. } => "InjectCtor",
         Provider::ProvidesMethod { .. } => "ProvidesMethod",
+        Provider::Binds { .. } => "Binds",
     }
 }
 

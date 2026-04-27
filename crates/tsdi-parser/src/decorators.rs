@@ -2,8 +2,9 @@
 //!
 //! Recognized decorators (TC39 Stage-3):
 //!
-//! - `@Module` — class-level. Marks the class as a module hosting `@Provides` methods.
+//! - `@Module` — class-level. Marks the class as a module hosting `@Provides` and/or `@Binds` methods.
 //! - `@Provides` — method-level on a `@Module` class. Must be `static` and have an explicit return type.
+//! - `@Binds` — method-level on a `@Module` class. Must be `abstract`, take exactly one parameter, and have an explicit return type. The codegen emits a factory that delegates to the parameter's binding.
 //! - `@Inject` — class-level on any class. The class becomes a self-binding whose deps are the constructor's parameter types. (Stage-3 decorators don't apply to constructors, so the legacy `@Inject constructor(...)` placement is rejected with [`ExtractError::InjectOnConstructor`].)
 //! - `@Component(config)` — class-level on an abstract class. `config.modules` is an array of class identifiers.
 //! - `@Singleton` — class-level. Sets the binding's scope.
@@ -100,13 +101,66 @@ pub enum ExtractError {
         /// Source span of the offending constructor.
         span: Span,
     },
+    /// `@Binds` was placed on a non-`static` method.
+    ///
+    /// TC39 Stage-3 decorators cannot decorate abstract methods (TS error 1249),
+    /// so `@Binds` must be a `static` method with a trivial body (`return <param>;`).
+    /// `tsdi-codegen` ignores the body and emits a delegate to the target's factory.
+    #[error("@Binds method '{module}.{method}' must be a static method")]
+    BindsNotStatic {
+        /// Containing module class name.
+        module: String,
+        /// Method name.
+        method: String,
+        /// Source span of the offending method.
+        span: Span,
+    },
+    /// `@Binds` method has no explicit return type.
+    #[error("@Binds method '{module}.{method}' must declare an explicit return type")]
+    BindsMissingReturnType {
+        /// Containing module class name.
+        module: String,
+        /// Method name.
+        method: String,
+        /// Source span.
+        span: Span,
+    },
+    /// `@Binds` method has the wrong number of parameters (must be exactly one).
+    #[error("@Binds method '{module}.{method}' must take exactly one parameter (got {count})")]
+    BindsWrongArity {
+        /// Containing module class name.
+        module: String,
+        /// Method name.
+        method: String,
+        /// Actual parameter count.
+        count: usize,
+        /// Source span.
+        span: Span,
+    },
+    /// `@Binds` and `@Provides` were both placed on the same method.
+    #[error("method '{module}.{method}' cannot be both @Binds and @Provides")]
+    BindsAndProvides {
+        /// Containing module class name.
+        module: String,
+        /// Method name.
+        method: String,
+        /// Source span.
+        span: Span,
+    },
 }
 
 /// Result of extraction.
 pub type Result<T> = std::result::Result<T, ExtractError>;
 
 /// Names recognized as decorators in v0.1. Bound via the user's `import { … } from "tsdi"`.
-const KNOWN_DECORATOR_NAMES: &[&str] = &["Module", "Provides", "Inject", "Component", "Singleton"];
+const KNOWN_DECORATOR_NAMES: &[&str] = &[
+    "Module",
+    "Provides",
+    "Binds",
+    "Inject",
+    "Component",
+    "Singleton",
+];
 
 /// Convert an `oxc_span::Span` into the parser-agnostic `SourceSpan` carried
 /// in the IR.
@@ -258,71 +312,166 @@ fn extract_provides(
         let ClassElement::MethodDefinition(m) = member else {
             continue;
         };
-        let has_provides = m
-            .decorators
-            .iter()
-            .filter_map(decorator_name)
-            .any(|n| n == "Provides");
-        if !has_provides {
+        let decorator_names: Vec<&str> = m.decorators.iter().filter_map(decorator_name).collect();
+        let has_provides = decorator_names.contains(&"Provides");
+        let has_binds = decorator_names.contains(&"Binds");
+        if !has_provides && !has_binds {
             continue;
         }
         let method_name =
             property_key_name(&m.key).map_or_else(|| "<computed>".to_owned(), str::to_owned);
 
-        if !m.r#static {
-            return Err(ExtractError::ProvidesNotStatic {
+        if has_provides && has_binds {
+            return Err(ExtractError::BindsAndProvides {
                 module: module_class.name.clone(),
                 method: method_name,
                 span: m.span,
             });
         }
 
-        let return_ann = m.value.return_type.as_deref().ok_or_else(|| {
-            ExtractError::ProvidesMissingReturnType {
-                module: module_class.name.clone(),
-                method: method_name.clone(),
-                span: m.span,
-            }
-        })?;
-        let key = type_annotation_to_key(
-            return_ann,
-            &format!(
-                "@Provides {}.{} return type",
-                module_class.name, method_name
-            ),
-            imports,
-            local_classes,
-        )?;
-        let scope = if m
-            .decorators
-            .iter()
-            .filter_map(decorator_name)
-            .any(|n| n == "Singleton")
-        {
+        let scope = if decorator_names.contains(&"Singleton") {
             Scope::Singleton
         } else {
             Scope::Unscoped
         };
-        let deps = params_to_keys(
-            &m.value.params.items,
-            &module_class.name,
-            &method_name,
-            imports,
-            local_classes,
-        )?;
-        let method_span = to_ir_span(file_path, m.span);
-        out.push(Binding {
-            key,
-            provider: Provider::ProvidesMethod {
-                module: module_class.clone(),
-                method: method_name,
-            },
-            scope,
-            deps,
-            source: method_span,
-        });
+
+        let binding = if has_binds {
+            extract_binds_method(
+                m,
+                module_class,
+                &method_name,
+                scope,
+                imports,
+                local_classes,
+                file_path,
+            )?
+        } else {
+            extract_provides_method(
+                m,
+                module_class,
+                &method_name,
+                scope,
+                imports,
+                local_classes,
+                file_path,
+            )?
+        };
+        out.push(binding);
     }
     Ok(out)
+}
+
+fn extract_provides_method(
+    m: &oxc_ast::ast::MethodDefinition<'_>,
+    module_class: &ClassRef,
+    method_name: &str,
+    scope: Scope,
+    imports: &ImportMap,
+    local_classes: &HashSet<&str>,
+    file_path: &str,
+) -> Result<Binding> {
+    if !m.r#static {
+        return Err(ExtractError::ProvidesNotStatic {
+            module: module_class.name.clone(),
+            method: method_name.to_owned(),
+            span: m.span,
+        });
+    }
+
+    let return_ann =
+        m.value
+            .return_type
+            .as_deref()
+            .ok_or_else(|| ExtractError::ProvidesMissingReturnType {
+                module: module_class.name.clone(),
+                method: method_name.to_owned(),
+                span: m.span,
+            })?;
+    let key = type_annotation_to_key(
+        return_ann,
+        &format!(
+            "@Provides {}.{} return type",
+            module_class.name, method_name
+        ),
+        imports,
+        local_classes,
+    )?;
+    let deps = params_to_keys(
+        &m.value.params.items,
+        &module_class.name,
+        method_name,
+        imports,
+        local_classes,
+    )?;
+    Ok(Binding {
+        key,
+        provider: Provider::ProvidesMethod {
+            module: module_class.clone(),
+            method: method_name.to_owned(),
+        },
+        scope,
+        deps,
+        source: to_ir_span(file_path, m.span),
+    })
+}
+
+fn extract_binds_method(
+    m: &oxc_ast::ast::MethodDefinition<'_>,
+    module_class: &ClassRef,
+    method_name: &str,
+    scope: Scope,
+    imports: &ImportMap,
+    local_classes: &HashSet<&str>,
+    file_path: &str,
+) -> Result<Binding> {
+    if !m.r#static {
+        return Err(ExtractError::BindsNotStatic {
+            module: module_class.name.clone(),
+            method: method_name.to_owned(),
+            span: m.span,
+        });
+    }
+    let return_ann =
+        m.value
+            .return_type
+            .as_deref()
+            .ok_or_else(|| ExtractError::BindsMissingReturnType {
+                module: module_class.name.clone(),
+                method: method_name.to_owned(),
+                span: m.span,
+            })?;
+    let params = m.value.params.items.as_slice();
+    if params.len() != 1 {
+        return Err(ExtractError::BindsWrongArity {
+            module: module_class.name.clone(),
+            method: method_name.to_owned(),
+            count: params.len(),
+            span: m.span,
+        });
+    }
+    let key = type_annotation_to_key(
+        return_ann,
+        &format!("@Binds {}.{} return type", module_class.name, method_name),
+        imports,
+        local_classes,
+    )?;
+    let target_keys = params_to_keys(
+        params,
+        &module_class.name,
+        method_name,
+        imports,
+        local_classes,
+    )?;
+    let target = target_keys.into_iter().next().expect("arity-checked above");
+    Ok(Binding {
+        key,
+        provider: Provider::Binds {
+            target: target.clone(),
+        },
+        scope,
+        deps: vec![target],
+        source: to_ir_span(file_path, m.span),
+    })
 }
 
 fn extract_entry_points(

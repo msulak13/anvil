@@ -261,6 +261,9 @@ fn rewrite_binding(
         | tsdi_core::ir::Provider::ProvidesMethod { module: class, .. } => {
             rewrite_classref(class, resolve_one, discovered)?;
         }
+        tsdi_core::ir::Provider::Binds { target } => {
+            rewrite_key(target, resolve_one, discovered)?;
+        }
     }
     for d in &mut b.deps {
         rewrite_key(d, resolve_one, discovered)?;

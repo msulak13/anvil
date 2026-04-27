@@ -39,7 +39,8 @@ fn write_tsdi_stub(root: &Path) {
          export const Module = (..._: any[]) => {};\n\
          export const Provides = (..._: any[]) => {};\n\
          export const Component = (..._: any[]) => {};\n\
-         export const Singleton = (..._: any[]) => {};\n",
+         export const Singleton = (..._: any[]) => {};\n\
+         export const Binds = (..._: any[]) => {};\n",
     )
     .unwrap();
 }

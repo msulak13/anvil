@@ -13,7 +13,6 @@ Update this page whenever a rule is added, refined, or relaxed.
 | `Duplicate`       | M3             | `DiagnosticKind::Duplicate`           |
 | `ScopeMismatch`   | M3             | `DiagnosticKind::ScopeMismatch`       |
 | `BadMultibinding` | M9 (deferred)  | (not yet)                             |
-| `BadBinds`        | M7 (deferred)  | (not yet)                             |
 
 ## Producing diagnostics
 

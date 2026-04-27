@@ -163,6 +163,13 @@ fn collect_imports(
             Provider::ProvidesMethod { module, .. } => {
                 add_classref_import(&mut imports, out_dir, module);
             }
+            Provider::Binds { .. } => {
+                // The target's class is imported when *its* binding is
+                // visited (Binds always lists target in `deps`, which
+                // the topo walk has already enqueued). The owning
+                // @Module class is abstract, so no static reference is
+                // emitted; nothing to import here.
+            }
         }
     }
     imports
@@ -228,6 +235,14 @@ fn build_ts_source(
             Provider::InjectCtor { class } => format!("new {}({})", class.name, dep_args),
             Provider::ProvidesMethod { module, method } => {
                 format!("{}.{}({})", module.name, method, dep_args)
+            }
+            Provider::Binds { target } => {
+                // Delegate straight to the target's factory. Scope on
+                // the @Binds method itself decides whether the result
+                // is *also* cached on this binding (via the singleton
+                // path below); typically scope is Unscoped and the
+                // target's own scope (if Singleton) does the caching.
+                format!("this.{}()", factory_name(class_name_of(target)))
             }
         };
 
