@@ -26,6 +26,13 @@ pub enum Key {
         /// The exported name as it appears at the declaration site.
         name: String,
     },
+    /// A `Set<T>` multibinding aggregate (M9). Multiple `@IntoSet`
+    /// contributions whose return type is the element type collapse into a
+    /// single binding under this key.
+    Set {
+        /// The element type being collected. Always a [`Key::Class`] in v0.1.
+        element: Box<Key>,
+    },
 }
 
 /// A module path. M1 stores the raw import specifier; M2 normalizes to an
@@ -129,6 +136,45 @@ pub enum Provider {
         /// The implementation key this binding aliases.
         target: Key,
     },
+    /// A synthesized aggregate of `@IntoSet` contributions (M9).
+    ///
+    /// Produced exclusively by the graph aggregator — parsers never emit
+    /// this provider directly. The binding's [`Key`] is `Key::Set { element }`
+    /// and its factory is `new Set<element>([contributors...])`.
+    SetMultibinding {
+        /// One [`SetContributor`] per `@IntoSet @Provides` method that
+        /// targets this set's element type. Order is the source order of
+        /// the contributing modules.
+        contributors: Vec<SetContributor>,
+    },
+}
+
+/// One `@IntoSet @Provides` contribution to a [`Provider::SetMultibinding`].
+#[derive(Clone, Debug)]
+pub struct SetContributor {
+    /// The owning `@Module` class (the contribution is always a `static`
+    /// method on a `@Module` for v0.1).
+    pub module: ClassRef,
+    /// The static method name on the module.
+    pub method: String,
+    /// Keys for the contributor method's parameters.
+    pub deps: Vec<Key>,
+    /// Where the contribution method appears in source.
+    pub source: SourceSpan,
+}
+
+/// Whether a binding participates in a multibinding aggregation.
+///
+/// Set on raw bindings produced by the parser. The graph aggregator folds
+/// every binding with a non-`None` role into a single synthesized binding
+/// (with provider [`Provider::SetMultibinding`]) whose own role is `None`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MultibindRole {
+    /// Regular (non-multibinding) binding.
+    #[default]
+    None,
+    /// Contribution to a `Set<T>` multibinding (M9).
+    IntoSet,
 }
 
 /// A single binding in the dependency graph.
@@ -144,6 +190,11 @@ pub struct Binding {
     pub deps: Vec<Key>,
     /// Where this binding appears in source (used for diagnostics).
     pub source: SourceSpan,
+    /// Whether this binding is a multibinding contribution (M9). Always
+    /// [`MultibindRole::None`] on the synthesized aggregate produced by the
+    /// graph layer; [`MultibindRole::IntoSet`] on raw `@IntoSet`
+    /// contributions emitted by the parser.
+    pub role: MultibindRole,
 }
 
 /// A `@Module` declaration: a class hosting `@Provides` factory methods.

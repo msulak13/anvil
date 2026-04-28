@@ -10,8 +10,8 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 use tsdi_core::ir::{
-    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, ModulePath, Provider, Scope,
-    SourceSpan, SubcomponentDecl,
+    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, ModulePath, MultibindRole,
+    Provider, Scope, SourceSpan, SubcomponentDecl,
 };
 
 use tsdi_codegen::emit_component;
@@ -61,6 +61,7 @@ fn emit_simple_provides_module() {
                 scope: Scope::Unscoped,
                 deps: vec![],
                 source: span_of(&mod_path),
+                role: MultibindRole::None,
             },
             Binding {
                 key: pump_key.clone(),
@@ -71,6 +72,7 @@ fn emit_simple_provides_module() {
                 scope: Scope::Unscoped,
                 deps: vec![heater_key.clone()],
                 source: span_of(&mod_path),
+                role: MultibindRole::None,
             },
         ],
         source: span_of(&mod_path),
@@ -123,6 +125,7 @@ fn emit_inject_ctor_chain() {
             scope: Scope::Unscoped,
             deps: vec![],
             source: span_of(&heater_path),
+            role: MultibindRole::None,
         },
         Binding {
             key: pump_key.clone(),
@@ -132,6 +135,7 @@ fn emit_inject_ctor_chain() {
             scope: Scope::Unscoped,
             deps: vec![heater_key.clone()],
             source: span_of(&pump_path),
+            role: MultibindRole::None,
         },
     ];
 
@@ -177,6 +181,7 @@ fn emit_singleton_caches_via_lazy_field() {
             scope: Scope::Singleton,
             deps: vec![],
             source: span_of(&heater_path),
+            role: MultibindRole::None,
         },
         Binding {
             key: pump_key.clone(),
@@ -186,6 +191,7 @@ fn emit_singleton_caches_via_lazy_field() {
             scope: Scope::Unscoped,
             deps: vec![heater_key.clone()],
             source: span_of(&pump_path),
+            role: MultibindRole::None,
         },
     ];
 
@@ -243,6 +249,7 @@ fn emit_binds_alias_delegates_to_target() {
             scope: Scope::Unscoped,
             deps: vec![electric_key.clone()],
             source: span_of(&mod_path),
+            role: MultibindRole::None,
         }],
         source: span_of(&mod_path),
     };
@@ -255,6 +262,7 @@ fn emit_binds_alias_delegates_to_target() {
         scope: Scope::Unscoped,
         deps: vec![],
         source: span_of(&electric_path),
+        role: MultibindRole::None,
     }];
 
     let component = ComponentDecl {
@@ -305,6 +313,7 @@ fn emit_subcomponent_with_inherited_dep_and_local_factory() {
             scope: Scope::Singleton,
             deps: vec![],
             source: span_of(&heater_path),
+            role: MultibindRole::None,
         },
         Binding {
             key: pump_key.clone(),
@@ -314,6 +323,7 @@ fn emit_subcomponent_with_inherited_dep_and_local_factory() {
             scope: Scope::Unscoped,
             deps: vec![heater_key.clone()],
             source: span_of(&pump_path),
+            role: MultibindRole::None,
         },
     ];
 
@@ -349,6 +359,70 @@ fn emit_subcomponent_with_inherited_dep_and_local_factory() {
     };
 
     let out = emit_component(&app, &[], &inject_classes, &[request_sub], "0.0.1").unwrap();
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn emit_into_set_aggregates_contributions() {
+    // Two @IntoSet @Provides contributions to Set<Plugin>. Emitter should
+    // produce a single getSetOfPlugin() factory returning
+    // `new Set([PluginsModule.auth(), PluginsModule.logging()])`.
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let comp_path: String = root.join("app-component.ts").to_string_lossy().into_owned();
+    let mod_path: String = root
+        .join("plugins-module.ts")
+        .to_string_lossy()
+        .into_owned();
+    let plugin_path: String = root.join("plugin.ts").to_string_lossy().into_owned();
+
+    let plugin_key = class_key(&plugin_path, "Plugin");
+    let set_plugin_key = Key::Set {
+        element: Box::new(plugin_key.clone()),
+    };
+
+    let module = ModuleDecl {
+        class: class_ref(&mod_path, "PluginsModule"),
+        provides: vec![
+            Binding {
+                key: plugin_key.clone(),
+                provider: Provider::ProvidesMethod {
+                    module: class_ref(&mod_path, "PluginsModule"),
+                    method: "auth".into(),
+                },
+                scope: Scope::Unscoped,
+                deps: vec![],
+                source: span_of(&mod_path),
+                role: MultibindRole::IntoSet,
+            },
+            Binding {
+                key: plugin_key.clone(),
+                provider: Provider::ProvidesMethod {
+                    module: class_ref(&mod_path, "PluginsModule"),
+                    method: "logging".into(),
+                },
+                scope: Scope::Unscoped,
+                deps: vec![],
+                source: span_of(&mod_path),
+                role: MultibindRole::IntoSet,
+            },
+        ],
+        source: span_of(&mod_path),
+    };
+
+    let component = ComponentDecl {
+        class: class_ref(&comp_path, "App"),
+        modules: vec![class_ref(&mod_path, "PluginsModule")],
+        scope: Scope::Unscoped,
+        entry_points: vec![EntryPoint {
+            name: "plugins".into(),
+            key: set_plugin_key,
+            source: span_of(&comp_path),
+        }],
+        source: span_of(&comp_path),
+    };
+
+    let out = emit_component(&component, &[module], &[], &[], "0.0.1").unwrap();
     insta::assert_snapshot!(out);
 }
 

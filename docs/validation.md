@@ -12,7 +12,8 @@ Update this page whenever a rule is added, refined, or relaxed.
 | `Cycle`           | M3             | `DiagnosticKind::Cycle`               |
 | `Duplicate`       | M3             | `DiagnosticKind::Duplicate`           |
 | `ScopeMismatch`   | M3             | `DiagnosticKind::ScopeMismatch`       |
-| `BadMultibinding` | M9 (deferred)  | (not yet)                             |
+
+Multibinding-specific validation (`@IntoSet` on `@Binds` or with no `@Provides`) is enforced by the parser as `ExtractError::IntoSetWithoutProvides` rather than as a graph diagnostic — it's a structural problem, not a graph problem.
 
 ## Producing diagnostics
 
@@ -98,7 +99,7 @@ error: duplicate binding for Heater
 ```
 
 ### Detection
-While collecting bindings into the graph (`aggregate_bindings`), each `Key` records the spans of every contributor in a `HashMap<Key, Vec<SourceSpan>>`. Any key with > 1 source produces one `Duplicate` diagnostic listing all sites. Multibindings (`@IntoSet` / `@IntoMap`) bypass this rule once implemented (M9).
+While collecting bindings into the graph (`aggregate_bindings`), each `Key` records the spans of every contributor in a `HashMap<Key, Vec<SourceSpan>>`. Any key with > 1 source produces one `Duplicate` diagnostic listing all sites. **Multibindings (`@IntoSet`) bypass this rule** (M9): raw bindings carrying `MultibindRole::IntoSet` are routed through a separate aggregation map and never enter the duplicate-tracking `sources_for_key`. Multiple `@IntoSet` contributions to the same element type are intentional, not duplicates.
 
 ## `ScopeMismatch`
 

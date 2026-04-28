@@ -108,20 +108,51 @@ pub fn emit_component(
     Ok(output)
 }
 
-/// Return the class name from a `Key`. v0.1 only has `Key::Class`.
-fn class_name_of(key: &Key) -> &str {
-    let Key::Class { name, .. } = key;
-    name
+fn key_module(key: &Key) -> &str {
+    match key {
+        Key::Class { module, .. } => &module.0,
+        Key::Set { element } => key_module(element),
+    }
 }
 
-fn key_module(key: &Key) -> &str {
-    let Key::Class { module, .. } = key;
-    &module.0
+/// TypeScript type-string for a [`Key`]: `"Heater"` for [`Key::Class`] and
+/// `"Set<Heater>"` for [`Key::Set`]. Used in factory return-type annotations
+/// and entry-point return types.
+fn type_string_of(key: &Key) -> String {
+    match key {
+        Key::Class { name, .. } => name.clone(),
+        Key::Set { element } => format!("Set<{}>", type_string_of(element)),
+    }
+}
+
+/// `Heater` → `getHeater`. `Set<Plugin>` → `getSetOfPlugin`.
+fn factory_name_for(key: &Key) -> String {
+    match key {
+        Key::Class { name, .. } => format!("get{name}"),
+        Key::Set { element } => format!("getSetOf{}", element_label(element)),
+    }
+}
+
+/// `Heater` → `_heater`. `Set<Plugin>` → `_setOfPlugin`.
+fn cache_field_for(key: &Key) -> String {
+    match key {
+        Key::Class { name, .. } => cache_field_name(name),
+        Key::Set { element } => format!("_setOf{}", element_label(element)),
+    }
+}
+
+/// Camel-cased label used inside `Set<T>`-derived identifiers.
+/// `Plugin` → `Plugin`; `Set<Plugin>` (nested) → `SetOfPlugin`.
+fn element_label(key: &Key) -> String {
+    match key {
+        Key::Class { name, .. } => name.clone(),
+        Key::Set { element } => format!("SetOf{}", element_label(element)),
+    }
 }
 
 /// Stable comparison key for ties: `"Name@module"`.
 fn lex_key(k: &Key) -> String {
-    format!("{}@{}", class_name_of(k), key_module(k))
+    format!("{}@{}", type_string_of(k), key_module(k))
 }
 
 /// Deps-first topological order, with lexicographic tie-break, computed by
@@ -166,13 +197,37 @@ fn populate_imports(
 ) {
     for k in topo {
         let b = &graph.bindings[k];
-        let key_classref = ClassRef {
-            module: match &b.key {
-                Key::Class { module, .. } => module.clone(),
-            },
-            name: class_name_of(&b.key).to_owned(),
-        };
-        add_classref_import(imports, out_dir, &key_classref);
+        // The Set<T> type itself is a built-in — no import needed for the
+        // outer key. The element class is reachable via the contributors'
+        // module imports below (and as a Key::Class binding elsewhere if
+        // any). For Key::Class we import the bound class itself.
+        match &b.key {
+            Key::Class { module, name } => {
+                add_classref_import(
+                    imports,
+                    out_dir,
+                    &ClassRef {
+                        module: module.clone(),
+                        name: name.clone(),
+                    },
+                );
+            }
+            Key::Set { element } => {
+                // Make sure the element type is importable so the
+                // `Set<Element>` type annotation type-checks even when no
+                // Class binding for the element exists in this graph.
+                if let Key::Class { module, name } = element.as_ref() {
+                    add_classref_import(
+                        imports,
+                        out_dir,
+                        &ClassRef {
+                            module: module.clone(),
+                            name: name.clone(),
+                        },
+                    );
+                }
+            }
+        }
         match &b.provider {
             Provider::InjectCtor { class } => {
                 add_classref_import(imports, out_dir, class);
@@ -186,6 +241,11 @@ fn populate_imports(
                 // the topo walk has already enqueued). The owning
                 // @Module class is abstract, so no static reference is
                 // emitted; nothing to import here.
+            }
+            Provider::SetMultibinding { contributors } => {
+                for c in contributors {
+                    add_classref_import(imports, out_dir, &c.module);
+                }
             }
         }
     }
@@ -308,16 +368,16 @@ fn emit_class_body(
     for k in topo {
         let b = &graph.bindings[k];
         if matches!(b.scope, Scope::Singleton) {
-            let class_name = class_name_of(k);
-            let field = cache_field_name(class_name);
-            writeln!(s, "  private {field}: {class_name} | undefined;").expect("write to String");
+            let type_string = type_string_of(k);
+            let field = cache_field_for(k);
+            writeln!(s, "  private {field}: {type_string} | undefined;").expect("write to String");
         }
     }
 
     for k in topo {
         let b = &graph.bindings[k];
-        let class_name = class_name_of(k);
-        let factory = factory_name(class_name);
+        let type_string = type_string_of(k);
+        let factory = factory_name_for(k);
         let dep_args = b
             .deps
             .iter()
@@ -338,10 +398,29 @@ fn emit_class_body(
                 // target's own scope (if Singleton) does the caching.
                 dep_call(target, graph, parent_dagger)
             }
+            Provider::SetMultibinding { contributors } => {
+                // `new Set([m1.foo(...), m2.bar(...)])`. Each contributor
+                // owns its own argument list (its `deps`), so we emit
+                // per-contributor calls rather than a single shared dep
+                // string.
+                let parts: Vec<String> = contributors
+                    .iter()
+                    .map(|c| {
+                        let args = c
+                            .deps
+                            .iter()
+                            .map(|d| dep_call(d, graph, parent_dagger))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("{}.{}({})", c.module.name, c.method, args)
+                    })
+                    .collect();
+                format!("new Set([{}])", parts.join(", "))
+            }
         };
 
         let return_stmt = if matches!(b.scope, Scope::Singleton) {
-            let field = cache_field_name(class_name);
+            let field = cache_field_for(k);
             format!("return this.{field} ??= {body_expr}")
         } else {
             format!("return {body_expr}")
@@ -354,7 +433,7 @@ fn emit_class_body(
         };
         writeln!(
             s,
-            "  {visibility}{factory}(): {class_name} {{ {return_stmt}; }}"
+            "  {visibility}{factory}(): {type_string} {{ {return_stmt}; }}"
         )
         .expect("write to String");
     }
@@ -364,14 +443,14 @@ fn emit_class_body(
             // Skip — handled below as a subcomponent factory.
             continue;
         }
-        let class_name = class_name_of(&ep.key);
-        let factory = factory_name(class_name);
+        let type_string = type_string_of(&ep.key);
+        let factory = factory_name_for(&ep.key);
         let body = if graph.inherited_keys.contains(&ep.key) {
             format!("this.parent.{factory}()")
         } else {
             format!("this.{factory}()")
         };
-        writeln!(s, "  {}(): {} {{ return {}; }}", ep.name, class_name, body)
+        writeln!(s, "  {}(): {} {{ return {}; }}", ep.name, type_string, body)
             .expect("write to String");
     }
 
@@ -393,18 +472,12 @@ fn emit_class_body(
 /// Inherited keys (only meaningful when `parent_dagger` is `Some`) route
 /// through `this.parent.<getDep>()`; everything else uses `this.<getDep>()`.
 fn dep_call(dep: &Key, graph: &DependencyGraph, parent_dagger: Option<&str>) -> String {
-    let factory = factory_name(class_name_of(dep));
+    let factory = factory_name_for(dep);
     if parent_dagger.is_some() && graph.inherited_keys.contains(dep) {
         format!("this.parent.{factory}()")
     } else {
         format!("this.{factory}()")
     }
-}
-
-/// `Heater` → `getHeater`. The class name is already `UpperCamel` by TS
-/// convention, so we just prefix `get`.
-fn factory_name(class_name: &str) -> String {
-    format!("get{class_name}")
 }
 
 /// `Heater` → `_heater`. Used for the lazy-cache private field on
@@ -490,7 +563,25 @@ mod tests {
 
     #[test]
     fn factory_name_prefixes_get() {
-        assert_eq!(factory_name("Heater"), "getHeater");
+        let key = Key::Class {
+            module: tsdi_core::ir::ModulePath("/p/Heater.ts".to_owned()),
+            name: "Heater".to_owned(),
+        };
+        assert_eq!(factory_name_for(&key), "getHeater");
+    }
+
+    #[test]
+    fn factory_name_for_set_uses_set_of_prefix() {
+        let element = Key::Class {
+            module: tsdi_core::ir::ModulePath("/p/Plugin.ts".to_owned()),
+            name: "Plugin".to_owned(),
+        };
+        let key = Key::Set {
+            element: Box::new(element),
+        };
+        assert_eq!(factory_name_for(&key), "getSetOfPlugin");
+        assert_eq!(cache_field_for(&key), "_setOfPlugin");
+        assert_eq!(type_string_of(&key), "Set<Plugin>");
     }
 
     #[test]

@@ -63,15 +63,17 @@ fn collect_bindings(ir: &ProjectIr) -> HashMap<Key, Binding> {
     out
 }
 
-fn key_name_of(k: &Key) -> &str {
+fn key_name_of(k: &Key) -> String {
     match k {
-        Key::Class { name, .. } => name.as_str(),
+        Key::Class { name, .. } => name.clone(),
+        Key::Set { element } => format!("Set<{}>", key_name_of(element)),
     }
 }
 
 fn key_module(k: &Key) -> &str {
     match k {
         Key::Class { module, .. } => module.0.as_str(),
+        Key::Set { element } => key_module(element),
     }
 }
 
@@ -80,6 +82,7 @@ fn provider_label(p: &Provider) -> &'static str {
         Provider::InjectCtor { .. } => "InjectCtor",
         Provider::ProvidesMethod { .. } => "ProvidesMethod",
         Provider::Binds { .. } => "Binds",
+        Provider::SetMultibinding { .. } => "SetMultibinding",
     }
 }
 

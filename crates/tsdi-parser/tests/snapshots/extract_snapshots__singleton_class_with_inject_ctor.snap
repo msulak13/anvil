@@ -30,6 +30,7 @@ ParsedFile {
                 start: 129,
                 end: 145,
             },
+            role: None,
         },
     ],
 }

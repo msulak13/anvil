@@ -128,8 +128,10 @@ pub enum DiagnosticKind {
 /// Compact display form for a [`Key`] used inside diagnostic messages.
 #[must_use]
 pub fn key_display(key: &Key) -> String {
-    let Key::Class { module, name } = key;
-    format!("{name}@{}", module.0)
+    match key {
+        Key::Class { module, name } => format!("{name}@{}", module.0),
+        Key::Set { element } => format!("Set<{}>", key_display(element)),
+    }
 }
 
 /// Wrapper that lets a [`Diagnostic`] participate in the `Result`/`?` flow

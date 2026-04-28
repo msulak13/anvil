@@ -1,0 +1,45 @@
+---
+source: crates/tsdi-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "app.ts",
+    modules: [],
+    components: [
+        ComponentDecl {
+            class: ClassRef {
+                module: ModulePath(
+                    "<self>",
+                ),
+                name: "App",
+            },
+            modules: [],
+            scope: Unscoped,
+            entry_points: [
+                EntryPoint {
+                    name: "plugins",
+                    key: Set {
+                        element: Class {
+                            module: ModulePath(
+                                "./plugin",
+                            ),
+                            name: "Plugin",
+                        },
+                    },
+                    source: SourceSpan {
+                        path: "app.ts",
+                        start: 171,
+                        end: 203,
+                    },
+                },
+            ],
+            source: SourceSpan {
+                path: "app.ts",
+                start: 138,
+                end: 213,
+            },
+        },
+    ],
+    subcomponents: [],
+    inject_classes: [],
+}

@@ -36,6 +36,7 @@ ParsedFile {
                         start: 356,
                         end: 420,
                     },
+                    role: None,
                 },
             ],
             source: SourceSpan {
@@ -109,6 +110,7 @@ ParsedFile {
                 start: 158,
                 end: 174,
             },
+            role: None,
         },
         Binding {
             key: Class {
@@ -139,6 +141,7 @@ ParsedFile {
                 start: 242,
                 end: 280,
             },
+            role: None,
         },
     ],
 }

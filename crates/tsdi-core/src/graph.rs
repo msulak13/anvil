@@ -30,8 +30,8 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::ir::{
-    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, Provider, Scope, SourceSpan,
-    SubcomponentDecl,
+    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, MultibindRole, Provider, Scope,
+    SetContributor, SourceSpan, SubcomponentDecl,
 };
 use crate::validate::{Diagnostic, DiagnosticKind, Label};
 
@@ -148,12 +148,16 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
     let mut subcomponent_factories: Vec<SubcomponentFactory> = Vec::new();
     for ep in &input.component.entry_points {
         // Is this entry point a subcomponent factory?
-        let Key::Class { module, name } = &ep.key;
-        let cr = ClassRef {
-            module: module.clone(),
-            name: name.clone(),
+        let sub_match = if let Key::Class { module, name } = &ep.key {
+            let cr = ClassRef {
+                module: module.clone(),
+                name: name.clone(),
+            };
+            sub_by_classref.get(&cr).copied()
+        } else {
+            None
         };
-        if let Some(sub) = sub_by_classref.get(&cr) {
+        if let Some(sub) = sub_match {
             let (child_graph, child_diags) = build_child_graph(
                 sub,
                 input.modules,
@@ -301,6 +305,10 @@ fn aggregate_bindings(
 ) -> (HashMap<Key, Binding>, Vec<Diagnostic>) {
     let mut bindings: HashMap<Key, Binding> = HashMap::new();
     let mut sources_for_key: HashMap<Key, Vec<SourceSpan>> = HashMap::new();
+    // M9: pending @IntoSet contributions, keyed by element type. After the
+    // raw-binding pass we synthesize one `Provider::SetMultibinding` per
+    // entry under `Key::Set { element }`.
+    let mut set_contribs: HashMap<Key, (Vec<SetContributor>, Scope, SourceSpan)> = HashMap::new();
     let component_modules: HashSet<&ClassRef> = own_modules.iter().collect();
     let inherits = |k: &Key| parent_bindings.is_some_and(|p| p.contains_key(k));
 
@@ -309,6 +317,10 @@ fn aggregate_bindings(
             continue;
         }
         for b in &m.provides {
+            if matches!(b.role, MultibindRole::IntoSet) {
+                collect_set_contributor(b, &mut set_contribs);
+                continue;
+            }
             if inherits(&b.key) {
                 continue;
             }
@@ -316,10 +328,45 @@ fn aggregate_bindings(
         }
     }
     for b in inject_classes {
+        // @Inject self-bindings can't carry @IntoSet in v0.1, but be
+        // defensive and route them anyway so the IR shape stays consistent.
+        if matches!(b.role, MultibindRole::IntoSet) {
+            collect_set_contributor(b, &mut set_contribs);
+            continue;
+        }
         if inherits(&b.key) {
             continue;
         }
         register_binding(b, &mut bindings, &mut sources_for_key);
+    }
+
+    // Synthesize one Provider::SetMultibinding per element type. Multiple
+    // contributions to the same Set<T> are intentional, not duplicates.
+    for (set_key, (contributors, scope, source)) in set_contribs {
+        if inherits(&set_key) {
+            continue;
+        }
+        // Union of every contributor's deps; ordering doesn't matter for
+        // graph semantics, but stable insertion order keeps codegen
+        // deterministic.
+        let mut deps: Vec<Key> = Vec::new();
+        let mut seen: HashSet<Key> = HashSet::new();
+        for c in &contributors {
+            for d in &c.deps {
+                if seen.insert(d.clone()) {
+                    deps.push(d.clone());
+                }
+            }
+        }
+        let synth = Binding {
+            key: set_key.clone(),
+            provider: Provider::SetMultibinding { contributors },
+            scope,
+            deps,
+            source: source.clone(),
+            role: MultibindRole::None,
+        };
+        bindings.insert(set_key, synth);
     }
 
     let mut diagnostics = Vec::new();
@@ -346,6 +393,36 @@ fn aggregate_bindings(
     }
 
     (bindings, diagnostics)
+}
+
+/// Append a contributor record to the pending multibinding map under the
+/// `Key::Set { element: <binding.key> }` aggregate. Validates the binding's
+/// provider shape — only `Provider::ProvidesMethod` is supported in v0.1
+/// (the parser already rejected `@IntoSet` on `@Binds` / `@Inject`).
+fn collect_set_contributor(
+    b: &Binding,
+    set_contribs: &mut HashMap<Key, (Vec<SetContributor>, Scope, SourceSpan)>,
+) {
+    let Provider::ProvidesMethod { module, method } = &b.provider else {
+        // The parser is responsible for ensuring this; skip silently if it
+        // ever gets through. The graph would surface the binding as a
+        // missing key for whoever requested Set<T>, which is acceptable
+        // best-effort behavior.
+        return;
+    };
+    let element_key = b.key.clone();
+    let set_key = Key::Set {
+        element: Box::new(element_key),
+    };
+    let entry = set_contribs
+        .entry(set_key)
+        .or_insert_with(|| (Vec::new(), b.scope, b.source.clone()));
+    entry.0.push(SetContributor {
+        module: module.clone(),
+        method: method.clone(),
+        deps: b.deps.clone(),
+        source: b.source.clone(),
+    });
 }
 
 /// Build the petgraph DAG over `bindings` and return any missing-dep
@@ -467,6 +544,7 @@ fn missing_for_dep(missing: Key, requested_by: Key, binding: &Binding) -> Diagno
         Provider::InjectCtor { .. } => "@Inject ctor",
         Provider::ProvidesMethod { .. } => "@Provides method",
         Provider::Binds { .. } => "@Binds method",
+        Provider::SetMultibinding { .. } => "@IntoSet aggregate",
     };
     Diagnostic {
         kind: DiagnosticKind::MissingBinding {
@@ -516,6 +594,7 @@ mod tests {
             scope,
             deps,
             source: span(name, 0),
+            role: MultibindRole::None,
         }
     }
 
@@ -529,6 +608,7 @@ mod tests {
             scope,
             deps,
             source: span(module_name, 100),
+            role: MultibindRole::None,
         }
     }
 

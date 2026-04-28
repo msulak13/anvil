@@ -189,3 +189,41 @@ export function Singleton<T extends abstract new (...args: never[]) => unknown>(
 ): T {
   return target;
 }
+
+/**
+ * Marks an `@Provides` method as a contribution to a `Set<T>` multibinding,
+ * where `T` is the method's return type. The codegen aggregates every
+ * contribution to the same element type into a single factory that returns
+ * a `Set<T>` populated with each contributor's result.
+ *
+ * Multiple `@IntoSet` contributions to the same element type are not
+ * duplicates — they are intentionally collected. A consumer requests the
+ * aggregate by typing a parameter or entry-point return as `Set<T>`.
+ *
+ * Must be combined with `@Provides` (not `@Binds` or `@Inject`) for v0.1.
+ *
+ * @example
+ * ```ts
+ * import { Module, Provides, IntoSet, Component } from "tsdi";
+ *
+ * @Module
+ * export class PluginsModule {
+ *   @Provides @IntoSet
+ *   static auth(): Plugin { return new AuthPlugin(); }
+ *
+ *   @Provides @IntoSet
+ *   static logging(): Plugin { return new LoggingPlugin(); }
+ * }
+ *
+ * @Component({ modules: [PluginsModule] })
+ * export abstract class App {
+ *   abstract plugins(): Set<Plugin>;
+ * }
+ * ```
+ */
+export function IntoSet<This, Args extends readonly unknown[], Return>(
+  target: (this: This, ...args: Args) => Return,
+  _ctx: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,
+): (this: This, ...args: Args) => Return {
+  return target;
+}

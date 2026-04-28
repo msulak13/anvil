@@ -42,6 +42,7 @@ ParsedFile {
                         start: 215,
                         end: 286,
                     },
+                    role: None,
                 },
             ],
             source: SourceSpan {

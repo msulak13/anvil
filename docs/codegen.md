@@ -141,6 +141,63 @@ export class DaggerRequestComponent extends RequestComponent {
 
 **Limitations (v0.2 / M8)**: no factory parameters on the subcomponent factory method, no nested subcomponents, no custom scope tags. A future milestone will add these.
 
+## `@IntoSet` multibindings (M9)
+
+For a component that includes one or more `@IntoSet @Provides` contributions to the same element type, the emitter aggregates them into a single factory method:
+
+```ts
+// User code
+@Module
+export class PluginsModule {
+  @IntoSet @Provides static auth(): Plugin    { return new AuthPlugin(); }
+  @IntoSet @Provides static logging(): Plugin { return new LoggingPlugin(); }
+}
+@Component({ modules: [PluginsModule] })
+export abstract class App {
+  abstract plugins(): Set<Plugin>;
+}
+```
+
+```ts
+// Emitted
+export class DaggerApp extends App {
+  private getSetOfPlugin(): Set<Plugin> {
+    return new Set([PluginsModule.auth(), PluginsModule.logging()]);
+  }
+  plugins(): Set<Plugin> { return this.getSetOfPlugin(); }
+  static create(): App { return new DaggerApp(); }
+}
+```
+
+### Naming for `Key::Set`
+
+| Item             | `Key::Class { name: "Plugin" }` | `Key::Set { element: Plugin }` |
+| ---------------- | ------------------------------- | ------------------------------ |
+| Type annotation  | `Plugin`                        | `Set<Plugin>`                  |
+| Factory method   | `getPlugin`                     | `getSetOfPlugin`               |
+| Cache field      | `_plugin`                       | `_setOfPlugin`                 |
+
+### Singleton on multibindings
+
+`@Singleton @IntoSet @Provides ...` is honored at the *aggregate* level — the synthesized `Set<T>` is itself cached once, exactly like any other `Singleton` binding:
+
+```ts
+private _setOfPlugin: Set<Plugin> | undefined;
+private getSetOfPlugin(): Set<Plugin> {
+  return this._setOfPlugin ??= new Set([...]);
+}
+```
+
+The scope of each individual contributor is independent: a `@Singleton @Inject` instance referenced as a contributor's dep still routes through that target's own cache.
+
+### Per-contributor argument lists
+
+Each contributor owns its own `deps`, so the emitter does **not** share a single dep-args string across contributors. The body is `new Set([Mod1.foo(this.getX()), Mod2.bar(this.getY(), this.getZ())])` — each contributor renders independently.
+
+### Imports
+
+The aggregate `Set<T>` does not require importing anything (it's a built-in). The element class is imported (so the `Set<Element>` type annotation is in scope) along with each contributor's owning `@Module` class. There is no provider class for the aggregate itself.
+
 ## Output ordering
 
 Methods are emitted in **topological order with stable ties broken by `Key` lexicographic order**, so two identical inputs produce byte-identical outputs. This stability matters for `insta` snapshots and for `git diff` under watch mode.

@@ -20,8 +20,8 @@ use oxc_ast::ast::{
 };
 use oxc_span::Span;
 use tsdi_core::ir::{
-    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, ModulePath, ParsedFile,
-    Provider, Scope, SourceSpan, SubcomponentDecl,
+    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, ModulePath, MultibindRole,
+    ParsedFile, Provider, Scope, SourceSpan, SubcomponentDecl,
 };
 
 use crate::imports::{ImportMap, ImportSource};
@@ -154,6 +154,17 @@ pub enum ExtractError {
         /// Source span.
         span: Span,
     },
+    /// `@IntoSet` was placed on something other than a `@Provides` method
+    /// (in v0.1, e.g. a `@Binds` method or a method with no provider decorator).
+    #[error("@IntoSet on '{module}.{method}' is only supported on @Provides methods in v0.1")]
+    IntoSetWithoutProvides {
+        /// Containing module class name.
+        module: String,
+        /// Method name.
+        method: String,
+        /// Source span.
+        span: Span,
+    },
 }
 
 /// Result of extraction.
@@ -168,6 +179,7 @@ const KNOWN_DECORATOR_NAMES: &[&str] = &[
     "Component",
     "Subcomponent",
     "Singleton",
+    "IntoSet",
 ];
 
 /// Convert an `oxc_span::Span` into the parser-agnostic `SourceSpan` carried
@@ -290,6 +302,7 @@ pub fn extract(
                 scope,
                 deps,
                 source: to_ir_span(file_path, binding_span),
+                role: MultibindRole::None,
             });
         }
     }
@@ -344,6 +357,7 @@ fn extract_provides(
         let decorator_names: Vec<&str> = m.decorators.iter().filter_map(decorator_name).collect();
         let has_provides = decorator_names.contains(&"Provides");
         let has_binds = decorator_names.contains(&"Binds");
+        let has_into_set = decorator_names.contains(&"IntoSet");
         if !has_provides && !has_binds {
             continue;
         }
@@ -358,10 +372,25 @@ fn extract_provides(
             });
         }
 
+        // M9: @IntoSet is only supported on @Provides methods in v0.1.
+        if has_into_set && !has_provides {
+            return Err(ExtractError::IntoSetWithoutProvides {
+                module: module_class.name.clone(),
+                method: method_name,
+                span: m.span,
+            });
+        }
+
         let scope = if decorator_names.contains(&"Singleton") {
             Scope::Singleton
         } else {
             Scope::Unscoped
+        };
+
+        let role = if has_into_set {
+            MultibindRole::IntoSet
+        } else {
+            MultibindRole::None
         };
 
         let binding = if has_binds {
@@ -380,6 +409,7 @@ fn extract_provides(
                 module_class,
                 &method_name,
                 scope,
+                role,
                 imports,
                 local_classes,
                 file_path,
@@ -390,11 +420,13 @@ fn extract_provides(
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn extract_provides_method(
     m: &oxc_ast::ast::MethodDefinition<'_>,
     module_class: &ClassRef,
     method_name: &str,
     scope: Scope,
+    role: MultibindRole,
     imports: &ImportMap,
     local_classes: &HashSet<&str>,
     file_path: &str,
@@ -441,6 +473,7 @@ fn extract_provides_method(
         scope,
         deps,
         source: to_ir_span(file_path, m.span),
+        role,
     })
 }
 
@@ -500,6 +533,7 @@ fn extract_binds_method(
         scope,
         deps: vec![target],
         source: to_ir_span(file_path, m.span),
+        role: MultibindRole::None,
     })
 }
 
@@ -628,12 +662,6 @@ fn type_annotation_to_key(
             span: ann.span,
         });
     };
-    if tref.type_arguments.is_some() {
-        return Err(ExtractError::UnsupportedType {
-            context: context.to_owned(),
-            span: ann.span,
-        });
-    }
     let oxc_ast::ast::TSTypeName::IdentifierReference(id) = &tref.type_name else {
         return Err(ExtractError::UnsupportedType {
             context: context.to_owned(),
@@ -641,6 +669,60 @@ fn type_annotation_to_key(
         });
     };
     let name = id.name.as_str();
+    // M9: special-case `Set<T>` as the multibinding aggregate key. The element
+    // type is recursively parsed.
+    if let Some(args) = tref.type_arguments.as_deref() {
+        if name == "Set" && args.params.len() == 1 {
+            let inner = args.params.first().expect("len 1");
+            let element = ts_type_to_key(inner, context, imports, local_classes, ann.span)?;
+            return Ok(Key::Set {
+                element: Box::new(element),
+            });
+        }
+        return Err(ExtractError::UnsupportedType {
+            context: context.to_owned(),
+            span: ann.span,
+        });
+    }
+    Ok(resolve_name_to_key(name, imports, local_classes))
+}
+
+/// Lower a bare `TSType` (the element of `Set<T>`) into a [`Key`]. Mirrors
+/// [`type_annotation_to_key`] but operates on the inner type-parameter slot
+/// where there is no surrounding [`TSTypeAnnotation`].
+fn ts_type_to_key(
+    ty: &TSType<'_>,
+    context: &str,
+    imports: &ImportMap,
+    local_classes: &HashSet<&str>,
+    fallback_span: Span,
+) -> Result<Key> {
+    let TSType::TSTypeReference(tref) = ty else {
+        return Err(ExtractError::UnsupportedType {
+            context: context.to_owned(),
+            span: fallback_span,
+        });
+    };
+    let oxc_ast::ast::TSTypeName::IdentifierReference(id) = &tref.type_name else {
+        return Err(ExtractError::UnsupportedType {
+            context: context.to_owned(),
+            span: fallback_span,
+        });
+    };
+    let name = id.name.as_str();
+    if let Some(args) = tref.type_arguments.as_deref() {
+        if name == "Set" && args.params.len() == 1 {
+            let inner = args.params.first().expect("len 1");
+            let element = ts_type_to_key(inner, context, imports, local_classes, fallback_span)?;
+            return Ok(Key::Set {
+                element: Box::new(element),
+            });
+        }
+        return Err(ExtractError::UnsupportedType {
+            context: context.to_owned(),
+            span: fallback_span,
+        });
+    }
     Ok(resolve_name_to_key(name, imports, local_classes))
 }
 
@@ -737,14 +819,25 @@ fn parse_component_modules(
             };
             let name = id.name.as_str();
             let key = resolve_name_to_key(name, imports, local_classes);
-            let Key::Class {
-                module,
-                name: exported,
-            } = key;
-            modules.push(ClassRef {
-                module,
-                name: exported,
-            });
+            // `resolve_name_to_key` always yields a `Key::Class`; module
+            // identifiers are class identifiers by construction. Anything
+            // else here would be a parser bug.
+            match key {
+                Key::Class {
+                    module,
+                    name: exported,
+                } => modules.push(ClassRef {
+                    module,
+                    name: exported,
+                }),
+                Key::Set { .. } => {
+                    return Err(ExtractError::ComponentBadModules {
+                        kind,
+                        class: class_name.to_owned(),
+                        span: arr.span,
+                    });
+                }
+            }
         }
     }
     let _ = saw_modules_key; // missing `modules:` is allowed (treated as empty)

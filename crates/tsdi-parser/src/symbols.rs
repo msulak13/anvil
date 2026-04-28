@@ -275,6 +275,14 @@ fn rewrite_binding(
         tsdi_core::ir::Provider::Binds { target } => {
             rewrite_key(target, resolve_one, discovered)?;
         }
+        tsdi_core::ir::Provider::SetMultibinding { contributors } => {
+            for c in contributors {
+                rewrite_classref(&mut c.module, resolve_one, discovered)?;
+                for d in &mut c.deps {
+                    rewrite_key(d, resolve_one, discovered)?;
+                }
+            }
+        }
     }
     for d in &mut b.deps {
         rewrite_key(d, resolve_one, discovered)?;
@@ -287,8 +295,10 @@ fn rewrite_key(
     resolve_one: &mut impl FnMut(&mut ModulePath, &mut Vec<PathBuf>) -> Result<(), SymbolError>,
     discovered: &mut Vec<PathBuf>,
 ) -> Result<(), SymbolError> {
-    let Key::Class { module, .. } = key;
-    resolve_one(module, discovered)
+    match key {
+        Key::Class { module, .. } => resolve_one(module, discovered),
+        Key::Set { element } => rewrite_key(element, resolve_one, discovered),
+    }
 }
 
 fn rewrite_classref(

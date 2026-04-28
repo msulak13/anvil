@@ -63,7 +63,8 @@ fn write_tsdi_stub(root: &Path) {
          export const Component = (..._: any[]) => {};\n\
          export const Singleton = (..._: any[]) => {};\n\
          export const Binds = (..._: any[]) => {};\n\
-         export const Subcomponent = (..._: any[]) => {};\n",
+         export const Subcomponent = (..._: any[]) => {};\n\
+         export const IntoSet = (..._: any[]) => {};\n",
     )
     .unwrap();
 }
@@ -131,4 +132,9 @@ fn fixture_04_binds() {
 #[test]
 fn fixture_05_subcomponent() {
     run_fixture("05_subcomponent", "app-component.ts");
+}
+
+#[test]
+fn fixture_06_multibinding_set() {
+    run_fixture("06_multibinding_set", "app-component.ts");
 }

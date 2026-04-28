@@ -11,11 +11,14 @@ Stable identity for a TypeScript type without a full type checker. Two values ar
 ```rust
 pub enum Key {
     Class { module: ModulePath, name: String },
-    // Token { module: ModulePath, name: String },  // v0.2 / M7
+    Set   { element: Box<Key> },                  // M9 — Set<T> multibinding aggregate
+    // Token { module: ModulePath, name: String },  // v0.2
 }
 
 pub struct ModulePath(pub String);  // M1: raw import specifier; M2+: absolute, normalized path
 ```
+
+`Key::Set` represents a `Set<T>` aggregate produced from one or more `@IntoSet @Provides` contributions. The `element` is always a `Key::Class` in v0.1 (no `Set<Set<T>>`-of-`Set` chains in user code). The graph aggregator synthesizes one `Provider::SetMultibinding` binding per element key from the raw `MultibindRole::IntoSet` bindings the parser emits (see [Multibindings](#multibindings) below).
 
 In **M1** the parser stores the *raw import specifier* in `ModulePath` (e.g. `"./heater"`, `"tsdi"`, `"my-pkg/sub"`). M2's cross-file resolver rewrites these to absolute paths so equivalent imports compare equal. For type identifiers declared in the same file as their reference, the parser uses the sentinel `ModulePath::SAME_FILE` (`"<self>"`); M2 swaps it for the file's actual absolute path.
 
@@ -65,9 +68,17 @@ How an instance for a `Key` is produced.
 
 ```rust
 pub enum Provider {
-    InjectCtor     { class: ClassRef },
-    ProvidesMethod { module: ClassRef, method: String },
-    Binds          { target: Key },
+    InjectCtor      { class: ClassRef },
+    ProvidesMethod  { module: ClassRef, method: String },
+    Binds           { target: Key },
+    SetMultibinding { contributors: Vec<SetContributor> },  // M9 — synthesized
+}
+
+pub struct SetContributor {
+    pub module: ClassRef,
+    pub method: String,
+    pub deps: Vec<Key>,
+    pub source: SourceSpan,
 }
 ```
 
@@ -76,6 +87,8 @@ pub enum Provider {
 - **`Binds`** (M7) — alias binding. The owning `@Module` exposes a `static` method whose single parameter type is the implementation and whose return type is the alias. The binding's `key` is the return type (the alias); `target` is the parameter type (the implementation). `deps` is `vec![target]` so the topo walk visits the target's binding before the alias's factory references it. Codegen emits `return this.<getTarget>()` — no `new` is performed by the alias factory; the target's scope governs caching.
 
   TC39 Stage-3 decorators cannot decorate abstract methods (TS error 1249), so `@Binds` methods are `static` with a body. `tsdi-codegen` ignores the body and emits the delegate; the body still has to compile (e.g. `return impl;`) so the user's `tsc` accepts the source file.
+
+- **`SetMultibinding`** (M9) — synthesized aggregate. Never produced by the parser directly. The graph aggregator walks every `@IntoSet @Provides` raw binding (carrying `role: MultibindRole::IntoSet`), groups them by element type, and emits one `Provider::SetMultibinding` under `Key::Set { element }`. Each `SetContributor` records the originating `@Module` class, method name, and that contributor's own deps. Codegen emits `return new Set([Mod1.foo(...), Mod2.bar(...)])` — one call per contributor with its own dep argument list.
 
 ## `SourceSpan`
 
@@ -97,11 +110,19 @@ pub struct Binding {
     pub provider: Provider,
     pub scope: Scope,
     pub deps: Vec<Key>,
-    pub source: SourceSpan,   // M3+: where the binding appears in source
+    pub source: SourceSpan,        // M3+: where the binding appears in source
+    pub role: MultibindRole,       // M9 — multibinding contribution role
+}
+
+pub enum MultibindRole {
+    None,        // regular binding
+    IntoSet,     // a contribution to a Set<T> aggregate
 }
 ```
 
 A single contribution to the graph. The `deps` are the keys the provider needs to construct its output. The `source` field anchors validation diagnostics on the right line.
+
+`role` is set by the parser when it sees `@IntoSet` on a `@Provides` method. The graph aggregator consumes raw bindings with `role != None`, groups them, and emits a synthesized `Provider::SetMultibinding` binding (whose own `role` is `None`). Downstream consumers — codegen, `explain`, validation — only ever see `MultibindRole::None` because the aggregation pass strips raw contributions out of the binding map.
 
 ## `ModuleDecl`
 
@@ -150,6 +171,31 @@ pub struct SubcomponentDecl {
 A class annotated `@Subcomponent` (M8). Structurally identical to `ComponentDecl`; the distinction is *who builds it*. A subcomponent does not stand alone — it is reached through a parent component's abstract zero-arg method whose return type names the subcomponent class. The graph-layer wires this up: when an entry point's `key` matches a known `SubcomponentDecl`, the graph builder produces a `SubcomponentFactory` that owns a child `DependencyGraph` resolved with the parent's bindings as a fallback. Keys satisfied by the parent are recorded in `child_graph.inherited_keys` so codegen can route them through `this.parent.<getX>()` instead of constructing a fresh instance.
 
 Subcomponents inherit the parent's scope cache for inherited bindings — a `@Singleton` `Heater` provided by the parent stays one instance across every child request.
+
+## Multibindings
+
+M9 adds `@IntoSet`. Multiple `@IntoSet @Provides` methods on the same `@Module` (or across modules a component includes) collectively produce a `Set<T>`:
+
+```ts
+@Module
+export class PluginsModule {
+  @IntoSet @Provides static auth(): Plugin    { return new AuthPlugin(); }
+  @IntoSet @Provides static logging(): Plugin { return new LoggingPlugin(); }
+}
+
+@Component({ modules: [PluginsModule] })
+export abstract class App {
+  abstract plugins(): Set<Plugin>;
+}
+```
+
+Pipeline:
+
+1. Parser emits two raw `Binding`s with `key = Key::Class { ... "Plugin" }`, `provider = ProvidesMethod`, and `role = MultibindRole::IntoSet`.
+2. Graph aggregator (`tsdi-core::graph::aggregate_bindings`) folds them: it groups all `IntoSet` raw bindings by `key`, lifts the key to `Key::Set { element: Box::new(plugin_key) }`, and constructs a synthesized `Binding` whose provider is `Provider::SetMultibinding { contributors: [...] }`. The synthesized binding's `deps` is the union of every contributor's deps. Multiple `@IntoSet` contributions to the same element type are **never** flagged as duplicates.
+3. Codegen emits one factory per `Set<T>` key — `getSetOfPlugin(): Set<Plugin>` — whose body is `new Set([PluginsModule.auth(), PluginsModule.logging()])`. Singleton scope on the multibinding cachs the constructed `Set<T>` itself; per-element scope is unaffected.
+
+Out of scope for v0.1: `@IntoMap` / `@StringKey`, `@IntoSet` on `@Binds` (rejected by `IntoSetWithoutProvides`), `@IntoSet` on `@Inject` ctors, and child-subcomponent contributions to a parent's `Set<T>`.
 
 ## `ParsedFile`
 

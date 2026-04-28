@@ -246,6 +246,63 @@ fn entry_point_requires_return_type() {
 }
 
 #[test]
+fn module_with_into_set_provides() {
+    // Two @IntoSet @Provides contributions to Set<Plugin>. The parser
+    // emits raw bindings with role: IntoSet — graph aggregation folds
+    // them into a synthesized Provider::SetMultibinding later.
+    let src = r#"
+        import { Module, Provides, IntoSet } from "tsdi";
+        import { Plugin } from "./plugin";
+        import { AuthPlugin } from "./auth-plugin";
+        import { LoggingPlugin } from "./logging-plugin";
+
+        @Module
+        export class PluginsModule {
+            @IntoSet @Provides static auth(): Plugin { return new AuthPlugin(); }
+            @IntoSet @Provides static logging(): Plugin { return new LoggingPlugin(); }
+        }
+    "#;
+    let parsed = parse_source(src, "plugins-module.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}
+
+#[test]
+fn into_set_on_binds_is_rejected() {
+    let src = r#"
+        import { Module, Binds, IntoSet } from "tsdi";
+        import { Plugin } from "./plugin";
+        import { AuthPlugin } from "./auth-plugin";
+
+        @Module
+        export class PluginsModule {
+            @IntoSet @Binds static authImpl(impl: AuthPlugin): Plugin { return impl; }
+        }
+    "#;
+    let err = parse_source(src, "plugins-module.ts").unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("@IntoSet") && msg.contains("@Provides"),
+        "unexpected error: {msg}"
+    );
+}
+
+#[test]
+fn entry_point_with_set_return_type_parses() {
+    // A `Set<Plugin>` return on an entry point lowers to Key::Set.
+    let src = r#"
+        import { Component } from "tsdi";
+        import { Plugin } from "./plugin";
+
+        @Component({ modules: [] })
+        export abstract class App {
+            abstract plugins(): Set<Plugin>;
+        }
+    "#;
+    let parsed = parse_source(src, "app.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}
+
+#[test]
 fn subcomponent_with_modules_and_entry_points() {
     let src = r#"
         import { Component, Subcomponent } from "tsdi";

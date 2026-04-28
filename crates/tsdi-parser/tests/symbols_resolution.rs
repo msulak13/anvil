@@ -26,14 +26,18 @@ fn write_project(tmp: &TempDir, files: &[(&str, &str)]) -> PathBuf {
 
 /// Walk every Key in `parsed` and call `f` on its module path.
 fn for_each_key<'a>(parsed: &'a ParsedFile, mut f: impl FnMut(&'a ModulePath)) {
+    fn visit_key<'a>(k: &'a Key, f: &mut impl FnMut(&'a ModulePath)) {
+        match k {
+            Key::Class { module, .. } => f(module),
+            Key::Set { element } => visit_key(element, f),
+        }
+    }
     for m in &parsed.modules {
         f(&m.class.module);
         for b in &m.provides {
-            let Key::Class { module, .. } = &b.key;
-            f(module);
+            visit_key(&b.key, &mut f);
             for d in &b.deps {
-                let Key::Class { module, .. } = d;
-                f(module);
+                visit_key(d, &mut f);
             }
         }
     }
@@ -43,16 +47,13 @@ fn for_each_key<'a>(parsed: &'a ParsedFile, mut f: impl FnMut(&'a ModulePath)) {
             f(&cm.module);
         }
         for ep in &c.entry_points {
-            let Key::Class { module, .. } = &ep.key;
-            f(module);
+            visit_key(&ep.key, &mut f);
         }
     }
     for b in &parsed.inject_classes {
-        let Key::Class { module, .. } = &b.key;
-        f(module);
+        visit_key(&b.key, &mut f);
         for d in &b.deps {
-            let Key::Class { module, .. } = d;
-            f(module);
+            visit_key(d, &mut f);
         }
     }
 }
@@ -155,9 +156,11 @@ fn relative_imports_are_resolved_to_absolute_paths() {
             assert_eq!(name, "Heater");
             module.0.clone()
         }
+        Key::Set { .. } => panic!("expected Key::Class"),
     };
     let heater_self = match &heater.1.inject_classes[0].key {
         Key::Class { module, .. } => module.0.clone(),
+        Key::Set { .. } => panic!("expected Key::Class"),
     };
     assert_eq!(pump_dep, heater_self);
     assert!(Path::new(&pump_dep).ends_with("heater.ts"));
@@ -259,6 +262,7 @@ fn barrel_reexport_resolves_to_real_file() {
             assert_eq!(name, "Heater");
             module.0.clone()
         }
+        Key::Set { .. } => panic!("expected Key::Class"),
     };
     assert!(
         dep.ends_with("index.ts"),
@@ -311,6 +315,7 @@ fn node_modules_imports_resolve_but_are_not_walked() {
     assert_all_keys_absolute(pump);
     let dep = match &pump.inject_classes[0].deps[0] {
         Key::Class { module, .. } => module.0.clone(),
+        Key::Set { .. } => panic!("expected Key::Class"),
     };
     assert!(
         dep.contains("node_modules") && dep.contains("some-lib"),
