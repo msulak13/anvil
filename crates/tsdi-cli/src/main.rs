@@ -29,7 +29,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use tsdi_codegen::emit_component;
 use tsdi_core::graph::{build_and_validate, DependencyGraph, GraphInput};
-use tsdi_core::ir::{Binding, ComponentDecl, ModuleDecl};
+use tsdi_core::ir::{Binding, ComponentDecl, ModuleDecl, SubcomponentDecl};
 use tsdi_core::validate::Diagnostic;
 use tsdi_parser::symbols::{ProjectGraph, ProjectResolver};
 
@@ -274,6 +274,7 @@ impl<E: Into<anyhow::Error>> From<E> for CheckError {
 pub(crate) struct ProjectIr {
     pub(crate) modules: Vec<ModuleDecl>,
     pub(crate) components: Vec<ComponentDecl>,
+    pub(crate) subcomponents: Vec<SubcomponentDecl>,
     pub(crate) inject_classes: Vec<Binding>,
     /// The set of source files the parser walked. Used by watch mode
     /// to recompute the "changed file → affected components" mapping.
@@ -290,16 +291,19 @@ pub(crate) fn load_project(
 
     let mut modules: Vec<ModuleDecl> = Vec::new();
     let mut components: Vec<ComponentDecl> = Vec::new();
+    let mut subcomponents: Vec<SubcomponentDecl> = Vec::new();
     let mut inject_classes: Vec<Binding> = Vec::new();
     for parsed in project.files.values() {
         modules.extend(parsed.modules.iter().cloned());
         components.extend(parsed.components.iter().cloned());
+        subcomponents.extend(parsed.subcomponents.iter().cloned());
         inject_classes.extend(parsed.inject_classes.iter().cloned());
     }
     let files: Vec<PathBuf> = project.files.keys().map(PathBuf::from).collect();
     Ok(ProjectIr {
         modules,
         components,
+        subcomponents,
         inject_classes,
         files,
     })
@@ -315,6 +319,7 @@ fn run_check(entry: &Path, tsconfig: Option<PathBuf>) -> Result<CheckSummary, Ch
             component: c,
             modules: &ir.modules,
             inject_classes: &ir.inject_classes,
+            subcomponents: &ir.subcomponents,
         });
         graphs.push(g);
         all_diagnostics.extend(ds);
@@ -354,6 +359,7 @@ fn run_build(entry: &Path, tsconfig: Option<PathBuf>) -> Result<BuildSummary, Ch
             component: c,
             modules: &ir.modules,
             inject_classes: &ir.inject_classes,
+            subcomponents: &ir.subcomponents,
         });
         all_diagnostics.extend(ds);
     }
@@ -367,8 +373,14 @@ fn run_build(entry: &Path, tsconfig: Option<PathBuf>) -> Result<BuildSummary, Ch
     let version = env!("CARGO_PKG_VERSION");
     let mut written: Vec<PathBuf> = Vec::new();
     for c in &ir.components {
-        let code = emit_component(c, &ir.modules, &ir.inject_classes, version)
-            .map_err(anyhow::Error::from)?;
+        let code = emit_component(
+            c,
+            &ir.modules,
+            &ir.inject_classes,
+            &ir.subcomponents,
+            version,
+        )
+        .map_err(anyhow::Error::from)?;
         let out_path = output_path_for(&c.class.module.0)?;
         std::fs::write(&out_path, &code)
             .map_err(|e| anyhow::anyhow!("failed to write {}: {e}", out_path.display()))?;

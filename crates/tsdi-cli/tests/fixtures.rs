@@ -12,6 +12,8 @@
 //! - `01_simple_provides` — `@Inject` ctor chain, `Scope::Unscoped` (M4).
 //! - `03_singleton_scope` — `@Singleton @Inject` Heater shared by Pump (M6).
 //! - `04_binds` — `@Binds` aliasing `ElectricHeater` to abstract `Heater` (M7).
+//! - `05_subcomponent` — `@Subcomponent` `RequestComponent` nested inside
+//!   `AppComponent`, inheriting `@Singleton Heater` from the parent (M8).
 
 use std::path::{Path, PathBuf};
 
@@ -60,7 +62,8 @@ fn write_tsdi_stub(root: &Path) {
          export const Provides = (..._: any[]) => {};\n\
          export const Component = (..._: any[]) => {};\n\
          export const Singleton = (..._: any[]) => {};\n\
-         export const Binds = (..._: any[]) => {};\n",
+         export const Binds = (..._: any[]) => {};\n\
+         export const Subcomponent = (..._: any[]) => {};\n",
     )
     .unwrap();
 }
@@ -123,4 +126,9 @@ fn fixture_03_singleton_scope() {
 #[test]
 fn fixture_04_binds() {
     run_fixture("04_binds", "coffee-component.ts");
+}
+
+#[test]
+fn fixture_05_subcomponent() {
+    run_fixture("05_subcomponent", "app-component.ts");
 }

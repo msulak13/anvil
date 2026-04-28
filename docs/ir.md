@@ -135,16 +135,33 @@ pub struct EntryPoint {
 
 The root of an object graph. Each abstract method on the user's `@Component` class becomes an `EntryPoint`.
 
+## `SubcomponentDecl`
+
+```rust
+pub struct SubcomponentDecl {
+    pub class: ClassRef,
+    pub modules: Vec<ClassRef>,
+    pub scope: Scope,
+    pub entry_points: Vec<EntryPoint>,
+    pub source: SourceSpan,
+}
+```
+
+A class annotated `@Subcomponent` (M8). Structurally identical to `ComponentDecl`; the distinction is *who builds it*. A subcomponent does not stand alone — it is reached through a parent component's abstract zero-arg method whose return type names the subcomponent class. The graph-layer wires this up: when an entry point's `key` matches a known `SubcomponentDecl`, the graph builder produces a `SubcomponentFactory` that owns a child `DependencyGraph` resolved with the parent's bindings as a fallback. Keys satisfied by the parent are recorded in `child_graph.inherited_keys` so codegen can route them through `this.parent.<getX>()` instead of constructing a fresh instance.
+
+Subcomponents inherit the parent's scope cache for inherited bindings — a `@Singleton` `Heater` provided by the parent stays one instance across every child request.
+
 ## `ParsedFile`
 
 Everything a single `.ts` file contributes to the IR. Produced by `tsdi_parser::parse_file` (or `parse_source`) and aggregated across files by the CLI before being handed to `tsdi-core`'s graph builder.
 
 ```rust
 pub struct ParsedFile {
-    pub path: String,                    // source path, informational
-    pub modules: Vec<ModuleDecl>,        // @Module classes in this file
-    pub components: Vec<ComponentDecl>,  // @Component classes in this file
-    pub inject_classes: Vec<Binding>,    // self-bindings from @Inject ctors
+    pub path: String,                          // source path, informational
+    pub modules: Vec<ModuleDecl>,              // @Module classes in this file
+    pub components: Vec<ComponentDecl>,        // @Component classes in this file
+    pub subcomponents: Vec<SubcomponentDecl>,  // @Subcomponent classes in this file (M8)
+    pub inject_classes: Vec<Binding>,          // self-bindings from @Inject ctors
 }
 ```
 

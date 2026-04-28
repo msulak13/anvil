@@ -131,6 +131,9 @@ error[tsdi::scope_mismatch]: scope mismatch on Heater@/p/heater.ts: binding is S
 ### Detection
 `tsdi-core::graph::detect_scope_mismatches` walks the aggregated bindings once and emits one diagnostic per offending key. Skipped entirely when the component is `Singleton`.
 
+### Subcomponents (M8)
+Each `@Subcomponent` reachable from a `@Component`'s entry points runs `detect_scope_mismatches` against *its own* scope and *its own* local bindings only — bindings inherited from the parent are not re-validated, since the parent already validated them under its own scope. Missing-binding and cycle checks run against the child graph **after** parent fallback: a child dep that only the parent provides is satisfied (no `MissingBinding`) and contributes an inherited-key edge that doesn't participate in cycle detection on the child side. A cycle that crosses the parent/child boundary is a v0.2 limitation — current detection runs per-graph.
+
 ## How diagnostics are rendered
 
 Diagnostics flow through two layers:

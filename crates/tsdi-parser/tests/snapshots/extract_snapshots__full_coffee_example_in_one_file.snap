@@ -85,6 +85,7 @@ ParsedFile {
             },
         },
     ],
+    subcomponents: [],
     inject_classes: [
         Binding {
             key: Class {

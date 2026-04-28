@@ -72,13 +72,20 @@ export function Inject<T extends abstract new (...args: never[]) => unknown>(
 }
 
 /**
- * Marks an abstract method on a `@Module` class as an alias-binding from
+ * Marks a static method on a `@Module` class as an alias-binding from
  * the method's return type to its single parameter type. The codegen
  * emits a factory that delegates straight to the parameter type's
- * factory — useful for binding an interface to one concrete impl.
+ * factory — useful for binding an interface (or abstract base class) to
+ * one concrete impl.
  *
- * The method must be `abstract`, take exactly one parameter, and declare
- * an explicit return type. It must not also be `@Provides`.
+ * The method must be `static`, take exactly one parameter, and declare
+ * an explicit return type. It must not also be `@Provides`. The body
+ * is required so the file type-checks, but the codegen ignores it and
+ * emits a delegate to the parameter's factory.
+ *
+ * (TC39 Stage-3 decorators cannot decorate `abstract` methods —
+ * TS error 1249 — which is why `@Binds` uses a static method with a
+ * trivial `return impl;` body rather than the Dagger-style abstract form.)
  *
  * @example
  * ```ts
@@ -87,8 +94,8 @@ export function Inject<T extends abstract new (...args: never[]) => unknown>(
  * import { ElectricHeater } from "./electric-heater";
  *
  * @Module
- * export abstract class CoffeeModule {
- *   @Binds abstract heater(impl: ElectricHeater): Heater;
+ * export class CoffeeModule {
+ *   @Binds static heater(impl: ElectricHeater): Heater { return impl; }
  * }
  * ```
  */
@@ -124,6 +131,48 @@ export interface ComponentConfig {
  * ```
  */
 export function Component(_config: ComponentConfig = {}) {
+  return <T extends abstract new (...args: never[]) => unknown>(
+    target: T,
+    _ctx: ClassDecoratorContext<T>,
+  ): T => target;
+}
+
+/**
+ * Configuration for a `@Subcomponent`. Mirrors {@link ComponentConfig}.
+ */
+export interface SubcomponentConfig {
+  /** Module classes whose `@Provides` methods are visible to this subcomponent. */
+  readonly modules?: ReadonlyArray<abstract new (...args: never[]) => unknown>;
+}
+
+/**
+ * Marks an abstract class as a child object graph nested inside a parent
+ * `@Component` (or another `@Subcomponent`). A subcomponent inherits all
+ * bindings declared by its parent and adds its own modules on top.
+ *
+ * The parent exposes the child by declaring an abstract zero-arg method
+ * whose return type is the subcomponent class; the codegen emits a
+ * factory that constructs `Dagger<Sub>` with the parent dagger as a
+ * back-reference, so inherited dependencies route through the parent's
+ * factories (and shared singletons stay shared).
+ *
+ * @example
+ * ```ts
+ * import { Component, Subcomponent } from "tsdi";
+ * import { RequestModule } from "./request-module";
+ *
+ * @Subcomponent({ modules: [RequestModule] })
+ * export abstract class RequestComponent {
+ *   abstract handler(): RequestHandler;
+ * }
+ *
+ * @Component({ modules: [AppModule] })
+ * export abstract class AppComponent {
+ *   abstract requestComponent(): RequestComponent;
+ * }
+ * ```
+ */
+export function Subcomponent(_config: SubcomponentConfig = {}) {
   return <T extends abstract new (...args: never[]) => unknown>(
     target: T,
     _ctx: ClassDecoratorContext<T>,

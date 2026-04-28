@@ -243,6 +243,17 @@ fn normalize_parsed(
             ep.source.path.clone_from(&self_path_string);
         }
     }
+    for s in &mut parsed.subcomponents {
+        rewrite_classref(&mut s.class, &mut resolve_one, discovered)?;
+        s.source.path.clone_from(&self_path_string);
+        for cm in &mut s.modules {
+            rewrite_classref(cm, &mut resolve_one, discovered)?;
+        }
+        for ep in &mut s.entry_points {
+            rewrite_key(&mut ep.key, &mut resolve_one, discovered)?;
+            ep.source.path.clone_from(&self_path_string);
+        }
+    }
     for b in &mut parsed.inject_classes {
         rewrite_binding(b, &mut resolve_one, discovered)?;
         b.source.path.clone_from(&self_path_string);

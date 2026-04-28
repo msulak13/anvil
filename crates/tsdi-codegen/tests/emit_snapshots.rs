@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 use tsdi_core::ir::{
     Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, ModulePath, Provider, Scope,
-    SourceSpan,
+    SourceSpan, SubcomponentDecl,
 };
 
 use tsdi_codegen::emit_component;
@@ -95,7 +95,7 @@ fn emit_simple_provides_module() {
         source: span_of(&comp_path),
     };
 
-    let out = emit_component(&component, &[module], &[], "0.0.1").unwrap();
+    let out = emit_component(&component, &[module], &[], &[], "0.0.1").unwrap();
     insta::assert_snapshot!(out);
 }
 
@@ -147,7 +147,7 @@ fn emit_inject_ctor_chain() {
         source: span_of(&comp_path),
     };
 
-    let out = emit_component(&component, &[], &inject_classes, "0.0.1").unwrap();
+    let out = emit_component(&component, &[], &inject_classes, &[], "0.0.1").unwrap();
     insta::assert_snapshot!(out);
 }
 
@@ -208,7 +208,7 @@ fn emit_singleton_caches_via_lazy_field() {
         source: span_of(&comp_path),
     };
 
-    let out = emit_component(&component, &[], &inject_classes, "0.0.1").unwrap();
+    let out = emit_component(&component, &[], &inject_classes, &[], "0.0.1").unwrap();
     insta::assert_snapshot!(out);
 }
 
@@ -269,7 +269,86 @@ fn emit_binds_alias_delegates_to_target() {
         source: span_of(&comp_path),
     };
 
-    let out = emit_component(&component, &[module], &inject_classes, "0.0.1").unwrap();
+    let out = emit_component(&component, &[module], &inject_classes, &[], "0.0.1").unwrap();
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn emit_subcomponent_with_inherited_dep_and_local_factory() {
+    // Parent component owns @Inject Heater (singleton). Child subcomponent
+    // owns @Inject Pump that depends on Heater (inherited from parent).
+    // Parent exposes `requestComponent(): RequestComponent`. Child exposes
+    // `pump(): Pump`. Codegen should emit:
+    //   - Dagger<App> with getHeater() (cached) + requestComponent() factory
+    //     constructing Dagger<RequestComponent>(this).
+    //   - Dagger<RequestComponent> taking parent: Dagger<App>, with
+    //     getPump() that calls `this.parent.getHeater()`.
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let comp_path: String = root.join("app-component.ts").to_string_lossy().into_owned();
+    let sub_path: String = root
+        .join("request-component.ts")
+        .to_string_lossy()
+        .into_owned();
+    let heater_path: String = root.join("heater.ts").to_string_lossy().into_owned();
+    let pump_path: String = root.join("pump.ts").to_string_lossy().into_owned();
+
+    let heater_key = class_key(&heater_path, "Heater");
+    let pump_key = class_key(&pump_path, "Pump");
+
+    let inject_classes = vec![
+        Binding {
+            key: heater_key.clone(),
+            provider: Provider::InjectCtor {
+                class: class_ref(&heater_path, "Heater"),
+            },
+            scope: Scope::Singleton,
+            deps: vec![],
+            source: span_of(&heater_path),
+        },
+        Binding {
+            key: pump_key.clone(),
+            provider: Provider::InjectCtor {
+                class: class_ref(&pump_path, "Pump"),
+            },
+            scope: Scope::Unscoped,
+            deps: vec![heater_key.clone()],
+            source: span_of(&pump_path),
+        },
+    ];
+
+    let request_sub = SubcomponentDecl {
+        class: class_ref(&sub_path, "RequestComponent"),
+        modules: vec![],
+        scope: Scope::Unscoped,
+        entry_points: vec![EntryPoint {
+            name: "pump".into(),
+            key: pump_key,
+            source: span_of(&sub_path),
+        }],
+        source: span_of(&sub_path),
+    };
+
+    let app = ComponentDecl {
+        class: class_ref(&comp_path, "App"),
+        modules: vec![],
+        scope: Scope::Singleton,
+        entry_points: vec![
+            EntryPoint {
+                name: "heater".into(),
+                key: heater_key,
+                source: span_of(&comp_path),
+            },
+            EntryPoint {
+                name: "requestComponent".into(),
+                key: class_key(&sub_path, "RequestComponent"),
+                source: span_of(&comp_path),
+            },
+        ],
+        source: span_of(&comp_path),
+    };
+
+    let out = emit_component(&app, &[], &inject_classes, &[request_sub], "0.0.1").unwrap();
     insta::assert_snapshot!(out);
 }
 
@@ -294,7 +373,7 @@ fn validation_failure_short_circuits() {
         source: span_of(&comp_path),
     };
 
-    let err = emit_component(&component, &[], &[], "0.0.1").unwrap_err();
+    let err = emit_component(&component, &[], &[], &[], "0.0.1").unwrap_err();
     let msg = format!("{err}");
     assert!(
         msg.contains("validation") || msg.contains("diagnostic"),

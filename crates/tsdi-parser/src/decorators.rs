@@ -4,9 +4,10 @@
 //!
 //! - `@Module` — class-level. Marks the class as a module hosting `@Provides` and/or `@Binds` methods.
 //! - `@Provides` — method-level on a `@Module` class. Must be `static` and have an explicit return type.
-//! - `@Binds` — method-level on a `@Module` class. Must be `abstract`, take exactly one parameter, and have an explicit return type. The codegen emits a factory that delegates to the parameter's binding.
+//! - `@Binds` — method-level on a `@Module` class. Must be `static`, take exactly one parameter, and have an explicit return type. The codegen emits a factory that delegates to the parameter's binding.
 //! - `@Inject` — class-level on any class. The class becomes a self-binding whose deps are the constructor's parameter types. (Stage-3 decorators don't apply to constructors, so the legacy `@Inject constructor(...)` placement is rejected with [`ExtractError::InjectOnConstructor`].)
 //! - `@Component(config)` — class-level on an abstract class. `config.modules` is an array of class identifiers.
+//! - `@Subcomponent(config)` — class-level on an abstract class. Same shape as `@Component`; the parent component exposes child subcomponent factories via abstract zero-arg methods whose return type names a `@Subcomponent` class.
 //! - `@Singleton` — class-level. Sets the binding's scope.
 //!
 //! See `docs/ir.md` for the IR types this module emits.
@@ -20,7 +21,7 @@ use oxc_ast::ast::{
 use oxc_span::Span;
 use tsdi_core::ir::{
     Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, ModulePath, ParsedFile,
-    Provider, Scope, SourceSpan,
+    Provider, Scope, SourceSpan, SubcomponentDecl,
 };
 
 use crate::imports::{ImportMap, ImportSource};
@@ -62,17 +63,23 @@ pub enum ExtractError {
         /// Source span.
         span: Span,
     },
-    /// `@Component` was used without an `({ modules: [...] })` argument.
-    #[error("@Component on '{class}' must be invoked with a config object: @Component({{ modules: [...] }})")]
+    /// `@Component` or `@Subcomponent` was used without an `({ modules: [...] })` argument.
+    #[error(
+        "@{kind} on '{class}' must be invoked with a config object: @{kind}({{ modules: [...] }})"
+    )]
     ComponentMissingConfig {
+        /// Decorator kind: `"Component"` or `"Subcomponent"`.
+        kind: &'static str,
         /// Class name.
         class: String,
         /// Source span.
         span: Span,
     },
-    /// `@Component({ modules: ... })` was given a non-array value.
-    #[error("@Component({{ modules: ... }}) on '{class}' must be an array of class identifiers")]
+    /// `@Component({ modules: ... })` (or `@Subcomponent`) was given a non-array value.
+    #[error("@{kind}({{ modules: ... }}) on '{class}' must be an array of class identifiers")]
     ComponentBadModules {
+        /// Decorator kind: `"Component"` or `"Subcomponent"`.
+        kind: &'static str,
         /// Class name.
         class: String,
         /// Source span.
@@ -159,6 +166,7 @@ const KNOWN_DECORATOR_NAMES: &[&str] = &[
     "Binds",
     "Inject",
     "Component",
+    "Subcomponent",
     "Singleton",
 ];
 
@@ -223,10 +231,31 @@ pub fn extract(
 
         // 2. @Component
         if let Some(component_dec) = class_decorators.iter().find(|d| d.name == "Component") {
-            let modules = parse_component_modules(component_dec, class_name, imports, &local_set)?;
+            let modules = parse_component_modules(
+                component_dec,
+                "Component",
+                class_name,
+                imports,
+                &local_set,
+            )?;
             let entry_points =
                 extract_entry_points(&class.body.body, class_name, imports, &local_set, file_path)?;
             out.components.push(ComponentDecl {
+                class: class_ref.clone(),
+                modules,
+                scope,
+                entry_points,
+                source: class_span.clone(),
+            });
+        }
+
+        // 2b. @Subcomponent — same shape as @Component, separate IR slot.
+        if let Some(sub_dec) = class_decorators.iter().find(|d| d.name == "Subcomponent") {
+            let modules =
+                parse_component_modules(sub_dec, "Subcomponent", class_name, imports, &local_set)?;
+            let entry_points =
+                extract_entry_points(&class.body.body, class_name, imports, &local_set, file_path)?;
+            out.subcomponents.push(SubcomponentDecl {
                 class: class_ref.clone(),
                 modules,
                 scope,
@@ -654,12 +683,14 @@ fn property_key_name<'a>(key: &'a PropertyKey<'a>) -> Option<&'a str> {
 
 fn parse_component_modules(
     decorator: &DecoratorRef<'_>,
+    kind: &'static str,
     class_name: &str,
     imports: &ImportMap,
     local_classes: &HashSet<&str>,
 ) -> Result<Vec<ClassRef>> {
     let Expression::CallExpression(call) = &decorator.decorator.expression else {
         return Err(ExtractError::ComponentMissingConfig {
+            kind,
             class: class_name.to_owned(),
             span: decorator.decorator.span,
         });
@@ -671,6 +702,7 @@ fn parse_component_modules(
     }
     let Some(Argument::ObjectExpression(obj)) = call.arguments.first() else {
         return Err(ExtractError::ComponentMissingConfig {
+            kind,
             class: class_name.to_owned(),
             span: decorator.decorator.span,
         });
@@ -690,6 +722,7 @@ fn parse_component_modules(
         saw_modules_key = true;
         let Expression::ArrayExpression(arr) = &p.value else {
             return Err(ExtractError::ComponentBadModules {
+                kind,
                 class: class_name.to_owned(),
                 span: p.span,
             });
@@ -697,6 +730,7 @@ fn parse_component_modules(
         for elem in &arr.elements {
             let oxc_ast::ast::ArrayExpressionElement::Identifier(id) = elem else {
                 return Err(ExtractError::ComponentBadModules {
+                    kind,
                     class: class_name.to_owned(),
                     span: arr.span,
                 });

@@ -59,5 +59,6 @@ ParsedFile {
             },
         },
     ],
+    subcomponents: [],
     inject_classes: [],
 }

@@ -181,6 +181,7 @@ fn rebuild_one(entry: &Path, tsconfig: Option<PathBuf>) -> Result<HashSet<PathBu
             component: c,
             modules: &ir.modules,
             inject_classes: &ir.inject_classes,
+            subcomponents: &ir.subcomponents,
         });
         all_diagnostics.extend(ds);
     }
@@ -197,8 +198,14 @@ fn rebuild_one(entry: &Path, tsconfig: Option<PathBuf>) -> Result<HashSet<PathBu
     let version = env!("CARGO_PKG_VERSION");
     let mut written = 0usize;
     for c in &ir.components {
-        let code = emit_component(c, &ir.modules, &ir.inject_classes, version)
-            .map_err(|e| format!("emit failed: {e}"))?;
+        let code = emit_component(
+            c,
+            &ir.modules,
+            &ir.inject_classes,
+            &ir.subcomponents,
+            version,
+        )
+        .map_err(|e| format!("emit failed: {e}"))?;
         let out = output_path_for(&c.class.module.0)
             .ok_or_else(|| format!("bad component path: {}", c.class.module.0))?;
         std::fs::write(&out, &code).map_err(|e| format!("write {}: {e}", out.display()))?;

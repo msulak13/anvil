@@ -29,7 +29,10 @@ use std::collections::{HashMap, HashSet};
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 
-use crate::ir::{Binding, ClassRef, ComponentDecl, Key, ModuleDecl, Provider, Scope, SourceSpan};
+use crate::ir::{
+    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, Provider, Scope, SourceSpan,
+    SubcomponentDecl,
+};
 use crate::validate::{Diagnostic, DiagnosticKind, Label};
 
 /// Inputs to [`build_and_validate`].
@@ -47,6 +50,32 @@ pub struct GraphInput<'a> {
     /// Every `@Inject`-annotated class self-binding the parser saw across
     /// the project. All are eligible to satisfy a key.
     pub inject_classes: &'a [Binding],
+    /// Every `@Subcomponent` declaration the parser saw. Used to recognize
+    /// entry-point keys whose return type names a subcomponent class —
+    /// those become subcomponent **factories**, not regular bindings.
+    pub subcomponents: &'a [SubcomponentDecl],
+}
+
+/// A subcomponent factory entry point on a parent component.
+///
+/// Produced when one of the parent's entry-point methods has a return type
+/// matching a [`SubcomponentDecl`]. The child graph is built recursively
+/// with parent bindings available as fallback (so inherited deps route
+/// through `this.parent.<getX>()` at codegen time).
+#[derive(Clone, Debug)]
+pub struct SubcomponentFactory {
+    /// The parent's abstract method name that exposes this child.
+    pub method_name: String,
+    /// The subcomponent class itself.
+    pub subcomponent: ClassRef,
+    /// Fully validated child graph.
+    pub child_graph: DependencyGraph,
+    /// The subcomponent's own entry points (in source order). Codegen
+    /// emits one method per entry on the generated `Dagger<Sub>` class,
+    /// matching the names the user's abstract class declared.
+    pub child_entry_points: Vec<EntryPoint>,
+    /// Where the parent's factory method appears in source.
+    pub source: SourceSpan,
 }
 
 /// A resolved per-component dependency graph.
@@ -68,6 +97,14 @@ pub struct DependencyGraph {
     pub graph: DiGraph<Key, ()>,
     /// Lookup from key to its node index in `graph`.
     pub node_for: HashMap<Key, NodeIndex>,
+    /// Keys whose binding is **inherited** from the parent component (only
+    /// non-empty for subcomponent graphs). Codegen routes these through
+    /// `this.parent.<getX>()` instead of emitting a local factory.
+    pub inherited_keys: HashSet<Key>,
+    /// Subcomponent factories declared on this graph's owning component.
+    /// Each entry corresponds to one parent entry-point method whose
+    /// return type matches a [`SubcomponentDecl`].
+    pub subcomponent_factories: Vec<SubcomponentFactory>,
 }
 
 impl DependencyGraph {
@@ -92,12 +129,49 @@ impl DependencyGraph {
 /// the graph is unsafe to feed to codegen.
 #[must_use]
 pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagnostic>) {
-    let (bindings, mut diagnostics) = aggregate_bindings(input);
-    let (graph, node_for, missing) = build_petgraph(&bindings);
+    let (bindings, mut diagnostics) = aggregate_bindings(
+        input.component.modules.as_slice(),
+        input.modules,
+        input.inject_classes,
+        None,
+    );
+    let (graph, node_for, missing) = build_petgraph(&bindings, None);
     diagnostics.extend(missing);
 
+    // Index subcomponent class refs so we can recognize factory entry points.
+    let mut sub_by_classref: HashMap<&ClassRef, &SubcomponentDecl> = HashMap::new();
+    for sub in input.subcomponents {
+        sub_by_classref.insert(&sub.class, sub);
+    }
+
     let mut roots: Vec<Key> = Vec::with_capacity(input.component.entry_points.len());
+    let mut subcomponent_factories: Vec<SubcomponentFactory> = Vec::new();
     for ep in &input.component.entry_points {
+        // Is this entry point a subcomponent factory?
+        let Key::Class { module, name } = &ep.key;
+        let cr = ClassRef {
+            module: module.clone(),
+            name: name.clone(),
+        };
+        if let Some(sub) = sub_by_classref.get(&cr) {
+            let (child_graph, child_diags) = build_child_graph(
+                sub,
+                input.modules,
+                input.inject_classes,
+                input.subcomponents,
+                &bindings,
+            );
+            diagnostics.extend(child_diags);
+            subcomponent_factories.push(SubcomponentFactory {
+                method_name: ep.name.clone(),
+                subcomponent: sub.class.clone(),
+                child_graph,
+                child_entry_points: sub.entry_points.clone(),
+                source: ep.source.clone(),
+            });
+            continue;
+        }
+
         roots.push(ep.key.clone());
         if !node_for.contains_key(&ep.key) {
             diagnostics.push(Diagnostic {
@@ -114,8 +188,13 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         }
     }
 
-    diagnostics.extend(detect_cycles(&graph, &bindings, input.component));
-    diagnostics.extend(detect_scope_mismatches(&bindings, input.component));
+    diagnostics.extend(detect_cycles(&graph, &bindings, &input.component.source));
+    diagnostics.extend(detect_scope_mismatches(
+        &bindings,
+        input.component.scope,
+        &input.component.source,
+        "component is not @Singleton",
+    ));
 
     let dep_graph = DependencyGraph {
         component: input.component.class.clone(),
@@ -124,26 +203,122 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         bindings,
         graph,
         node_for,
+        inherited_keys: HashSet::new(),
+        subcomponent_factories,
     };
     (dep_graph, diagnostics)
 }
 
-/// Collect bindings from the component's modules + project-wide self-bindings,
-/// emitting a [`DiagnosticKind::Duplicate`] for any key declared more than once.
-fn aggregate_bindings(input: GraphInput<'_>) -> (HashMap<Key, Binding>, Vec<Diagnostic>) {
+/// Build a child subcomponent's graph using `parent_bindings` as a fallback
+/// dictionary. Any dep satisfied by the parent is recorded in
+/// [`DependencyGraph::inherited_keys`] and not added as a child node;
+/// codegen will route those calls to `this.parent.<getX>()`.
+fn build_child_graph(
+    sub: &SubcomponentDecl,
+    all_modules: &[ModuleDecl],
+    inject_classes: &[Binding],
+    subcomponents: &[SubcomponentDecl],
+    parent_bindings: &HashMap<Key, Binding>,
+) -> (DependencyGraph, Vec<Diagnostic>) {
+    let (bindings, mut diagnostics) = aggregate_bindings(
+        sub.modules.as_slice(),
+        all_modules,
+        inject_classes,
+        Some(parent_bindings),
+    );
+    let (graph, node_for, missing) = build_petgraph(&bindings, Some(parent_bindings));
+    diagnostics.extend(missing);
+
+    // Compute which keys are inherited (reached via parent for some binding's deps).
+    let mut inherited_keys: HashSet<Key> = HashSet::new();
+    for b in bindings.values() {
+        for dep in &b.deps {
+            if !bindings.contains_key(dep) && parent_bindings.contains_key(dep) {
+                inherited_keys.insert(dep.clone());
+            }
+        }
+    }
+
+    // Subcomponent factories on a subcomponent itself are out of scope for M8;
+    // we just track entry points the same way we do on a component. A nested
+    // factory entry would be reported as MissingBinding.
+    let _ = subcomponents;
+
+    let mut roots: Vec<Key> = Vec::with_capacity(sub.entry_points.len());
+    for ep in &sub.entry_points {
+        roots.push(ep.key.clone());
+        if !node_for.contains_key(&ep.key) && !parent_bindings.contains_key(&ep.key) {
+            diagnostics.push(Diagnostic {
+                kind: DiagnosticKind::MissingBinding {
+                    key: ep.key.clone(),
+                    requested_by: None,
+                },
+                primary: Label {
+                    span: ep.source.clone(),
+                    message: format!("entry point `{}` has no binding", ep.name),
+                },
+                related: vec![],
+            });
+        }
+        // Entry points satisfied by parent become inherited too.
+        if !node_for.contains_key(&ep.key) && parent_bindings.contains_key(&ep.key) {
+            inherited_keys.insert(ep.key.clone());
+        }
+    }
+
+    diagnostics.extend(detect_cycles(&graph, &bindings, &sub.source));
+    diagnostics.extend(detect_scope_mismatches(
+        &bindings,
+        sub.scope,
+        &sub.source,
+        "subcomponent is not @Singleton",
+    ));
+
+    let child_graph = DependencyGraph {
+        component: sub.class.clone(),
+        component_scope: sub.scope,
+        roots,
+        bindings,
+        graph,
+        node_for,
+        inherited_keys,
+        subcomponent_factories: vec![],
+    };
+    (child_graph, diagnostics)
+}
+
+/// Collect bindings from a component-or-subcomponent's modules + project-wide
+/// self-bindings, emitting a [`DiagnosticKind::Duplicate`] for any key
+/// declared more than once.
+///
+/// When `parent_bindings` is `Some`, any binding whose key already exists in
+/// the parent is **skipped** (inherited rather than redeclared).
+fn aggregate_bindings(
+    own_modules: &[ClassRef],
+    all_modules: &[ModuleDecl],
+    inject_classes: &[Binding],
+    parent_bindings: Option<&HashMap<Key, Binding>>,
+) -> (HashMap<Key, Binding>, Vec<Diagnostic>) {
     let mut bindings: HashMap<Key, Binding> = HashMap::new();
     let mut sources_for_key: HashMap<Key, Vec<SourceSpan>> = HashMap::new();
-    let component_modules: HashSet<&ClassRef> = input.component.modules.iter().collect();
+    let component_modules: HashSet<&ClassRef> = own_modules.iter().collect();
+    let inherits = |k: &Key| parent_bindings.is_some_and(|p| p.contains_key(k));
 
-    for m in input.modules {
+    for m in all_modules {
         if !component_modules.contains(&m.class) {
             continue;
         }
         for b in &m.provides {
+            if inherits(&b.key) {
+                continue;
+            }
             register_binding(b, &mut bindings, &mut sources_for_key);
         }
     }
-    for b in input.inject_classes {
+    for b in inject_classes {
+        if inherits(&b.key) {
+            continue;
+        }
         register_binding(b, &mut bindings, &mut sources_for_key);
     }
 
@@ -174,9 +349,12 @@ fn aggregate_bindings(input: GraphInput<'_>) -> (HashMap<Key, Binding>, Vec<Diag
 }
 
 /// Build the petgraph DAG over `bindings` and return any missing-dep
-/// diagnostics encountered while wiring edges.
+/// diagnostics encountered while wiring edges. If `parent_bindings` is
+/// supplied, deps satisfied by the parent are silently dropped (they
+/// become inherited at codegen time).
 fn build_petgraph(
     bindings: &HashMap<Key, Binding>,
+    parent_bindings: Option<&HashMap<Key, Binding>>,
 ) -> (DiGraph<Key, ()>, HashMap<Key, NodeIndex>, Vec<Diagnostic>) {
     let mut graph: DiGraph<Key, ()> = DiGraph::new();
     let mut node_for: HashMap<Key, NodeIndex> = HashMap::new();
@@ -189,11 +367,10 @@ fn build_petgraph(
     for (key, binding) in bindings {
         let from = node_for[key];
         for dep in &binding.deps {
-            match node_for.get(dep) {
-                Some(&to) => {
-                    graph.add_edge(from, to, ());
-                }
-                None => missing.push(missing_for_dep(dep.clone(), key.clone(), binding)),
+            if let Some(&to) = node_for.get(dep) {
+                graph.add_edge(from, to, ());
+            } else if !parent_bindings.is_some_and(|p| p.contains_key(dep)) {
+                missing.push(missing_for_dep(dep.clone(), key.clone(), binding));
             }
         }
     }
@@ -205,7 +382,7 @@ fn build_petgraph(
 fn detect_cycles(
     graph: &DiGraph<Key, ()>,
     bindings: &HashMap<Key, Binding>,
-    component: &ComponentDecl,
+    fallback_span: &SourceSpan,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for scc in tarjan_scc(graph) {
@@ -216,7 +393,7 @@ fn detect_cycles(
         let keys: Vec<Key> = scc.iter().map(|&ix| graph[ix].clone()).collect();
         let primary_span = bindings
             .get(&keys[0])
-            .map_or_else(|| component.source.clone(), |b| b.source.clone());
+            .map_or_else(|| fallback_span.clone(), |b| b.source.clone());
         let related: Vec<Label> = keys
             .iter()
             .skip(1)
@@ -240,12 +417,14 @@ fn detect_cycles(
 }
 
 /// Emit one [`DiagnosticKind::ScopeMismatch`] per `Singleton` binding
-/// inside a non-`Singleton` component.
+/// inside a non-`Singleton` component-or-subcomponent.
 fn detect_scope_mismatches(
     bindings: &HashMap<Key, Binding>,
-    component: &ComponentDecl,
+    owner_scope: Scope,
+    owner_source: &SourceSpan,
+    owner_kind: &str,
 ) -> Vec<Diagnostic> {
-    if component.scope == Scope::Singleton {
+    if owner_scope == Scope::Singleton {
         return Vec::new();
     }
     bindings
@@ -255,15 +434,15 @@ fn detect_scope_mismatches(
             kind: DiagnosticKind::ScopeMismatch {
                 key: b.key.clone(),
                 binding_scope: b.scope,
-                component_scope: component.scope,
+                component_scope: owner_scope,
             },
             primary: Label {
                 span: b.source.clone(),
                 message: "singleton binding".to_owned(),
             },
             related: vec![Label {
-                span: component.source.clone(),
-                message: "component is not @Singleton".to_owned(),
+                span: owner_source.clone(),
+                message: owner_kind.to_owned(),
             }],
         })
         .collect()
@@ -378,6 +557,7 @@ mod tests {
             component: &comp,
             modules: &[],
             inject_classes: &[],
+            subcomponents: &[],
         });
         assert!(ds.is_empty(), "diagnostics: {ds:?}");
         assert_eq!(g.node_count(), 0);
@@ -397,6 +577,7 @@ mod tests {
             component: &comp,
             modules: &[],
             inject_classes: &[heater, pump],
+            subcomponents: &[],
         });
         assert!(ds.is_empty(), "diagnostics: {ds:?}");
         assert_eq!(g.node_count(), 2);
@@ -414,6 +595,7 @@ mod tests {
             component: &comp,
             modules: &[],
             inject_classes: &[pump],
+            subcomponents: &[],
         });
         assert_eq!(ds.len(), 1);
         match &ds[0].kind {
@@ -434,6 +616,7 @@ mod tests {
             component: &comp,
             modules: &[],
             inject_classes: &[],
+            subcomponents: &[],
         });
         assert_eq!(ds.len(), 1);
         match &ds[0].kind {
@@ -456,6 +639,7 @@ mod tests {
             component: &comp,
             modules: &[],
             inject_classes: &[a, b],
+            subcomponents: &[],
         });
         let cycles: Vec<&Diagnostic> = ds
             .iter()
@@ -474,6 +658,7 @@ mod tests {
             component: &comp,
             modules: &[],
             inject_classes: &[a],
+            subcomponents: &[],
         });
         assert!(
             ds.iter()
@@ -504,6 +689,7 @@ mod tests {
             component: &comp,
             modules: &[m1, m2],
             inject_classes: &[],
+            subcomponents: &[],
         });
         assert_eq!(ds.len(), 1);
         match &ds[0].kind {
@@ -525,6 +711,7 @@ mod tests {
             component: &comp,
             modules: &[],
             inject_classes: &[heater],
+            subcomponents: &[],
         });
         assert!(
             ds.iter()
@@ -543,6 +730,7 @@ mod tests {
             component: &comp,
             modules: &[],
             inject_classes: &[heater],
+            subcomponents: &[],
         });
         assert!(ds.is_empty(), "{ds:?}");
     }
@@ -559,6 +747,7 @@ mod tests {
             component: &comp,
             modules: &[m_unused],
             inject_classes: &[],
+            subcomponents: &[],
         });
         assert!(ds.is_empty());
         assert_eq!(g.node_count(), 0);

@@ -110,6 +110,37 @@ The target's binding (here, `ElectricHeater` via `Provider::InjectCtor`) is what
 
 `@Binds` methods must be `static`. TC39 Stage-3 decorators cannot decorate abstract methods (TS error 1249), so the user writes a static method with a trivial body (`return impl;`). The body still has to compile, but `tsdi-codegen` ignores it and emits the delegate above.
 
+## `@Subcomponent` emission (M8)
+
+A `@Component` whose entry point returns a `@Subcomponent`-annotated class becomes a *subcomponent factory* in the emitted file:
+
+```ts
+// Parent's entry point: abstract requestComponent(): RequestComponent;
+requestComponent(): RequestComponent {
+  return new DaggerRequestComponent(this);
+}
+```
+
+For each such factory, the emitter appends a second class to the same `.tsdi.ts` file:
+
+```ts
+export class DaggerRequestComponent extends RequestComponent {
+  constructor(private parent: DaggerAppComponent) { super(); }
+  // entry-point methods routed through parent or built locally
+  handler(): RequestHandler { return this.parent.getRequestHandler(); }
+}
+```
+
+**Inherited bindings** — if a child binding's `Key` is satisfied by the parent (i.e. found in `parent_bindings` during graph construction), the graph builder records it in `child_graph.inherited_keys` and the codegen routes references through `this.parent.<getKey>()` instead of building a local factory. The child does **not** declare its own cache field for inherited keys.
+
+**Parent factory visibility** — factories on the parent that are *only* called from inside the parent stay `private`; factories whose `Key` appears in any child's `inherited_keys` are emitted **without** the `private` modifier so the child class can call them. The codegen tracks this as `parent_keys_exposed = ⋃ child.inherited_keys`.
+
+**Imports** — both the parent and every subcomponent class contribute import lines, deduped per source path. The subcomponent's `extends` target imports the user's abstract class; its own bindings import their concrete types.
+
+**Scope** — the parent's `@Singleton` cache field still owns lifetime: a child request for an inherited `@Singleton` binding routes through the parent's cache field, so all child instances share one parent-scoped instance. Local child bindings honour their own `Scope` independently.
+
+**Limitations (v0.2 / M8)**: no factory parameters on the subcomponent factory method, no nested subcomponents, no custom scope tags. A future milestone will add these.
+
 ## Output ordering
 
 Methods are emitted in **topological order with stable ties broken by `Key` lexicographic order**, so two identical inputs produce byte-identical outputs. This stability matters for `insta` snapshots and for `git diff` under watch mode.

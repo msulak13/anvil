@@ -1,0 +1,75 @@
+---
+source: crates/tsdi-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "app.ts",
+    modules: [],
+    components: [
+        ComponentDecl {
+            class: ClassRef {
+                module: ModulePath(
+                    "<self>",
+                ),
+                name: "App",
+            },
+            modules: [],
+            scope: Unscoped,
+            entry_points: [
+                EntryPoint {
+                    name: "requestComponent",
+                    key: Class {
+                        module: ModulePath(
+                            "<self>",
+                        ),
+                        name: "RequestComponent",
+                    },
+                    source: SourceSpan {
+                        path: "app.ts",
+                        start: 289,
+                        end: 335,
+                    },
+                },
+            ],
+            source: SourceSpan {
+                path: "app.ts",
+                start: 256,
+                end: 345,
+            },
+        },
+    ],
+    subcomponents: [
+        SubcomponentDecl {
+            class: ClassRef {
+                module: ModulePath(
+                    "<self>",
+                ),
+                name: "RequestComponent",
+            },
+            modules: [],
+            scope: Unscoped,
+            entry_points: [
+                EntryPoint {
+                    name: "handler",
+                    key: Class {
+                        module: ModulePath(
+                            "<self>",
+                        ),
+                        name: "RequestHandler",
+                    },
+                    source: SourceSpan {
+                        path: "app.ts",
+                        start: 158,
+                        end: 193,
+                    },
+                },
+            ],
+            source: SourceSpan {
+                path: "app.ts",
+                start: 112,
+                end: 203,
+            },
+        },
+    ],
+    inject_classes: [],
+}

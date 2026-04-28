@@ -244,3 +244,24 @@ fn entry_point_requires_return_type() {
         "unexpected error: {msg}"
     );
 }
+
+#[test]
+fn subcomponent_with_modules_and_entry_points() {
+    let src = r#"
+        import { Component, Subcomponent } from "tsdi";
+
+        @Subcomponent({ modules: [] })
+        export abstract class RequestComponent {
+            abstract handler(): RequestHandler;
+        }
+
+        @Component({ modules: [] })
+        export abstract class App {
+            abstract requestComponent(): RequestComponent;
+        }
+
+        export class RequestHandler {}
+    "#;
+    let parsed = parse_source(src, "app.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}

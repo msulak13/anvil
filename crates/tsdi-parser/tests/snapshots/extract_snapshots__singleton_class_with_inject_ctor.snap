@@ -6,6 +6,7 @@ ParsedFile {
     path: "heater.ts",
     modules: [],
     components: [],
+    subcomponents: [],
     inject_classes: [
         Binding {
             key: Class {

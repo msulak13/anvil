@@ -29,8 +29,11 @@ use oxc_codegen::Codegen;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
-use tsdi_core::graph::{build_and_validate, DependencyGraph, GraphInput};
-use tsdi_core::ir::{Binding, ClassRef, ComponentDecl, Key, ModuleDecl, Provider, Scope};
+use tsdi_core::graph::{build_and_validate, DependencyGraph, GraphInput, SubcomponentFactory};
+use tsdi_core::ir::{
+    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, Provider, Scope,
+    SubcomponentDecl,
+};
 
 use crate::{banner_for, EmitError, Result};
 
@@ -51,12 +54,14 @@ pub fn emit_component(
     component: &ComponentDecl,
     modules: &[ModuleDecl],
     inject_classes: &[Binding],
+    subcomponents: &[SubcomponentDecl],
     version: &str,
 ) -> Result<String> {
     let (graph, diagnostics) = build_and_validate(GraphInput {
         component,
         modules,
         inject_classes,
+        subcomponents,
     });
     if !diagnostics.is_empty() {
         return Err(EmitError::Invalid(diagnostics));
@@ -68,9 +73,21 @@ pub fn emit_component(
         .ok_or_else(|| EmitError::BadComponentPath(component_path.display().to_string()))?
         .to_path_buf();
 
-    let bindings_topo = topo_order(&graph);
-    let imports = collect_imports(&out_dir, component, &graph, &bindings_topo);
-    let body = build_ts_source(component, &graph, &bindings_topo, &imports);
+    let parent_topo = topo_order(&graph);
+    let mut imports: ImportMap = BTreeMap::new();
+    add_classref_import(&mut imports, &out_dir, &component.class);
+    populate_imports(&mut imports, &out_dir, &graph, &parent_topo);
+    // Imports for each child subcomponent's bindings + the subcomponent class itself.
+    let mut child_topos: Vec<(usize, Vec<Key>)> =
+        Vec::with_capacity(graph.subcomponent_factories.len());
+    for (i, fact) in graph.subcomponent_factories.iter().enumerate() {
+        add_classref_import(&mut imports, &out_dir, &fact.subcomponent);
+        let child_topo = topo_order(&fact.child_graph);
+        populate_imports(&mut imports, &out_dir, &fact.child_graph, &child_topo);
+        child_topos.push((i, child_topo));
+    }
+
+    let body = build_ts_source(component, &graph, &parent_topo, &child_topos, &imports);
 
     // Validate that we emitted parseable TS, then re-print to canonicalize.
     let allocator = Allocator::default();
@@ -138,30 +155,30 @@ fn dfs(k: &Key, graph: &DependencyGraph, visited: &mut HashSet<Key>, out: &mut V
 /// Map `specifier` (e.g. `"./heater"`) → set of names imported from it.
 type ImportMap = BTreeMap<String, BTreeSet<String>>;
 
-fn collect_imports(
+/// Walk every binding in `topo` and add its produced type plus its
+/// provider's referenced class refs to `imports`. Used for both the
+/// parent component and each child subcomponent.
+fn populate_imports(
+    imports: &mut ImportMap,
     out_dir: &Path,
-    component: &ComponentDecl,
     graph: &DependencyGraph,
     topo: &[Key],
-) -> ImportMap {
-    let mut imports: ImportMap = BTreeMap::new();
-    add_classref_import(&mut imports, out_dir, &component.class);
+) {
     for k in topo {
         let b = &graph.bindings[k];
-        // The binding's produced type:
         let key_classref = ClassRef {
             module: match &b.key {
                 Key::Class { module, .. } => module.clone(),
             },
             name: class_name_of(&b.key).to_owned(),
         };
-        add_classref_import(&mut imports, out_dir, &key_classref);
+        add_classref_import(imports, out_dir, &key_classref);
         match &b.provider {
             Provider::InjectCtor { class } => {
-                add_classref_import(&mut imports, out_dir, class);
+                add_classref_import(imports, out_dir, class);
             }
             Provider::ProvidesMethod { module, .. } => {
-                add_classref_import(&mut imports, out_dir, module);
+                add_classref_import(imports, out_dir, module);
             }
             Provider::Binds { .. } => {
                 // The target's class is imported when *its* binding is
@@ -172,7 +189,6 @@ fn collect_imports(
             }
         }
     }
-    imports
 }
 
 fn add_classref_import(imports: &mut ImportMap, out_dir: &Path, cref: &ClassRef) {
@@ -188,6 +204,7 @@ fn build_ts_source(
     component: &ComponentDecl,
     graph: &DependencyGraph,
     bindings_topo: &[Key],
+    child_topos: &[(usize, Vec<Key>)],
     imports: &ImportMap,
 ) -> String {
     let mut s = String::new();
@@ -207,11 +224,88 @@ fn build_ts_source(
     let comp_name = &component.class.name;
     let dagger_name = format!("Dagger{comp_name}");
 
-    writeln!(s, "export class {dagger_name} extends {comp_name} {{").expect("write to String");
+    // Set of entry-point method names that are subcomponent factories;
+    // these need a different emission shape than regular entry points.
+    let sub_factory_method_names: HashSet<&str> = graph
+        .subcomponent_factories
+        .iter()
+        .map(|f| f.method_name.as_str())
+        .collect();
+    // Union of every key any child subcomponent inherits from this
+    // parent. Parent factories for these keys are emitted as non-private
+    // so `this.parent.<getX>()` from the child class typechecks.
+    let mut parent_keys_exposed: HashSet<Key> = HashSet::new();
+    for fact in &graph.subcomponent_factories {
+        for k in &fact.child_graph.inherited_keys {
+            parent_keys_exposed.insert(k.clone());
+        }
+    }
 
-    // First: declare cache fields for every singleton binding, in topo order
-    // so the field declarations match the factory order users will read.
-    for k in bindings_topo {
+    writeln!(s, "export class {dagger_name} extends {comp_name} {{").expect("write to String");
+    emit_class_body(
+        &mut s,
+        graph,
+        bindings_topo,
+        /* parent_dagger */ None,
+        /* subcomponent_factories */ &graph.subcomponent_factories,
+        /* sub_factory_method_names */ &sub_factory_method_names,
+        /* entry_points */ &component.entry_points,
+        /* expose_factories_for */ &parent_keys_exposed,
+    );
+    writeln!(
+        s,
+        "  static create(): {comp_name} {{ return new {dagger_name}(); }}"
+    )
+    .expect("write to String");
+    s.push_str("}\n");
+    writeln!(
+        s,
+        "export function create{comp_name}(): {comp_name} {{ return {dagger_name}.create(); }}"
+    )
+    .expect("write to String");
+
+    // One Dagger<Sub> class per subcomponent factory.
+    for (factory_idx, child_topo) in child_topos {
+        let fact = &graph.subcomponent_factories[*factory_idx];
+        let sub_name = &fact.subcomponent.name;
+        let sub_dagger = format!("Dagger{sub_name}");
+        s.push('\n');
+        writeln!(s, "export class {sub_dagger} extends {sub_name} {{").expect("write to String");
+        writeln!(
+            s,
+            "  constructor(private parent: {dagger_name}) {{ super(); }}"
+        )
+        .expect("write to String");
+        emit_class_body(
+            &mut s,
+            &fact.child_graph,
+            child_topo,
+            /* parent_dagger */ Some(&dagger_name),
+            /* subcomponent_factories */ &[],
+            /* sub_factory_method_names */ &HashSet::new(),
+            /* entry_points */ &fact.child_entry_points,
+            /* expose_factories_for */ &HashSet::new(),
+        );
+        s.push_str("}\n");
+    }
+
+    s
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_class_body(
+    s: &mut String,
+    graph: &DependencyGraph,
+    topo: &[Key],
+    parent_dagger: Option<&str>,
+    subcomponent_factories: &[SubcomponentFactory],
+    sub_factory_method_names: &HashSet<&str>,
+    entry_points: &[EntryPoint],
+    expose_factories_for: &HashSet<Key>,
+) {
+    // Cache fields for every singleton binding, in topo order so they
+    // match the factory order users will read.
+    for k in topo {
         let b = &graph.bindings[k];
         if matches!(b.scope, Scope::Singleton) {
             let class_name = class_name_of(k);
@@ -220,14 +314,14 @@ fn build_ts_source(
         }
     }
 
-    for k in bindings_topo {
+    for k in topo {
         let b = &graph.bindings[k];
         let class_name = class_name_of(k);
         let factory = factory_name(class_name);
         let dep_args = b
             .deps
             .iter()
-            .map(|d| format!("this.{}()", factory_name(class_name_of(d))))
+            .map(|d| dep_call(d, graph, parent_dagger))
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -242,49 +336,69 @@ fn build_ts_source(
                 // is *also* cached on this binding (via the singleton
                 // path below); typically scope is Unscoped and the
                 // target's own scope (if Singleton) does the caching.
-                format!("this.{}()", factory_name(class_name_of(target)))
+                dep_call(target, graph, parent_dagger)
             }
         };
 
         let return_stmt = if matches!(b.scope, Scope::Singleton) {
             let field = cache_field_name(class_name);
-            // `??=` returns the assigned value, so this is shorter than an
-            // `if (this._x === undefined) ...; return this._x` chain.
             format!("return this.{field} ??= {body_expr}")
         } else {
             format!("return {body_expr}")
         };
 
+        let visibility = if expose_factories_for.contains(k) {
+            ""
+        } else {
+            "private "
+        };
         writeln!(
             s,
-            "  private {factory}(): {class_name} {{ {return_stmt}; }}"
+            "  {visibility}{factory}(): {class_name} {{ {return_stmt}; }}"
         )
         .expect("write to String");
     }
 
-    for ep in &component.entry_points {
+    for ep in entry_points {
+        if sub_factory_method_names.contains(ep.name.as_str()) {
+            // Skip — handled below as a subcomponent factory.
+            continue;
+        }
         let class_name = class_name_of(&ep.key);
         let factory = factory_name(class_name);
+        let body = if graph.inherited_keys.contains(&ep.key) {
+            format!("this.parent.{factory}()")
+        } else {
+            format!("this.{factory}()")
+        };
+        writeln!(s, "  {}(): {} {{ return {}; }}", ep.name, class_name, body)
+            .expect("write to String");
+    }
+
+    // Subcomponent factories: parent emits one method per child that
+    // constructs the child Dagger with `this` as the parent reference.
+    for fact in subcomponent_factories {
+        let sub_name = &fact.subcomponent.name;
+        let sub_dagger = format!("Dagger{sub_name}");
         writeln!(
             s,
-            "  {}(): {} {{ return this.{}(); }}",
-            ep.name, class_name, factory
+            "  {}(): {} {{ return new {}(this); }}",
+            fact.method_name, sub_name, sub_dagger
         )
         .expect("write to String");
     }
+}
 
-    writeln!(
-        s,
-        "  static create(): {comp_name} {{ return new {dagger_name}(); }}"
-    )
-    .expect("write to String");
-    s.push_str("}\n");
-    writeln!(
-        s,
-        "export function create{comp_name}(): {comp_name} {{ return {dagger_name}.create(); }}"
-    )
-    .expect("write to String");
-    s
+/// Compute the call expression for `dep` from inside a factory body.
+/// Inherited keys (only meaningful when `parent_dagger` is `Some`) route
+/// through `this.parent.<getDep>()`; everything else uses `this.<getDep>()`.
+fn dep_call(dep: &Key, graph: &DependencyGraph, parent_dagger: Option<&str>) -> String {
+    let factory = factory_name(class_name_of(dep));
+    if parent_dagger.is_some() && graph.inherited_keys.contains(dep) {
+        format!("this.parent.{factory}()")
+    } else {
+        format!("this.{factory}()")
+    }
 }
 
 /// `Heater` → `getHeater`. The class name is already `UpperCamel` by TS

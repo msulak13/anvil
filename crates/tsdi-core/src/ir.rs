@@ -184,6 +184,29 @@ pub struct ComponentDecl {
     pub source: SourceSpan,
 }
 
+/// A `@Subcomponent` declaration: a child object graph that inherits its
+/// parent component's bindings and adds its own modules on top.
+///
+/// Structurally identical to [`ComponentDecl`] — separating the type lets
+/// the codegen and validator dispatch on whether an abstract method is a
+/// regular entry point or a subcomponent factory. A subcomponent's
+/// `entry_points` are exposed via the generated `Dagger<Sub>` class; the
+/// parent dagger is held as a constructor-injected back-reference so
+/// inherited bindings route through the parent's factories.
+#[derive(Clone, Debug)]
+pub struct SubcomponentDecl {
+    /// The abstract subcomponent class.
+    pub class: ClassRef,
+    /// The modules included by this subcomponent (their class refs in source order).
+    pub modules: Vec<ClassRef>,
+    /// The subcomponent's own scope.
+    pub scope: Scope,
+    /// Abstract methods exposing this subcomponent's graph.
+    pub entry_points: Vec<EntryPoint>,
+    /// Where the `@Subcomponent` class appears in source.
+    pub source: SourceSpan,
+}
+
 /// Everything a single `.ts` file contributes to the IR.
 ///
 /// Produced by `tsdi-parser::parse_file`. Aggregated across files by the
@@ -196,6 +219,8 @@ pub struct ParsedFile {
     pub modules: Vec<ModuleDecl>,
     /// `@Component` classes declared in this file.
     pub components: Vec<ComponentDecl>,
+    /// `@Subcomponent` classes declared in this file.
+    pub subcomponents: Vec<SubcomponentDecl>,
     /// Self-bindings produced by classes whose constructor is annotated
     /// `@Inject`. The binding's `Key` is the class itself; the provider is
     /// always [`Provider::InjectCtor`].
