@@ -148,3 +148,8 @@ fn fixture_07_interface_binding() {
 fn fixture_08_http_server() {
     run_fixture("08_http_server", "app-component.ts");
 }
+
+#[test]
+fn fixture_09_express() {
+    run_fixture("09_express", "app-component.ts");
+}
