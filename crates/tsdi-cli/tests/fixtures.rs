@@ -138,3 +138,8 @@ fn fixture_05_subcomponent() {
 fn fixture_06_multibinding_set() {
     run_fixture("06_multibinding_set", "app-component.ts");
 }
+
+#[test]
+fn fixture_07_interface_binding() {
+    run_fixture("07_interface_binding", "coffee-component.ts");
+}
