@@ -143,3 +143,8 @@ fn fixture_06_multibinding_set() {
 fn fixture_07_interface_binding() {
     run_fixture("07_interface_binding", "coffee-component.ts");
 }
+
+#[test]
+fn fixture_08_http_server() {
+    run_fixture("08_http_server", "app-component.ts");
+}
