@@ -10,11 +10,8 @@ import { Pump } from "./pump";
 import { RequestComponent } from "./request-component";
 export class DaggerApp extends App {
 	private _heater: Heater | undefined;
-	private getHeater(): Heater {
+	getHeater(): Heater {
 		return this._heater ??= new Heater();
-	}
-	getPump(): Pump {
-		return new Pump(this.getHeater());
 	}
 	heater(): Heater {
 		return this.getHeater();
@@ -33,7 +30,10 @@ export class DaggerRequestComponent extends RequestComponent {
 	constructor(private parent: DaggerApp) {
 		super();
 	}
+	private getPump(): Pump {
+		return new Pump(this.parent.getHeater());
+	}
 	pump(): Pump {
-		return this.parent.getPump();
+		return this.getPump();
 	}
 }

@@ -35,6 +35,7 @@ ParsedFile {
                         start: 171,
                         end: 203,
                     },
+                    factory_params: [],
                 },
             ],
             source: SourceSpan {

@@ -6,11 +6,8 @@ import { RequestComponent } from "./request-component";
 import { RequestHandler } from "./request-handler";
 export class DaggerAppComponent extends AppComponent {
 	private _heater: Heater | undefined;
-	private getHeater(): Heater {
+	getHeater(): Heater {
 		return this._heater ??= new Heater();
-	}
-	getRequestHandler(): RequestHandler {
-		return new RequestHandler(this.getHeater());
 	}
 	heater(): Heater {
 		return this.getHeater();
@@ -29,7 +26,10 @@ export class DaggerRequestComponent extends RequestComponent {
 	constructor(private parent: DaggerAppComponent) {
 		super();
 	}
+	private getRequestHandler(): RequestHandler {
+		return new RequestHandler(this.parent.getHeater());
+	}
 	handler(): RequestHandler {
-		return this.parent.getRequestHandler();
+		return this.getRequestHandler();
 	}
 }

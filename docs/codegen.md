@@ -150,7 +150,46 @@ export class DaggerRequestComponent extends RequestComponent {
 
 **Scope** — the parent's `@Singleton` cache field still owns lifetime: a child request for an inherited `@Singleton` binding routes through the parent's cache field, so all child instances share one parent-scoped instance. Local child bindings honour their own `Scope` independently.
 
-**Limitations (v0.2 / M8)**: no factory parameters on the subcomponent factory method, no nested subcomponents, no custom scope tags. A future milestone will add these.
+**Limitations (v0.2 / M8)**: no nested subcomponents, no custom scope tags. A future milestone will add these.
+
+### Subcomponent factory parameters (M11)
+
+Each parameter on a parent's abstract subcomponent-factory method becomes a virtual binding inside the child graph, materialized as a stored constructor field on the child dagger:
+
+```ts
+// User
+@Component({ modules: [] })
+export abstract class App {
+  abstract requestComponent(req: HttpRequest, res: HttpResponse): RequestComponent;
+}
+
+// Generated parent dagger
+class DaggerApp extends App {
+  requestComponent(req: HttpRequest, res: HttpResponse): RequestComponent {
+    return new DaggerRequestComponent(this, req, res);
+  }
+}
+
+// Generated child dagger
+class DaggerRequestComponent extends RequestComponent {
+  constructor(
+    private parent: DaggerApp,
+    private req: HttpRequest,
+    private res: HttpResponse,
+  ) { super(); }
+
+  // Trivial getters keep call sites uniform with every other binding.
+  private getHttpRequest(): HttpRequest { return this.req; }
+  private getHttpResponse(): HttpResponse { return this.res; }
+
+  // @Provides methods that consume factory params resolve normally:
+  private getRequestContext(): RequestContext {
+    return RequestModule.context(this.getHttpRequest());
+  }
+}
+```
+
+The factory-param values are **fresh per call** — calling `dagger.requestComponent(reqA, resA)` and `dagger.requestComponent(reqB, resB)` yields two independent child daggers with their own `req` / `res` fields. `@Singleton @Subcomponent` is rejected at validation time when factory params are declared, since the cache would freeze the first call's args.
 
 ## `@IntoSet` multibindings (M9)
 

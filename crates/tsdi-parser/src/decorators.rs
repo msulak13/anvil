@@ -574,13 +574,77 @@ fn extract_entry_points(
             imports,
             local_classes,
         )?;
+        // M11: capture each formal parameter on the abstract method. For
+        // a regular @Component entry point this is an empty list (and
+        // the graph layer rejects non-empty lists with a diagnostic).
+        // For @Subcomponent factory methods, each parameter becomes a
+        // virtual binding inside the child graph.
+        let factory_params = extract_entry_factory_params(
+            m,
+            class_name,
+            &method_name,
+            imports,
+            local_classes,
+            file_path,
+        )?;
         out.push(EntryPoint {
             name: method_name,
             key,
             source: to_ir_span(file_path, m.span),
+            factory_params,
         });
     }
     Ok(out)
+}
+
+/// Lower an entry-point method's formal parameters into [`FactoryParam`]s.
+///
+/// Each parameter must carry an explicit type annotation; an annotation
+/// is required everywhere else in tsdi (no inference from a TS type
+/// checker), and entry points are no exception. The parser surfaces a
+/// missing annotation as [`ExtractError::UnsupportedType`] via the
+/// existing `params_to_keys` plumbing — repurposing that error keeps the
+/// surface area small.
+fn extract_entry_factory_params(
+    m: &oxc_ast::ast::MethodDefinition<'_>,
+    class_name: &str,
+    method_name: &str,
+    imports: &ImportMap,
+    local_classes: &HashSet<&str>,
+    file_path: &str,
+) -> Result<Vec<tsdi_core::ir::FactoryParam>> {
+    let params = m.value.params.items.as_slice();
+    if params.is_empty() {
+        return Ok(Vec::new());
+    }
+    let keys = params_to_keys(params, class_name, method_name, imports, local_classes)?;
+    let mut out = Vec::with_capacity(params.len());
+    for (idx, (p, key)) in params.iter().zip(keys).enumerate() {
+        let name = formal_param_name(p).map_or_else(|| format!("_arg{idx}"), str::to_owned);
+        out.push(tsdi_core::ir::FactoryParam {
+            name,
+            key,
+            source: to_ir_span(file_path, p.span),
+        });
+    }
+    Ok(out)
+}
+
+/// Extract the bare identifier name of a formal parameter
+/// (`(req: Request) => …` → `"req"`). Destructuring patterns and
+/// rest/array bindings are not supported on entry-point methods in v0.1
+/// and surface as `None`, which `extract_entry_factory_params` falls
+/// back to a synthetic `_argN` for.
+fn formal_param_name<'a>(p: &'a FormalParameter<'a>) -> Option<&'a str> {
+    use oxc_ast::ast::BindingPattern;
+    match &p.pattern {
+        BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
+        // Destructuring / array / assignment patterns aren't supported
+        // as factory parameter names — the dagger can't synthesize a
+        // sensible field for `({ req, res }) => …`. The caller falls
+        // back to `_argN`.
+        _ => None,
+    }
 }
 
 fn is_abstract_method(m: &oxc_ast::ast::MethodDefinition<'_>) -> bool {

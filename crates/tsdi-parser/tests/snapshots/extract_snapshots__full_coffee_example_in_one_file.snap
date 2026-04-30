@@ -83,6 +83,7 @@ ParsedFile {
                         start: 535,
                         end: 557,
                     },
+                    factory_params: [],
                 },
             ],
             source: SourceSpan {

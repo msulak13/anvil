@@ -218,6 +218,21 @@ pub enum Provider {
         /// the contributing modules.
         contributors: Vec<SetContributor>,
     },
+    /// A virtual binding whose value is supplied by the **caller** of a
+    /// subcomponent factory rather than constructed by the dagger (M11).
+    ///
+    /// Produced exclusively by the graph layer when a subcomponent's
+    /// parent factory has formal parameters — each parameter becomes a
+    /// `FactoryParam` binding visible only inside the child graph. The
+    /// codegen emits a private field on the child dagger that stores the
+    /// runtime-supplied value, plus a trivial getter `private getX(): T
+    /// { return this.<param>; }` so call sites stay uniform with every
+    /// other binding's `getX()` shape.
+    FactoryParam {
+        /// The constructor field / getter name on the child dagger
+        /// (taken verbatim from the parent factory's parameter name).
+        name: String,
+    },
 }
 
 /// One `@IntoSet @Provides` contribution to a [`Provider::SetMultibinding`].
@@ -281,6 +296,13 @@ pub struct ModuleDecl {
 
 /// An entry point on a `@Component` — an abstract method whose return type
 /// is a [`Key`].
+///
+/// For zero-arg methods (the v0.1 baseline) `factory_params` is empty and
+/// the method is a regular getter on the dagger. For `@Subcomponent`
+/// factories (M11), each parameter on the parent's abstract method
+/// becomes a [`FactoryParam`] threaded into the child dagger's
+/// constructor. The graph layer materializes those as
+/// [`Provider::FactoryParam`] bindings inside the child's binding map.
 #[derive(Clone, Debug)]
 pub struct EntryPoint {
     /// The method name as written in the abstract component class.
@@ -288,6 +310,29 @@ pub struct EntryPoint {
     /// The key that this entry point exposes.
     pub key: Key,
     /// Where the abstract method appears in source.
+    pub source: SourceSpan,
+    /// Formal parameters on the entry-point method (M11). Empty for
+    /// regular `@Component` entry points; populated for `@Subcomponent`
+    /// factory methods that thread runtime-supplied state (e.g.
+    /// `req: Request`) into the child graph.
+    pub factory_params: Vec<FactoryParam>,
+}
+
+/// A formal parameter on an entry-point method that becomes a virtual
+/// binding inside the child graph (M11).
+///
+/// Captured by the parser from the parameter's identifier and type
+/// annotation. The graph layer rewrites each `FactoryParam` into a
+/// [`Binding`] with [`Provider::FactoryParam`]; the codegen materializes
+/// that as a constructor argument plus a private field on the child
+/// dagger.
+#[derive(Clone, Debug)]
+pub struct FactoryParam {
+    /// The parameter identifier (used as the field name on the dagger).
+    pub name: String,
+    /// The parameter's declared type, lowered to a [`Key`].
+    pub key: Key,
+    /// Where the parameter appears in source.
     pub source: SourceSpan,
 }
 

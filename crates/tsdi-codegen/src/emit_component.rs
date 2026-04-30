@@ -179,8 +179,13 @@ fn dfs(k: &Key, graph: &DependencyGraph, visited: &mut HashSet<Key>, out: &mut V
         for d in deps {
             dfs(d, graph, visited, out);
         }
+        // Only emit topo entries for keys that *have* a local binding.
+        // Inherited / parent-satisfied / factory-param-on-parent deps
+        // are visited so their transitive deps are queued, but they
+        // don't produce a factory in this graph and shouldn't be
+        // touched by `populate_imports` or `emit_class_body`.
+        out.push(k.clone());
     }
-    out.push(k.clone());
 }
 
 /// Map `specifier` (e.g. `"./heater"`) → set of names imported from it.
@@ -235,13 +240,14 @@ fn populate_imports(
             Provider::ProvidesMethod { module, .. } => {
                 add_classref_import(imports, out_dir, module);
             }
-            Provider::Binds { .. } => {
-                // The target's class is imported when *its* binding is
-                // visited (Binds always lists target in `deps`, which
-                // the topo walk has already enqueued). The owning
-                // @Module class is abstract, so no static reference is
-                // emitted; nothing to import here.
-            }
+            // `Binds` and `FactoryParam` need no extra import:
+            // - `Binds`'s target class arrives via its own `deps` entry
+            //   when the topo walker visits that binding. The owning
+            //   @Module class is abstract, so no static reference exists.
+            // - `FactoryParam`'s type class is already imported when
+            //   the binding's outer key was processed above. The
+            //   binding's value comes from a stored ctor field.
+            Provider::Binds { .. } | Provider::FactoryParam { .. } => {}
             Provider::SetMultibinding { contributors } => {
                 for c in contributors {
                     add_classref_import(imports, out_dir, &c.module);
@@ -353,11 +359,19 @@ fn build_ts_source(
         let sub_dagger = format!("Dagger{sub_name}");
         s.push('\n');
         writeln!(s, "export class {sub_dagger} extends {sub_name} {{").expect("write to String");
-        writeln!(
-            s,
-            "  constructor(private parent: {dagger_name}) {{ super(); }}"
-        )
-        .expect("write to String");
+        // M11: ctor takes the parent dagger plus one private field per
+        // factory parameter the parent threaded in. `private` on a
+        // ctor param both stores it as a field *and* keeps it
+        // encapsulated — the only callers are this class's own
+        // factory methods.
+        let mut ctor_params = format!("private parent: {dagger_name}");
+        for fp in &fact.factory_params {
+            ctor_params.push_str(", private ");
+            ctor_params.push_str(&fp.name);
+            ctor_params.push_str(": ");
+            ctor_params.push_str(&type_string_of(&fp.key));
+        }
+        writeln!(s, "  constructor({ctor_params}) {{ super(); }}").expect("write to String");
         emit_class_body(
             &mut s,
             &fact.child_graph,
@@ -439,6 +453,16 @@ fn emit_class_body(
                     .collect();
                 format!("new Set([{}])", parts.join(", "))
             }
+            Provider::FactoryParam { name } => {
+                // The runtime value lives on `this.<name>` (set by the
+                // child dagger's constructor). The factory just hands
+                // it back. Singleton scope on a factory param is
+                // rejected at validation time, so the cache-field
+                // wrapping below is dead code for this arm — but the
+                // expression we return is the same shape as any other
+                // body, keeping the call-site uniform.
+                format!("this.{name}")
+            }
         };
 
         let return_stmt = if matches!(b.scope, Scope::Singleton) {
@@ -478,13 +502,26 @@ fn emit_class_body(
 
     // Subcomponent factories: parent emits one method per child that
     // constructs the child Dagger with `this` as the parent reference.
+    // M11: when factory_params is non-empty, the parent method takes
+    // them as args and forwards them to the child constructor.
     for fact in subcomponent_factories {
         let sub_name = &fact.subcomponent.name;
         let sub_dagger = format!("Dagger{sub_name}");
+        let params_sig = fact
+            .factory_params
+            .iter()
+            .map(|fp| format!("{}: {}", fp.name, type_string_of(&fp.key)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut forwarded_args = String::from("this");
+        for fp in &fact.factory_params {
+            forwarded_args.push_str(", ");
+            forwarded_args.push_str(&fp.name);
+        }
         writeln!(
             s,
-            "  {}(): {} {{ return new {}(this); }}",
-            fact.method_name, sub_name, sub_dagger
+            "  {}({}): {} {{ return new {}({}); }}",
+            fact.method_name, params_sig, sub_name, sub_dagger, forwarded_args
         )
         .expect("write to String");
     }

@@ -21,7 +21,7 @@
 
 use thiserror::Error;
 
-use crate::ir::{Key, Scope, SourceSpan};
+use crate::ir::{ClassRef, Key, Scope, SourceSpan};
 
 /// A single problem found during graph construction or validation.
 ///
@@ -48,6 +48,13 @@ impl Diagnostic {
             DiagnosticKind::Cycle { .. } => "tsdi::cycle",
             DiagnosticKind::Duplicate { .. } => "tsdi::duplicate",
             DiagnosticKind::ScopeMismatch { .. } => "tsdi::scope_mismatch",
+            DiagnosticKind::FactoryParamsOnNonSubcomponentEntry { .. } => {
+                "tsdi::factory_params_on_non_subcomponent"
+            }
+            DiagnosticKind::DuplicateFactoryParam { .. } => "tsdi::duplicate_factory_param",
+            DiagnosticKind::SingletonSubcomponentWithFactoryParams { .. } => {
+                "tsdi::singleton_subcomponent_with_factory_params"
+            }
         }
     }
 
@@ -79,6 +86,18 @@ impl Diagnostic {
                 key_display(key),
                 binding_scope,
                 component_scope,
+            ),
+            DiagnosticKind::FactoryParamsOnNonSubcomponentEntry { component, method } => format!(
+                "@Component entry point `{}.{}` cannot take factory parameters",
+                component.name, method,
+            ),
+            DiagnosticKind::DuplicateFactoryParam { key } => format!(
+                "duplicate factory parameter type {} on a single subcomponent factory",
+                key_display(key),
+            ),
+            DiagnosticKind::SingletonSubcomponentWithFactoryParams { subcomponent } => format!(
+                "@Singleton @Subcomponent `{}` cannot take factory parameters",
+                subcomponent.name,
             ),
         }
     }
@@ -122,6 +141,30 @@ pub enum DiagnosticKind {
         binding_scope: Scope,
         /// The enclosing component's scope.
         component_scope: Scope,
+    },
+    /// A regular `@Component` entry-point method declared with formal
+    /// parameters (M11). `createX()` is zero-arg, so the params would
+    /// have nowhere to come from. Factory parameters are only valid on
+    /// abstract methods that resolve to `@Subcomponent` factories.
+    FactoryParamsOnNonSubcomponentEntry {
+        /// The owning component class.
+        component: ClassRef,
+        /// The offending entry-point method name.
+        method: String,
+    },
+    /// Two factory parameters on the same subcomponent factory share a
+    /// type — child bindings asking for that type would be ambiguous.
+    DuplicateFactoryParam {
+        /// The collided key.
+        key: Key,
+    },
+    /// `@Singleton` was applied to a `@Subcomponent` whose parent
+    /// factory takes runtime parameters. The cache would freeze the
+    /// first call's argument values across every subsequent call —
+    /// almost certainly a bug.
+    SingletonSubcomponentWithFactoryParams {
+        /// The offending subcomponent class.
+        subcomponent: ClassRef,
     },
 }
 

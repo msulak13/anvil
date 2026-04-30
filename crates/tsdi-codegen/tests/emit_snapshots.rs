@@ -87,11 +87,13 @@ fn emit_simple_provides_module() {
                 name: "pump".into(),
                 key: pump_key,
                 source: span_of(&comp_path),
+                factory_params: vec![],
             },
             EntryPoint {
                 name: "heater".into(),
                 key: heater_key,
                 source: span_of(&comp_path),
+                factory_params: vec![],
             },
         ],
         source: span_of(&comp_path),
@@ -147,6 +149,7 @@ fn emit_inject_ctor_chain() {
             name: "pump".into(),
             key: pump_key,
             source: span_of(&comp_path),
+            factory_params: vec![],
         }],
         source: span_of(&comp_path),
     };
@@ -204,11 +207,13 @@ fn emit_singleton_caches_via_lazy_field() {
                 name: "pump".into(),
                 key: pump_key,
                 source: span_of(&comp_path),
+                factory_params: vec![],
             },
             EntryPoint {
                 name: "heater".into(),
                 key: heater_key,
                 source: span_of(&comp_path),
+                factory_params: vec![],
             },
         ],
         source: span_of(&comp_path),
@@ -273,6 +278,7 @@ fn emit_binds_alias_delegates_to_target() {
             name: "heater".into(),
             key: heater_key,
             source: span_of(&comp_path),
+            factory_params: vec![],
         }],
         source: span_of(&comp_path),
     };
@@ -335,6 +341,7 @@ fn emit_subcomponent_with_inherited_dep_and_local_factory() {
             name: "pump".into(),
             key: pump_key,
             source: span_of(&sub_path),
+            factory_params: vec![],
         }],
         source: span_of(&sub_path),
     };
@@ -348,11 +355,13 @@ fn emit_subcomponent_with_inherited_dep_and_local_factory() {
                 name: "heater".into(),
                 key: heater_key,
                 source: span_of(&comp_path),
+                factory_params: vec![],
             },
             EntryPoint {
                 name: "requestComponent".into(),
                 key: class_key(&sub_path, "RequestComponent"),
                 source: span_of(&comp_path),
+                factory_params: vec![],
             },
         ],
         source: span_of(&comp_path),
@@ -418,11 +427,98 @@ fn emit_into_set_aggregates_contributions() {
             name: "plugins".into(),
             key: set_plugin_key,
             source: span_of(&comp_path),
+            factory_params: vec![],
         }],
         source: span_of(&comp_path),
     };
 
     let out = emit_component(&component, &[module], &[], &[], "0.0.1").unwrap();
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn emit_subcomponent_factory_with_runtime_parameters() {
+    // M11: parent App exposes `requestComponent(req: HttpRequest, res:
+    // HttpResponse)` returning a RequestComponent. The RequestModule
+    // has a @Provides handler that consumes both. Codegen should emit:
+    //   - Parent factory taking the params and forwarding them to the
+    //     child ctor.
+    //   - DaggerRequestComponent with `private req` + `private res`
+    //     fields, and getHttpRequest/getHttpResponse factories that
+    //     return the stored fields.
+    //   - getHandler() that calls RequestModule.handler(this.getHttpRequest(),
+    //     this.getHttpResponse()).
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let app_path: String = root.join("app-component.ts").to_string_lossy().into_owned();
+    let req_path: String = root
+        .join("request-component.ts")
+        .to_string_lossy()
+        .into_owned();
+    let mod_path: String = root
+        .join("request-module.ts")
+        .to_string_lossy()
+        .into_owned();
+    let http_path: String = root.join("http.ts").to_string_lossy().into_owned();
+
+    let request_key = class_key(&http_path, "HttpRequest");
+    let response_key = class_key(&http_path, "HttpResponse");
+    let handler_key = class_key(&http_path, "Handler");
+
+    let request_module = ModuleDecl {
+        class: class_ref(&mod_path, "RequestModule"),
+        provides: vec![Binding {
+            key: handler_key.clone(),
+            provider: Provider::ProvidesMethod {
+                module: class_ref(&mod_path, "RequestModule"),
+                method: "handler".into(),
+            },
+            scope: Scope::Unscoped,
+            deps: vec![request_key.clone(), response_key.clone()],
+            source: span_of(&mod_path),
+            role: MultibindRole::None,
+        }],
+        source: span_of(&mod_path),
+    };
+
+    let request_sub = SubcomponentDecl {
+        class: class_ref(&req_path, "RequestComponent"),
+        modules: vec![class_ref(&mod_path, "RequestModule")],
+        scope: Scope::Unscoped,
+        entry_points: vec![EntryPoint {
+            name: "handler".into(),
+            key: handler_key,
+            source: span_of(&req_path),
+            factory_params: vec![],
+        }],
+        source: span_of(&req_path),
+    };
+
+    let app = ComponentDecl {
+        class: class_ref(&app_path, "App"),
+        modules: vec![],
+        scope: Scope::Unscoped,
+        entry_points: vec![EntryPoint {
+            name: "requestComponent".into(),
+            key: class_key(&req_path, "RequestComponent"),
+            source: span_of(&app_path),
+            factory_params: vec![
+                tsdi_core::ir::FactoryParam {
+                    name: "req".into(),
+                    key: request_key,
+                    source: span_of(&app_path),
+                },
+                tsdi_core::ir::FactoryParam {
+                    name: "res".into(),
+                    key: response_key,
+                    source: span_of(&app_path),
+                },
+            ],
+        }],
+        source: span_of(&app_path),
+    };
+
+    let out = emit_component(&app, &[request_module], &[], &[request_sub], "0.0.1").unwrap();
     insta::assert_snapshot!(out);
 }
 
@@ -475,6 +571,7 @@ fn emit_preserves_node_modules_specifier() {
             name: "tracer".into(),
             key: vendor_key,
             source: span_of(&comp_path),
+            factory_params: vec![],
         }],
         source: span_of(&comp_path),
     };
@@ -484,7 +581,7 @@ fn emit_preserves_node_modules_specifier() {
         out.contains(r#"import { Tracer } from "vendor-lib";"#),
         "expected bare-specifier import, got:\n{out}",
     );
-    // …and emphatically *not* a relative path into node_modules.
+    // â€¦and emphatically *not* a relative path into node_modules.
     assert!(
         !out.contains("node_modules"),
         "must not leak the node_modules path into emitted imports:\n{out}",
@@ -508,6 +605,7 @@ fn validation_failure_short_circuits() {
             name: "pump".into(),
             key: pump_key,
             source: span_of(&comp_path),
+            factory_params: vec![],
         }],
         source: span_of(&comp_path),
     };

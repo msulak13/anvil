@@ -79,6 +79,7 @@ pub enum Provider {
     ProvidesMethod  { module: ClassRef, method: String },
     Binds           { target: Key },
     SetMultibinding { contributors: Vec<SetContributor> },  // M9 — synthesized
+    FactoryParam   { name: String },                         // M11 — synthesized
 }
 
 pub struct SetContributor {
@@ -94,6 +95,8 @@ pub struct SetContributor {
 - **`Binds`** (M7) — alias binding. The owning `@Module` exposes a `static` method whose single parameter type is the implementation and whose return type is the alias. The binding's `key` is the return type (the alias); `target` is the parameter type (the implementation). `deps` is `vec![target]` so the topo walk visits the target's binding before the alias's factory references it. Codegen emits `return this.<getTarget>()` — no `new` is performed by the alias factory; the target's scope governs caching.
 
   TC39 Stage-3 decorators cannot decorate abstract methods (TS error 1249), so `@Binds` methods are `static` with a body. `tsdi-codegen` ignores the body and emits the delegate; the body still has to compile (e.g. `return impl;`) so the user's `tsc` accepts the source file.
+
+- **`FactoryParam`** (M11) — synthesized virtual binding for a runtime value supplied to a `@Subcomponent` factory's parameter list. The graph layer injects one `Provider::FactoryParam { name }` binding per parameter into the child's binding map; codegen materializes that as a `private <name>: T` field on the child dagger plus a trivial `private get<T>(): T { return this.<name>; }` getter so dep-call sites stay uniform. See [Subcomponent factory parameters](#subcomponent-factory-parameters-m11) below.
 
 - **`SetMultibinding`** (M9) — synthesized aggregate. Never produced by the parser directly. The graph aggregator walks every `@IntoSet @Provides` raw binding (carrying `role: MultibindRole::IntoSet`), groups them by element type, and emits one `Provider::SetMultibinding` under `Key::Set { element }`. Each `SetContributor` records the originating `@Module` class, method name, and that contributor's own deps. Codegen emits `return new Set([Mod1.foo(...), Mod2.bar(...)])` — one call per contributor with its own dep argument list.
 
@@ -178,6 +181,27 @@ pub struct SubcomponentDecl {
 A class annotated `@Subcomponent` (M8). Structurally identical to `ComponentDecl`; the distinction is *who builds it*. A subcomponent does not stand alone — it is reached through a parent component's abstract zero-arg method whose return type names the subcomponent class. The graph-layer wires this up: when an entry point's `key` matches a known `SubcomponentDecl`, the graph builder produces a `SubcomponentFactory` that owns a child `DependencyGraph` resolved with the parent's bindings as a fallback. Keys satisfied by the parent are recorded in `child_graph.inherited_keys` so codegen can route them through `this.parent.<getX>()` instead of constructing a fresh instance.
 
 Subcomponents inherit the parent's scope cache for inherited bindings — a `@Singleton` `Heater` provided by the parent stays one instance across every child request.
+
+## Subcomponent factory parameters (M11)
+
+A `@Subcomponent`'s parent factory method may declare formal parameters. Each parameter becomes a virtual binding inside the child graph that resolves to the runtime value supplied at the factory call site:
+
+```ts
+@Component({ modules: [] })
+export abstract class App {
+  abstract requestComponent(req: HttpRequest, res: HttpResponse): RequestComponent;
+}
+```
+
+Pipeline:
+
+1. Parser captures `factory_params: [{name: "req", key: HttpRequest, …}, {name: "res", key: HttpResponse, …}]` on the `requestComponent` `EntryPoint`. Regular `@Component` entry points still have `factory_params: vec![]`.
+2. M2's resolver normalizes each `FactoryParam.key.module.abs` to an absolute path the same way it does for every other `Key`.
+3. Graph layer (`build_child_graph`) sees the parent factory's `factory_params` and **injects** a `Binding { provider: Provider::FactoryParam { name }, scope: Unscoped, deps: [], … }` per parameter into the child's binding map *before* `build_petgraph` runs. Any child binding requesting `HttpRequest` resolves locally — never as inherited from the parent.
+4. Three new validation rules guard misuse: `FactoryParamsOnNonSubcomponentEntry` (params on a regular `@Component` method), `DuplicateFactoryParam` (two params with the same Key), `SingletonSubcomponentWithFactoryParams` (a singleton subcomponent that takes runtime args would freeze them across calls).
+5. Codegen emits the parent factory as `requestComponent(req: HttpRequest, res: HttpResponse): RequestComponent { return new DaggerRequestComponent(this, req, res); }` and the child class as `constructor(private parent, private req: HttpRequest, private res: HttpResponse) { super(); }` plus a private `getHttpRequest(): HttpRequest { return this.req; }` getter per parameter so dep-call sites stay uniform.
+
+Reachability pruning was added alongside M11: the graph builder now does a BFS from non-subcomponent entry points and drops any binding (including project-wide `@Inject` self-bindings) not transitively reached. Without this, a subcomponent-only `@Inject` class would leak onto the parent dagger as a non-private factory and trigger spurious missing-dep diagnostics for its child-only deps.
 
 ## Multibindings
 

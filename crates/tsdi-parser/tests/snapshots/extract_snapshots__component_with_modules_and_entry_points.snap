@@ -43,6 +43,7 @@ ParsedFile {
                         start: 315,
                         end: 337,
                     },
+                    factory_params: [],
                 },
                 EntryPoint {
                     name: "heater",
@@ -60,6 +61,7 @@ ParsedFile {
                         start: 350,
                         end: 376,
                     },
+                    factory_params: [],
                 },
             ],
             source: SourceSpan {

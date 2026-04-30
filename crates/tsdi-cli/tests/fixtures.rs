@@ -153,3 +153,8 @@ fn fixture_08_http_server() {
 fn fixture_09_express() {
     run_fixture("09_express", "app-component.ts");
 }
+
+#[test]
+fn fixture_10_factory_params() {
+    run_fixture("10_factory_params", "app-component.ts");
+}

@@ -30,8 +30,8 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::ir::{
-    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, MultibindRole, Provider, Scope,
-    SetContributor, SourceSpan, SubcomponentDecl,
+    Binding, ClassRef, ComponentDecl, EntryPoint, FactoryParam, Key, ModuleDecl, MultibindRole,
+    Provider, Scope, SetContributor, SourceSpan, SubcomponentDecl,
 };
 use crate::validate::{Diagnostic, DiagnosticKind, Label};
 
@@ -76,6 +76,11 @@ pub struct SubcomponentFactory {
     pub child_entry_points: Vec<EntryPoint>,
     /// Where the parent's factory method appears in source.
     pub source: SourceSpan,
+    /// Factory parameters declared on the parent's abstract method (M11).
+    /// Empty for the M8 zero-arg shape. Each entry becomes a stored
+    /// field on the child dagger and a [`Provider::FactoryParam`]
+    /// binding inside `child_graph.bindings`.
+    pub factory_params: Vec<FactoryParam>,
 }
 
 /// A resolved per-component dependency graph.
@@ -128,21 +133,51 @@ impl DependencyGraph {
 /// inspect the returned `Vec<Diagnostic>` first: a non-empty list means
 /// the graph is unsafe to feed to codegen.
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagnostic>) {
-    let (bindings, mut diagnostics) = aggregate_bindings(
+    let (mut bindings, mut diagnostics) = aggregate_bindings(
         input.component.modules.as_slice(),
         input.modules,
         input.inject_classes,
         None,
     );
-    let (graph, node_for, missing) = build_petgraph(&bindings, None);
-    diagnostics.extend(missing);
 
     // Index subcomponent class refs so we can recognize factory entry points.
     let mut sub_by_classref: HashMap<&ClassRef, &SubcomponentDecl> = HashMap::new();
     for sub in input.subcomponents {
         sub_by_classref.insert(&sub.class, sub);
     }
+
+    // M11: prune `bindings` to only those reachable from non-subcomponent
+    // entry points. The project-wide `@Inject` set includes classes that
+    // only resolve inside a subcomponent (whose deps depend on factory
+    // params); leaving them in the parent's binding map makes
+    // `build_petgraph` emit spurious "missing binding" diagnostics for
+    // their child-only deps, and would also make codegen emit dead
+    // factory methods on the parent dagger.
+    let parent_root_keys: Vec<Key> = input
+        .component
+        .entry_points
+        .iter()
+        .filter(|ep| {
+            // Subcomponent factories don't contribute to parent
+            // reachability — their child graph stands alone.
+            if let Key::Class { module, name } = &ep.key {
+                let cr = ClassRef {
+                    module: module.clone(),
+                    name: name.clone(),
+                };
+                !sub_by_classref.contains_key(&cr)
+            } else {
+                true
+            }
+        })
+        .map(|ep| ep.key.clone())
+        .collect();
+    prune_unreachable_bindings(&mut bindings, &parent_root_keys);
+
+    let (graph, node_for, missing) = build_petgraph(&bindings, None);
+    diagnostics.extend(missing);
 
     let mut roots: Vec<Key> = Vec::with_capacity(input.component.entry_points.len());
     let mut subcomponent_factories: Vec<SubcomponentFactory> = Vec::new();
@@ -158,12 +193,39 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
             None
         };
         if let Some(sub) = sub_match {
+            // M11: a @Singleton subcomponent that takes runtime factory
+            // parameters would cache the first call's `req` across every
+            // subsequent invocation — almost always a bug. Reject it
+            // loudly rather than producing surprising graphs.
+            if !ep.factory_params.is_empty() && sub.scope == Scope::Singleton {
+                diagnostics.push(Diagnostic {
+                    kind: DiagnosticKind::SingletonSubcomponentWithFactoryParams {
+                        subcomponent: sub.class.clone(),
+                    },
+                    primary: Label {
+                        span: sub.source.clone(),
+                        message: "@Singleton @Subcomponent cannot take factory parameters"
+                            .to_owned(),
+                    },
+                    related: vec![Label {
+                        span: ep.source.clone(),
+                        message: "factory declared here".to_owned(),
+                    }],
+                });
+            }
+            // M11: detect duplicate factory-param keys on the same
+            // factory method. Two `Request` parameters would make any
+            // child binding asking for `Request` ambiguous.
+            for diag in detect_duplicate_factory_params(&ep.factory_params, &ep.source) {
+                diagnostics.push(diag);
+            }
             let (child_graph, child_diags) = build_child_graph(
                 sub,
                 input.modules,
                 input.inject_classes,
                 input.subcomponents,
                 &bindings,
+                &ep.factory_params,
             );
             diagnostics.extend(child_diags);
             subcomponent_factories.push(SubcomponentFactory {
@@ -172,8 +234,25 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
                 child_graph,
                 child_entry_points: sub.entry_points.clone(),
                 source: ep.source.clone(),
+                factory_params: ep.factory_params.clone(),
             });
             continue;
+        }
+
+        // M11: factory parameters on a regular @Component entry point
+        // would have nowhere to come from — `createApp()` is zero-arg.
+        if !ep.factory_params.is_empty() {
+            diagnostics.push(Diagnostic {
+                kind: DiagnosticKind::FactoryParamsOnNonSubcomponentEntry {
+                    component: input.component.class.clone(),
+                    method: ep.name.clone(),
+                },
+                primary: Label {
+                    span: ep.source.clone(),
+                    message: "@Component entry points must be zero-arg".to_owned(),
+                },
+                related: vec![],
+            });
         }
 
         roots.push(ep.key.clone());
@@ -217,23 +296,60 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
 /// dictionary. Any dep satisfied by the parent is recorded in
 /// [`DependencyGraph::inherited_keys`] and not added as a child node;
 /// codegen will route those calls to `this.parent.<getX>()`.
+///
+/// `factory_params` (M11) become virtual `Provider::FactoryParam`
+/// bindings injected into the child's binding map *before* the petgraph
+/// pass, so any child binding that requests a factory-param key
+/// resolves locally rather than via the parent. Factory params shadow
+/// any same-keyed parent binding on purpose — that's the whole point.
 fn build_child_graph(
     sub: &SubcomponentDecl,
     all_modules: &[ModuleDecl],
     inject_classes: &[Binding],
     subcomponents: &[SubcomponentDecl],
     parent_bindings: &HashMap<Key, Binding>,
+    factory_params: &[FactoryParam],
 ) -> (DependencyGraph, Vec<Diagnostic>) {
-    let (bindings, mut diagnostics) = aggregate_bindings(
+    let (mut bindings, mut diagnostics) = aggregate_bindings(
         sub.modules.as_slice(),
         all_modules,
         inject_classes,
         Some(parent_bindings),
     );
+
+    // M11: inject factory-param bindings. These take priority over both
+    // module/inject bindings and parent-inherited bindings — the runtime
+    // value supplied at the factory call site is authoritative.
+    for fp in factory_params {
+        bindings.insert(
+            fp.key.clone(),
+            Binding {
+                key: fp.key.clone(),
+                provider: Provider::FactoryParam {
+                    name: fp.name.clone(),
+                },
+                scope: Scope::Unscoped,
+                deps: vec![],
+                source: fp.source.clone(),
+                role: MultibindRole::None,
+            },
+        );
+    }
+
+    // M11: prune to bindings reachable from the subcomponent's entry
+    // points. Same rationale as the parent path — keeps spurious
+    // missing-dep diagnostics from leaking out of the project-wide
+    // @Inject pool, and ensures codegen only emits factories that
+    // matter to this component.
+    let child_root_keys: Vec<Key> = sub.entry_points.iter().map(|ep| ep.key.clone()).collect();
+    prune_unreachable_bindings_with_fallback(&mut bindings, &child_root_keys, parent_bindings);
+
     let (graph, node_for, missing) = build_petgraph(&bindings, Some(parent_bindings));
     diagnostics.extend(missing);
 
     // Compute which keys are inherited (reached via parent for some binding's deps).
+    // Factory params satisfy locally — they are *never* inherited even
+    // when the parent also has the same key.
     let mut inherited_keys: HashSet<Key> = HashSet::new();
     for b in bindings.values() {
         for dep in &b.deps {
@@ -539,12 +655,92 @@ fn register_binding(
     bindings.entry(b.key.clone()).or_insert_with(|| b.clone());
 }
 
+/// Prune `bindings` to entries reachable from `roots` via the binding
+/// dep edges. Bindings whose keys aren't transitively requested by any
+/// entry point are dropped — this matches Dagger's "only validate what's
+/// used" policy and avoids surfacing spurious missing-dep diagnostics
+/// for project-wide `@Inject` classes that only make sense in a
+/// subcomponent's scope (M11).
+fn prune_unreachable_bindings(bindings: &mut HashMap<Key, Binding>, roots: &[Key]) {
+    let mut reached: HashSet<Key> = HashSet::new();
+    let mut queue: Vec<Key> = roots.to_vec();
+    while let Some(k) = queue.pop() {
+        if !reached.insert(k.clone()) {
+            continue;
+        }
+        if let Some(b) = bindings.get(&k) {
+            for d in &b.deps {
+                if !reached.contains(d) {
+                    queue.push(d.clone());
+                }
+            }
+        }
+    }
+    bindings.retain(|k, _| reached.contains(k));
+}
+
+/// Same as [`prune_unreachable_bindings`] but accepts a `parent_bindings`
+/// fallback used to follow inherited deps across the parent boundary
+/// (so a child binding's parent-satisfied dep still pulls in any further
+/// child deps reachable from it). Today the inherited side is shallow —
+/// we only need to walk into the child's own bindings — so the
+/// implementation collapses back to a regular pure-child walk; the
+/// `parent_bindings` argument is kept for symmetry and future
+/// generalization (e.g. nested subcomponents).
+fn prune_unreachable_bindings_with_fallback(
+    bindings: &mut HashMap<Key, Binding>,
+    roots: &[Key],
+    parent_bindings: &HashMap<Key, Binding>,
+) {
+    let _ = parent_bindings;
+    prune_unreachable_bindings(bindings, roots);
+}
+
+/// Report `DuplicateFactoryParam` if the same key appears more than
+/// once in a single factory's parameter list (M11). Two `Request` params
+/// would make `req: Request` ambiguous for any child binding asking for
+/// `Request`.
+fn detect_duplicate_factory_params(
+    params: &[FactoryParam],
+    fallback_span: &SourceSpan,
+) -> Vec<Diagnostic> {
+    let mut by_key: HashMap<Key, Vec<&FactoryParam>> = HashMap::new();
+    for p in params {
+        by_key.entry(p.key.clone()).or_default().push(p);
+    }
+    let mut out = Vec::new();
+    for (key, sites) in by_key {
+        if sites.len() < 2 {
+            continue;
+        }
+        let mut iter = sites.iter();
+        let first = iter.next().expect("len >= 2");
+        let related: Vec<Label> = iter
+            .map(|p| Label {
+                span: p.source.clone(),
+                message: format!("also bound here as `{}`", p.name),
+            })
+            .collect();
+        out.push(Diagnostic {
+            kind: DiagnosticKind::DuplicateFactoryParam { key },
+            primary: Label {
+                span: first.source.clone(),
+                message: format!("first declared as `{}`", first.name),
+            },
+            related,
+        });
+        let _ = fallback_span;
+    }
+    out
+}
+
 fn missing_for_dep(missing: Key, requested_by: Key, binding: &Binding) -> Diagnostic {
     let provider_kind = match &binding.provider {
         Provider::InjectCtor { .. } => "@Inject ctor",
         Provider::ProvidesMethod { .. } => "@Provides method",
         Provider::Binds { .. } => "@Binds method",
         Provider::SetMultibinding { .. } => "@IntoSet aggregate",
+        Provider::FactoryParam { .. } => "subcomponent factory parameter",
     };
     Diagnostic {
         kind: DiagnosticKind::MissingBinding {
@@ -563,8 +759,8 @@ fn missing_for_dep(missing: Key, requested_by: Key, binding: &Binding) -> Diagno
 mod tests {
     use super::*;
     use crate::ir::{
-        Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, ModulePath, Provider, Scope,
-        SourceSpan,
+        Binding, ClassRef, ComponentDecl, EntryPoint, FactoryParam, Key, ModuleDecl, ModulePath,
+        MultibindRole, Provider, Scope, SourceSpan,
     };
 
     fn key(name: &str) -> Key {
@@ -627,6 +823,7 @@ mod tests {
             name: name.to_owned(),
             key: k,
             source: span("Component", 50),
+            factory_params: vec![],
         }
     }
 
@@ -813,6 +1010,194 @@ mod tests {
             subcomponents: &[],
         });
         assert!(ds.is_empty(), "{ds:?}");
+    }
+
+    fn ep_with_factory_params(name: &str, k: Key, params: Vec<FactoryParam>) -> EntryPoint {
+        EntryPoint {
+            name: name.to_owned(),
+            key: k,
+            source: span("Component", 50),
+            factory_params: params,
+        }
+    }
+
+    fn factory_param(name: &str, k: Key) -> FactoryParam {
+        FactoryParam {
+            name: name.to_owned(),
+            key: k,
+            source: span(name, 0),
+        }
+    }
+
+    #[test]
+    fn factory_params_become_virtual_bindings_in_child_graph() {
+        // Parent has a `requestComponent(req: Request, res: Response)`
+        // factory whose subcomponent has a @Provides that consumes
+        // both. The graph layer should inject Provider::FactoryParam
+        // bindings so the @Provides resolves locally.
+        let request_key = key("Request");
+        let response_key = key("Response");
+        let handler_key = key("Handler");
+
+        let request_module = ModuleDecl {
+            class: class_ref("RequestModule"),
+            provides: vec![Binding {
+                key: handler_key.clone(),
+                provider: Provider::ProvidesMethod {
+                    module: class_ref("RequestModule"),
+                    method: "handler".into(),
+                },
+                scope: Scope::Unscoped,
+                deps: vec![request_key.clone(), response_key.clone()],
+                source: span("RequestModule", 100),
+                role: MultibindRole::None,
+            }],
+            source: span("RequestModule", 0),
+        };
+
+        let mut sub = empty_component(
+            "RequestComponent",
+            vec![class_ref("RequestModule")],
+            Scope::Unscoped,
+        );
+        sub.entry_points.push(ep("handler", handler_key.clone()));
+        let sub = SubcomponentDecl {
+            class: sub.class,
+            modules: sub.modules,
+            scope: sub.scope,
+            entry_points: sub.entry_points,
+            source: sub.source,
+        };
+
+        let mut parent = empty_component("App", vec![], Scope::Unscoped);
+        parent.entry_points.push(ep_with_factory_params(
+            "requestComponent",
+            Key::Class {
+                module: ModulePath::from_abs("/p/RequestComponent.ts"),
+                name: "RequestComponent".into(),
+            },
+            vec![
+                factory_param("req", request_key.clone()),
+                factory_param("res", response_key.clone()),
+            ],
+        ));
+
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &parent,
+            modules: &[request_module],
+            inject_classes: &[],
+            subcomponents: &[sub],
+        });
+        assert!(ds.is_empty(), "expected no diagnostics, got {ds:?}");
+        assert_eq!(g.subcomponent_factories.len(), 1);
+        let fact = &g.subcomponent_factories[0];
+        assert_eq!(fact.factory_params.len(), 2);
+        // The child graph should have FactoryParam bindings for both keys.
+        assert!(matches!(
+            fact.child_graph.bindings.get(&request_key).map(|b| &b.provider),
+            Some(Provider::FactoryParam { name }) if name == "req"
+        ));
+        assert!(matches!(
+            fact.child_graph.bindings.get(&response_key).map(|b| &b.provider),
+            Some(Provider::FactoryParam { name }) if name == "res"
+        ));
+    }
+
+    #[test]
+    fn factory_params_on_regular_component_entry_is_rejected() {
+        let mut comp = empty_component("App", vec![], Scope::Unscoped);
+        comp.entry_points.push(ep_with_factory_params(
+            "stuff",
+            key("Heater"),
+            vec![factory_param("ctx", key("Ctx"))],
+        ));
+        // Provide a Heater binding so the only diagnostic is the factory-param one.
+        let heater = inject("Heater", vec![], Scope::Unscoped);
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[heater],
+            subcomponents: &[],
+        });
+        assert!(
+            ds.iter().any(|d| matches!(
+                d.kind,
+                DiagnosticKind::FactoryParamsOnNonSubcomponentEntry { .. }
+            )),
+            "expected FactoryParamsOnNonSubcomponentEntry, got {ds:?}",
+        );
+    }
+
+    #[test]
+    fn duplicate_factory_param_keys_are_rejected() {
+        let request_key = key("Request");
+        let mut sub = empty_component("Req", vec![], Scope::Unscoped);
+        sub.entry_points.push(ep("noop", key("Noop")));
+        let sub = SubcomponentDecl {
+            class: sub.class,
+            modules: sub.modules,
+            scope: sub.scope,
+            entry_points: vec![],
+            source: sub.source,
+        };
+        let mut parent = empty_component("App", vec![], Scope::Unscoped);
+        parent.entry_points.push(ep_with_factory_params(
+            "req",
+            Key::Class {
+                module: ModulePath::from_abs("/p/Req.ts"),
+                name: "Req".into(),
+            },
+            vec![
+                factory_param("a", request_key.clone()),
+                factory_param("b", request_key),
+            ],
+        ));
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &parent,
+            modules: &[],
+            inject_classes: &[],
+            subcomponents: &[sub],
+        });
+        assert!(
+            ds.iter()
+                .any(|d| matches!(d.kind, DiagnosticKind::DuplicateFactoryParam { .. })),
+            "expected DuplicateFactoryParam, got {ds:?}",
+        );
+    }
+
+    #[test]
+    fn singleton_subcomponent_with_factory_params_is_rejected() {
+        let mut sub = empty_component("Req", vec![], Scope::Singleton);
+        sub.entry_points.push(ep("noop", key("Noop")));
+        let sub = SubcomponentDecl {
+            class: sub.class,
+            modules: sub.modules,
+            scope: sub.scope,
+            entry_points: vec![],
+            source: sub.source,
+        };
+        let mut parent = empty_component("App", vec![], Scope::Singleton);
+        parent.entry_points.push(ep_with_factory_params(
+            "req",
+            Key::Class {
+                module: ModulePath::from_abs("/p/Req.ts"),
+                name: "Req".into(),
+            },
+            vec![factory_param("ctx", key("Ctx"))],
+        ));
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &parent,
+            modules: &[],
+            inject_classes: &[],
+            subcomponents: &[sub],
+        });
+        assert!(
+            ds.iter().any(|d| matches!(
+                d.kind,
+                DiagnosticKind::SingletonSubcomponentWithFactoryParams { .. }
+            )),
+            "expected SingletonSubcomponentWithFactoryParams, got {ds:?}",
+        );
     }
 
     #[test]

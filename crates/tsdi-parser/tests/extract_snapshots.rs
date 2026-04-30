@@ -303,6 +303,36 @@ fn entry_point_with_set_return_type_parses() {
 }
 
 #[test]
+fn subcomponent_factory_with_typed_parameters() {
+    // M11: a parent @Component exposes a @Subcomponent through an
+    // abstract method that takes runtime parameters. The parser must
+    // capture each parameter as a FactoryParam (name + key + span)
+    // alongside the return-type Key. Regular @Component entry points
+    // remain zero-arg; the graph layer is what rejects parameters
+    // declared on a non-subcomponent factory.
+    let src = r#"
+        import { Component, Subcomponent } from "tsdi";
+
+        export interface HttpRequest { url: string }
+        export interface HttpResponse { send(body: string): void }
+
+        @Subcomponent({ modules: [] })
+        export abstract class RequestComponent {
+            abstract handler(): RequestHandler;
+        }
+
+        @Component({ modules: [] })
+        export abstract class App {
+            abstract requestComponent(req: HttpRequest, res: HttpResponse): RequestComponent;
+        }
+
+        export class RequestHandler {}
+    "#;
+    let parsed = parse_source(src, "app.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}
+
+#[test]
 fn subcomponent_with_modules_and_entry_points() {
     let src = r#"
         import { Component, Subcomponent } from "tsdi";

@@ -247,6 +247,12 @@ fn normalize_parsed(
         for ep in &mut c.entry_points {
             rewrite_key(&mut ep.key, &mut resolve_one, discovered)?;
             ep.source.path.clone_from(&self_path_string);
+            // M11: factory-param keys must be normalized too so they
+            // compare equal to the same Key minted elsewhere.
+            for fp in &mut ep.factory_params {
+                rewrite_key(&mut fp.key, &mut resolve_one, discovered)?;
+                fp.source.path.clone_from(&self_path_string);
+            }
         }
     }
     for s in &mut parsed.subcomponents {
@@ -258,6 +264,10 @@ fn normalize_parsed(
         for ep in &mut s.entry_points {
             rewrite_key(&mut ep.key, &mut resolve_one, discovered)?;
             ep.source.path.clone_from(&self_path_string);
+            for fp in &mut ep.factory_params {
+                rewrite_key(&mut fp.key, &mut resolve_one, discovered)?;
+                fp.source.path.clone_from(&self_path_string);
+            }
         }
     }
     for b in &mut parsed.inject_classes {
@@ -288,6 +298,13 @@ fn rewrite_binding(
                     rewrite_key(d, resolve_one, discovered)?;
                 }
             }
+        }
+        tsdi_core::ir::Provider::FactoryParam { .. } => {
+            // FactoryParam bindings are graph-synthesized — the parser
+            // never produces one and thus never feeds it through
+            // resolution. Match arm exists for completeness against
+            // future code paths that might run rewrite_binding on a
+            // child graph's bindings.
         }
     }
     for d in &mut b.deps {

@@ -83,6 +83,7 @@ fn provider_label(p: &Provider) -> &'static str {
         Provider::ProvidesMethod { .. } => "ProvidesMethod",
         Provider::Binds { .. } => "Binds",
         Provider::SetMultibinding { .. } => "SetMultibinding",
+        Provider::FactoryParam { .. } => "FactoryParam",
     }
 }
 

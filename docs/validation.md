@@ -8,10 +8,13 @@ Update this page whenever a rule is added, refined, or relaxed.
 
 | Rule              | Implemented in | Variant                               |
 | ----------------- | -------------- | ------------------------------------- |
-| `MissingBinding`  | M3             | `DiagnosticKind::MissingBinding`      |
-| `Cycle`           | M3             | `DiagnosticKind::Cycle`               |
-| `Duplicate`       | M3             | `DiagnosticKind::Duplicate`           |
-| `ScopeMismatch`   | M3             | `DiagnosticKind::ScopeMismatch`       |
+| `MissingBinding`                     | M3  | `DiagnosticKind::MissingBinding`                     |
+| `Cycle`                              | M3  | `DiagnosticKind::Cycle`                              |
+| `Duplicate`                          | M3  | `DiagnosticKind::Duplicate`                          |
+| `ScopeMismatch`                      | M3  | `DiagnosticKind::ScopeMismatch`                      |
+| `FactoryParamsOnNonSubcomponentEntry` | M11 | `DiagnosticKind::FactoryParamsOnNonSubcomponentEntry` |
+| `DuplicateFactoryParam`              | M11 | `DiagnosticKind::DuplicateFactoryParam`              |
+| `SingletonSubcomponentWithFactoryParams` | M11 | `DiagnosticKind::SingletonSubcomponentWithFactoryParams` |
 
 Multibinding-specific validation (`@IntoSet` on `@Binds` or with no `@Provides`) is enforced by the parser as `ExtractError::IntoSetWithoutProvides` rather than as a graph diagnostic — it's a structural problem, not a graph problem.
 
