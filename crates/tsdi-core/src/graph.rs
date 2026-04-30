@@ -139,7 +139,7 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         input.component.modules.as_slice(),
         input.modules,
         input.inject_classes,
-        None,
+        input.component.scope,
     );
 
     // Index subcomponent class refs so we can recognize factory entry points.
@@ -148,20 +148,75 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         sub_by_classref.insert(&sub.class, sub);
     }
 
-    // M11: prune `bindings` to only those reachable from non-subcomponent
-    // entry points. The project-wide `@Inject` set includes classes that
-    // only resolve inside a subcomponent (whose deps depend on factory
-    // params); leaving them in the parent's binding map makes
-    // `build_petgraph` emit spurious "missing binding" diagnostics for
-    // their child-only deps, and would also make codegen emit dead
-    // factory methods on the parent dagger.
-    let parent_root_keys: Vec<Key> = input
+    // M11: build child subcomponent graphs FIRST against the full
+    // (unpruned) parent binding pool, then use each child's
+    // `inherited_keys` to inform the parent's reachability roots. The
+    // ordering matters: pruning the parent without knowing what
+    // children will inherit would drop parent-scoped bindings (like an
+    // app-singleton repository) that no parent entry point requests
+    // directly but that every per-request subcomponent depends on.
+    let mut subcomponent_factories: Vec<SubcomponentFactory> = Vec::new();
+    let mut child_inherited_union: HashSet<Key> = HashSet::new();
+    for ep in &input.component.entry_points {
+        let sub_match = if let Key::Class { module, name } = &ep.key {
+            let cr = ClassRef {
+                module: module.clone(),
+                name: name.clone(),
+            };
+            sub_by_classref.get(&cr).copied()
+        } else {
+            None
+        };
+        let Some(sub) = sub_match else { continue };
+        if !ep.factory_params.is_empty() && sub.scope == Scope::Singleton {
+            diagnostics.push(Diagnostic {
+                kind: DiagnosticKind::SingletonSubcomponentWithFactoryParams {
+                    subcomponent: sub.class.clone(),
+                },
+                primary: Label {
+                    span: sub.source.clone(),
+                    message: "@Singleton @Subcomponent cannot take factory parameters".to_owned(),
+                },
+                related: vec![Label {
+                    span: ep.source.clone(),
+                    message: "factory declared here".to_owned(),
+                }],
+            });
+        }
+        for diag in detect_duplicate_factory_params(&ep.factory_params, &ep.source) {
+            diagnostics.push(diag);
+        }
+        let (child_graph, child_diags) = build_child_graph(
+            sub,
+            input.modules,
+            input.inject_classes,
+            input.subcomponents,
+            &bindings,
+            &ep.factory_params,
+        );
+        for k in &child_graph.inherited_keys {
+            child_inherited_union.insert(k.clone());
+        }
+        diagnostics.extend(child_diags);
+        subcomponent_factories.push(SubcomponentFactory {
+            method_name: ep.name.clone(),
+            subcomponent: sub.class.clone(),
+            child_graph,
+            child_entry_points: sub.entry_points.clone(),
+            source: ep.source.clone(),
+            factory_params: ep.factory_params.clone(),
+        });
+    }
+
+    // Compute parent reachability roots: every non-subcomponent entry
+    // point's key, plus every key any child inherits from the parent.
+    // This keeps app-scoped @Singleton bindings that exist solely to be
+    // consumed by per-request subcomponents alive on the parent dagger.
+    let mut parent_root_keys: Vec<Key> = input
         .component
         .entry_points
         .iter()
         .filter(|ep| {
-            // Subcomponent factories don't contribute to parent
-            // reachability — their child graph stands alone.
             if let Key::Class { module, name } = &ep.key {
                 let cr = ClassRef {
                     module: module.clone(),
@@ -174,68 +229,27 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         })
         .map(|ep| ep.key.clone())
         .collect();
+    parent_root_keys.extend(child_inherited_union);
     prune_unreachable_bindings(&mut bindings, &parent_root_keys);
 
     let (graph, node_for, missing) = build_petgraph(&bindings, None);
     diagnostics.extend(missing);
 
     let mut roots: Vec<Key> = Vec::with_capacity(input.component.entry_points.len());
-    let mut subcomponent_factories: Vec<SubcomponentFactory> = Vec::new();
     for ep in &input.component.entry_points {
-        // Is this entry point a subcomponent factory?
-        let sub_match = if let Key::Class { module, name } = &ep.key {
+        // Subcomponent factory entry points were already processed
+        // above (their child graphs built and recorded). Skip those
+        // here.
+        let is_sub = if let Key::Class { module, name } = &ep.key {
             let cr = ClassRef {
                 module: module.clone(),
                 name: name.clone(),
             };
-            sub_by_classref.get(&cr).copied()
+            sub_by_classref.contains_key(&cr)
         } else {
-            None
+            false
         };
-        if let Some(sub) = sub_match {
-            // M11: a @Singleton subcomponent that takes runtime factory
-            // parameters would cache the first call's `req` across every
-            // subsequent invocation — almost always a bug. Reject it
-            // loudly rather than producing surprising graphs.
-            if !ep.factory_params.is_empty() && sub.scope == Scope::Singleton {
-                diagnostics.push(Diagnostic {
-                    kind: DiagnosticKind::SingletonSubcomponentWithFactoryParams {
-                        subcomponent: sub.class.clone(),
-                    },
-                    primary: Label {
-                        span: sub.source.clone(),
-                        message: "@Singleton @Subcomponent cannot take factory parameters"
-                            .to_owned(),
-                    },
-                    related: vec![Label {
-                        span: ep.source.clone(),
-                        message: "factory declared here".to_owned(),
-                    }],
-                });
-            }
-            // M11: detect duplicate factory-param keys on the same
-            // factory method. Two `Request` parameters would make any
-            // child binding asking for `Request` ambiguous.
-            for diag in detect_duplicate_factory_params(&ep.factory_params, &ep.source) {
-                diagnostics.push(diag);
-            }
-            let (child_graph, child_diags) = build_child_graph(
-                sub,
-                input.modules,
-                input.inject_classes,
-                input.subcomponents,
-                &bindings,
-                &ep.factory_params,
-            );
-            diagnostics.extend(child_diags);
-            subcomponent_factories.push(SubcomponentFactory {
-                method_name: ep.name.clone(),
-                subcomponent: sub.class.clone(),
-                child_graph,
-                child_entry_points: sub.entry_points.clone(),
-                source: ep.source.clone(),
-                factory_params: ep.factory_params.clone(),
-            });
+        if is_sub {
             continue;
         }
 
@@ -314,7 +328,7 @@ fn build_child_graph(
         sub.modules.as_slice(),
         all_modules,
         inject_classes,
-        Some(parent_bindings),
+        sub.scope,
     );
 
     // M11: inject factory-param bindings. These take priority over both
@@ -411,13 +425,20 @@ fn build_child_graph(
 /// self-bindings, emitting a [`DiagnosticKind::Duplicate`] for any key
 /// declared more than once.
 ///
-/// When `parent_bindings` is `Some`, any binding whose key already exists in
-/// the parent is **skipped** (inherited rather than redeclared).
+/// `owner_scope` is the component-or-subcomponent's own scope. **Scope
+/// determines ownership**: a `Scope::Singleton` `@Inject` self-binding
+/// only contributes to a `Scope::Singleton` component's pool — for any
+/// other component (subcomponent with factory params, or unscoped
+/// component) the singleton binding is skipped here and lives instead
+/// on the singleton ancestor. This implements Dagger's
+/// "@Singleton-bindings live on the @Singleton component" rule and
+/// prevents the spurious-scope-mismatch we'd otherwise see when a
+/// per-request subcomponent reaches a parent-scoped singleton.
 fn aggregate_bindings(
     own_modules: &[ClassRef],
     all_modules: &[ModuleDecl],
     inject_classes: &[Binding],
-    parent_bindings: Option<&HashMap<Key, Binding>>,
+    owner_scope: Scope,
 ) -> (HashMap<Key, Binding>, Vec<Diagnostic>) {
     let mut bindings: HashMap<Key, Binding> = HashMap::new();
     let mut sources_for_key: HashMap<Key, Vec<SourceSpan>> = HashMap::new();
@@ -426,7 +447,17 @@ fn aggregate_bindings(
     // entry under `Key::Set { element }`.
     let mut set_contribs: HashMap<Key, (Vec<SetContributor>, Scope, SourceSpan)> = HashMap::new();
     let component_modules: HashSet<&ClassRef> = own_modules.iter().collect();
-    let inherits = |k: &Key| parent_bindings.is_some_and(|p| p.contains_key(k));
+    // M11: only `@Inject` self-bindings are filtered by scope. They're
+    // the *implicit* candidates available to every component; routing
+    // a `@Singleton @Inject` to its proper @Singleton ancestor is
+    // exactly the disambiguation we need.
+    //
+    // `@Provides` bindings are NOT filtered: the user explicitly listed
+    // the host @Module on this component's `modules:` config, so any
+    // scope conflict is a configuration error worth surfacing through
+    // the M3 `ScopeMismatch` rule (which runs over `bindings`).
+    let owned_inject =
+        |b: &Binding| !(b.scope == Scope::Singleton && owner_scope != Scope::Singleton);
 
     for m in all_modules {
         if !component_modules.contains(&m.class) {
@@ -435,9 +466,6 @@ fn aggregate_bindings(
         for b in &m.provides {
             if matches!(b.role, MultibindRole::IntoSet) {
                 collect_set_contributor(b, &mut set_contribs);
-                continue;
-            }
-            if inherits(&b.key) {
                 continue;
             }
             register_binding(b, &mut bindings, &mut sources_for_key);
@@ -450,7 +478,7 @@ fn aggregate_bindings(
             collect_set_contributor(b, &mut set_contribs);
             continue;
         }
-        if inherits(&b.key) {
+        if !owned_inject(b) {
             continue;
         }
         register_binding(b, &mut bindings, &mut sources_for_key);
@@ -459,9 +487,10 @@ fn aggregate_bindings(
     // Synthesize one Provider::SetMultibinding per element type. Multiple
     // contributions to the same Set<T> are intentional, not duplicates.
     for (set_key, (contributors, scope, source)) in set_contribs {
-        if inherits(&set_key) {
-            continue;
-        }
+        // Don't pre-filter the synthesized aggregate by scope —
+        // multibinding contributors come from @Provides methods which
+        // were already registered above, and the M3 ScopeMismatch rule
+        // surfaces any conflict over the resulting bindings.
         // Union of every contributor's deps; ordering doesn't matter for
         // graph semantics, but stable insertion order keeps codegen
         // deterministic.
@@ -979,7 +1008,13 @@ mod tests {
     }
 
     #[test]
-    fn scope_mismatch_singleton_in_unscoped_component() {
+    fn singleton_inject_in_unscoped_component_is_filtered_to_missing_binding() {
+        // M11: A @Singleton @Inject only contributes to a @Singleton
+        // component's pool. Pairing it with a non-@Singleton component
+        // results in MissingBinding (the class isn't owned anywhere
+        // reachable). The underlying user error is the same — they
+        // either forgot @Singleton on the component or didn't want it
+        // on the class — but the diagnostic shape changes.
         let heater = inject("Heater", vec![], Scope::Singleton);
         let mut comp = empty_component("Comp", vec![], Scope::Unscoped);
         comp.entry_points.push(ep("h", key("Heater")));
@@ -992,8 +1027,34 @@ mod tests {
         });
         assert!(
             ds.iter()
+                .any(|d| matches!(d.kind, DiagnosticKind::MissingBinding { .. })),
+            "expected MissingBinding, got {ds:?}",
+        );
+    }
+
+    #[test]
+    fn scope_mismatch_singleton_provides_in_unscoped_component() {
+        // @Provides bindings DO land in the binding pool because the
+        // user explicitly listed the host @Module on the component.
+        // The M3 ScopeMismatch rule still surfaces the conflict.
+        let heater_module = ModuleDecl {
+            class: class_ref("HeaterModule"),
+            provides: vec![provides("HeaterModule", "Heater", vec![], Scope::Singleton)],
+            source: span("HeaterModule", 0),
+        };
+        let mut comp = empty_component("Comp", vec![class_ref("HeaterModule")], Scope::Unscoped);
+        comp.entry_points.push(ep("h", key("Heater")));
+
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[heater_module],
+            inject_classes: &[],
+            subcomponents: &[],
+        });
+        assert!(
+            ds.iter()
                 .any(|d| matches!(d.kind, DiagnosticKind::ScopeMismatch { .. })),
-            "{ds:?}"
+            "expected ScopeMismatch, got {ds:?}",
         );
     }
 

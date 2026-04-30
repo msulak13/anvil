@@ -240,6 +240,12 @@ fn check_reports_duplicate_binding() {
 
 #[test]
 fn check_reports_scope_mismatch() {
+    // M11: scope drives ownership. A @Singleton @Inject only contributes
+    // to a @Singleton component's binding pool — for a non-@Singleton
+    // component it's filtered out, and the entry point requesting it
+    // surfaces as a missing binding instead of a scope-mismatch. Either
+    // diagnostic is correct; the underlying configuration error
+    // ("@Singleton class needs @Singleton component") is the same.
     let tmp = TempDir::new().unwrap();
     let root = write_project(
         &tmp,
@@ -259,6 +265,59 @@ fn check_reports_scope_mismatch() {
                     import { Component } from "tsdi";
                     import { Heater } from "./heater";
                     @Component({ modules: [] })
+                    export abstract class Comp { abstract heater(): Heater; }
+                "#,
+            ),
+        ],
+    );
+    write_tsdi_stub(&root);
+
+    Command::cargo_bin("tsdi")
+        .unwrap()
+        .arg("check")
+        .arg("--entry")
+        .arg(root.join("src/comp.ts"))
+        .assert()
+        .failure()
+        .stderr(contains("missing binding for Heater"));
+}
+
+#[test]
+fn check_reports_scope_mismatch_for_singleton_provides() {
+    // A @Singleton @Provides method does land in the binding pool (it
+    // comes via a @Module the component lists explicitly), so the M3
+    // ScopeMismatch rule still fires here — keeps the diagnostic
+    // accessible for the canonical mis-scoped @Provides shape.
+    let tmp = TempDir::new().unwrap();
+    let root = write_project(
+        &tmp,
+        &[
+            (
+                "src/heater.ts",
+                r"
+                    export class Heater {}
+                ",
+            ),
+            (
+                "src/heater-module.ts",
+                r#"
+                    import { Module, Provides, Singleton } from "tsdi";
+                    import { Heater } from "./heater";
+                    @Module
+                    export class HeaterModule {
+                        @Singleton
+                        @Provides
+                        static heater(): Heater { return new Heater(); }
+                    }
+                "#,
+            ),
+            (
+                "src/comp.ts",
+                r#"
+                    import { Component } from "tsdi";
+                    import { HeaterModule } from "./heater-module";
+                    import { Heater } from "./heater";
+                    @Component({ modules: [HeaterModule] })
                     export abstract class Comp { abstract heater(): Heater; }
                 "#,
             ),
