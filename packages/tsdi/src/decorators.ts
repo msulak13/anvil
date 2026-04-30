@@ -183,10 +183,20 @@ export function Subcomponent(_config: SubcomponentConfig = {}) {
  * Declares that instances of the decorated class are cached for the lifetime
  * of the owning component (i.e. one-per-component).
  */
+// Method-decorator overload: `@Singleton @Provides static fn(...): T`.
+export function Singleton<This, Args extends readonly unknown[], Return>(
+  target: (this: This, ...args: Args) => Return,
+  ctx: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,
+): (this: This, ...args: Args) => Return;
+// Class-decorator overload: `@Inject @Singleton class X {}`.
 export function Singleton<T extends abstract new (...args: never[]) => unknown>(
   target: T,
-  _ctx: ClassDecoratorContext<T>,
-): T {
+  ctx: ClassDecoratorContext<T>,
+): T;
+// Implementation — both decorator shapes are no-ops at runtime; tsdi's
+// codegen reads the @Singleton presence from the AST and emits cache
+// fields accordingly.
+export function Singleton(target: unknown, _ctx: unknown): unknown {
   return target;
 }
 

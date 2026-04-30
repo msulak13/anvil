@@ -246,6 +246,55 @@ fn entry_point_requires_return_type() {
 }
 
 #[test]
+fn async_provides_method_unwraps_promise_to_inner_key() {
+    // M12: an async @Provides has return type Promise<T>; the parser
+    // unwraps the Promise wrapper for the binding key (so consumers
+    // see the resolved type) and sets `is_async: true` on the provider.
+    let src = r#"
+        import { Module, Provides, Singleton } from "tsdi";
+        import { Pool } from "./pool";
+        import { Config } from "./config";
+
+        @Module
+        export class DatabaseModule {
+            @Singleton
+            @Provides
+            static async pool(config: Config): Promise<Pool> {
+                return null as any;
+            }
+        }
+    "#;
+    let parsed = parse_source(src, "database-module.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}
+
+#[test]
+fn async_provides_without_promise_return_is_rejected() {
+    // An `async` method that doesn't return Promise<T> is technically
+    // valid TS (the async keyword wraps the value in Promise.resolve)
+    // but tsdi requires an explicit Promise<T> annotation so the
+    // unwrap is unambiguous.
+    let src = r#"
+        import { Module, Provides } from "tsdi";
+        import { Pool } from "./pool";
+
+        @Module
+        export class M {
+            @Provides static async pool(): Pool { return null as any; }
+        }
+    "#;
+    let err = parse_source(src, "m.ts").unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("Promise<T>"), "unexpected error: {msg}");
+}
+
+// `async constructor` is a syntax error per the JS spec; Oxc rejects
+// it before tsdi-parser's extractor runs, so the
+// `ExtractError::AsyncInjectCtor` diagnostic exists as
+// defense-in-depth (in case a future toolchain loosens the parser
+// rule) but isn't reachable today and has no test.
+
+#[test]
 fn module_with_into_set_provides() {
     // Two @IntoSet @Provides contributions to Set<Plugin>. The parser
     // emits raw bindings with role: IntoSet — graph aggregation folds

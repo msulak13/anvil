@@ -158,3 +158,8 @@ fn fixture_09_express() {
 fn fixture_10_factory_params() {
     run_fixture("10_factory_params", "app-component.ts");
 }
+
+#[test]
+fn fixture_11_async_provides() {
+    run_fixture("11_async_provides", "app-component.ts");
+}

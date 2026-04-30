@@ -15,6 +15,7 @@ Update this page whenever a rule is added, refined, or relaxed.
 | `FactoryParamsOnNonSubcomponentEntry` | M11 | `DiagnosticKind::FactoryParamsOnNonSubcomponentEntry` |
 | `DuplicateFactoryParam`              | M11 | `DiagnosticKind::DuplicateFactoryParam`              |
 | `SingletonSubcomponentWithFactoryParams` | M11 | `DiagnosticKind::SingletonSubcomponentWithFactoryParams` |
+| `AsyncBindingNeedsSingletonComponent`    | M12 | `DiagnosticKind::AsyncBindingNeedsSingletonComponent`    |
 
 Multibinding-specific validation (`@IntoSet` on `@Binds` or with no `@Provides`) is enforced by the parser as `ExtractError::IntoSetWithoutProvides` rather than as a graph diagnostic — it's a structural problem, not a graph problem.
 

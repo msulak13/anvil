@@ -76,7 +76,7 @@ How an instance for a `Key` is produced.
 ```rust
 pub enum Provider {
     InjectCtor      { class: ClassRef },
-    ProvidesMethod  { module: ClassRef, method: String },
+    ProvidesMethod  { module: ClassRef, method: String, is_async: bool },
     Binds           { target: Key },
     SetMultibinding { contributors: Vec<SetContributor> },  // M9 — synthesized
     FactoryParam   { name: String },                         // M11 — synthesized
@@ -91,7 +91,7 @@ pub struct SetContributor {
 ```
 
 - **`InjectCtor`** — class with class-level `@Inject` decorator. The constructor's parameter types become the binding's `deps`. The codegen emits `new ClassName(deps...)`.
-- **`ProvidesMethod`** — static method on a `@Module`. The codegen emits `ModuleName.methodName(deps...)`.
+- **`ProvidesMethod`** — static method on a `@Module`. The codegen emits `ModuleName.methodName(deps...)`. M12: `is_async` is set when the method is declared `async` (the parser unwraps the `Promise<T>` return-type annotation into the inner key). In an async graph, async `ProvidesMethod` factories are awaited inside the dagger's `static async _resolve()` phase and the **resolved** value is cached. See [Async `@Provides`](#async-provides-m12) below.
 - **`Binds`** (M7) — alias binding. The owning `@Module` exposes a `static` method whose single parameter type is the implementation and whose return type is the alias. The binding's `key` is the return type (the alias); `target` is the parameter type (the implementation). `deps` is `vec![target]` so the topo walk visits the target's binding before the alias's factory references it. Codegen emits `return this.<getTarget>()` — no `new` is performed by the alias factory; the target's scope governs caching.
 
   TC39 Stage-3 decorators cannot decorate abstract methods (TS error 1249), so `@Binds` methods are `static` with a body. `tsdi-codegen` ignores the body and emits the delegate; the body still has to compile (e.g. `return impl;`) so the user's `tsc` accepts the source file.
@@ -202,6 +202,38 @@ Pipeline:
 5. Codegen emits the parent factory as `requestComponent(req: HttpRequest, res: HttpResponse): RequestComponent { return new DaggerRequestComponent(this, req, res); }` and the child class as `constructor(private parent, private req: HttpRequest, private res: HttpResponse) { super(); }` plus a private `getHttpRequest(): HttpRequest { return this.req; }` getter per parameter so dep-call sites stay uniform.
 
 Reachability pruning was added alongside M11: the graph builder now does a BFS from non-subcomponent entry points and drops any binding (including project-wide `@Inject` self-bindings) not transitively reached. Without this, a subcomponent-only `@Inject` class would leak onto the parent dagger as a non-private factory and trigger spurious missing-dep diagnostics for its child-only deps.
+
+## Async `@Provides` (M12)
+
+A `@Provides` method declared `async` returns `Promise<T>`. tsdi unwraps the `Promise<T>` for the binding key (so consumers see the resolved type, not `Promise<T>`) and sets `is_async: true` on the provider. The dagger's resolution semantics:
+
+```ts
+@Module
+class DatabaseModule {
+  @Singleton @Provides static async pool(c: Config): Promise<Pool> {
+    return await createPool(c);
+  }
+}
+
+@Singleton @Component({ modules: [ConfigModule, DatabaseModule] })
+abstract class App {
+  abstract pool(): Pool;        // sync — pool already resolved
+}
+
+// Usage
+const app = await createApp();  // ← awaits all async @Provides at startup
+app.pool().query("…");           // sync from here on
+```
+
+Pipeline:
+
+1. Parser detects `async` on the method and unwraps `Promise<T>` to the inner `Key`. Provider becomes `ProvidesMethod { is_async: true, … }`.
+2. M2 resolver normalizes module paths same as any other binding — async-ness is orthogonal to identity.
+3. Graph layer exposes `DependencyGraph::is_async()` (any reachable binding async?) and `binding_is_async(&Key)` (this specific binding async?). New validation rule `AsyncBindingNeedsSingletonComponent` rejects async `@Provides` outside `@Singleton` components — there'd be no place to cache the awaited value, every entry-point call would re-await, and the entry-point method itself would have to become async (viral). Subcomponents are exempt because they're already fresh per-call.
+4. Codegen emits a `static async _resolve(d: DaggerX): Promise<void>` method that walks the topo array assigning `d._x = await Module.method(d.getDep())` for async `@Provides` and `d._x = new Class(d.getDep())` for sync Singleton bindings in the same graph. Sync `getX()` getters return `this._x!`. `static create()` becomes `async` and `createX()` returns `Promise<X>`. Subcomponent factories on the parent become `async requestComponent(req, res): Promise<RequestComponent>` when the child graph is async.
+5. `@Inject` constructors stay synchronous — TS forbids `async constructor`, and any async work must live in `@Provides`. The `ExtractError::AsyncInjectCtor` variant exists as defense-in-depth; Oxc rejects the syntax before tsdi-parser sees it.
+
+Out of scope for v0.2: lazy async resolution (every call awaits on demand), `Promise<T>` as a directly-injectable binding type (would require `Token<Promise<T>>`), async `@Inject` factories.
 
 ## Multibindings
 

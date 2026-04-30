@@ -55,6 +55,9 @@ impl Diagnostic {
             DiagnosticKind::SingletonSubcomponentWithFactoryParams { .. } => {
                 "tsdi::singleton_subcomponent_with_factory_params"
             }
+            DiagnosticKind::AsyncBindingNeedsSingletonComponent { .. } => {
+                "tsdi::async_needs_singleton"
+            }
         }
     }
 
@@ -98,6 +101,11 @@ impl Diagnostic {
             DiagnosticKind::SingletonSubcomponentWithFactoryParams { subcomponent } => format!(
                 "@Singleton @Subcomponent `{}` cannot take factory parameters",
                 subcomponent.name,
+            ),
+            DiagnosticKind::AsyncBindingNeedsSingletonComponent { key, component } => format!(
+                "async @Provides binding for {} in non-@Singleton component `{}` — cache it with @Singleton or move it into a @Subcomponent",
+                key_display(key),
+                component.name,
             ),
         }
     }
@@ -165,6 +173,18 @@ pub enum DiagnosticKind {
     SingletonSubcomponentWithFactoryParams {
         /// The offending subcomponent class.
         subcomponent: ClassRef,
+    },
+    /// An async `@Provides` binding sits inside a non-`@Singleton`
+    /// component (M12). Without `@Singleton` the dagger has no place to
+    /// cache the resolved value — every call to a sync entry point
+    /// would need to await again, which would force the entry point
+    /// itself to be async. Subcomponents are exempt: they're already
+    /// fresh per-call, so per-call awaits are fine there.
+    AsyncBindingNeedsSingletonComponent {
+        /// The async binding's key.
+        key: Key,
+        /// The component class hosting the binding.
+        component: ClassRef,
     },
 }
 

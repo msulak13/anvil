@@ -57,6 +57,7 @@ fn emit_simple_provides_module() {
                 provider: Provider::ProvidesMethod {
                     module: class_ref(&mod_path, "CoffeeModule"),
                     method: "heater".into(),
+                    is_async: false,
                 },
                 scope: Scope::Unscoped,
                 deps: vec![],
@@ -68,6 +69,7 @@ fn emit_simple_provides_module() {
                 provider: Provider::ProvidesMethod {
                     module: class_ref(&mod_path, "CoffeeModule"),
                     method: "pump".into(),
+                    is_async: false,
                 },
                 scope: Scope::Unscoped,
                 deps: vec![heater_key.clone()],
@@ -398,6 +400,7 @@ fn emit_into_set_aggregates_contributions() {
                 provider: Provider::ProvidesMethod {
                     module: class_ref(&mod_path, "PluginsModule"),
                     method: "auth".into(),
+                    is_async: false,
                 },
                 scope: Scope::Unscoped,
                 deps: vec![],
@@ -409,6 +412,7 @@ fn emit_into_set_aggregates_contributions() {
                 provider: Provider::ProvidesMethod {
                     module: class_ref(&mod_path, "PluginsModule"),
                     method: "logging".into(),
+                    is_async: false,
                 },
                 scope: Scope::Unscoped,
                 deps: vec![],
@@ -472,6 +476,7 @@ fn emit_subcomponent_factory_with_runtime_parameters() {
             provider: Provider::ProvidesMethod {
                 module: class_ref(&mod_path, "RequestModule"),
                 method: "handler".into(),
+                is_async: false,
             },
             scope: Scope::Unscoped,
             deps: vec![request_key.clone(), response_key.clone()],
@@ -519,6 +524,83 @@ fn emit_subcomponent_factory_with_runtime_parameters() {
     };
 
     let out = emit_component(&app, &[request_module], &[], &[request_sub], "0.0.1").unwrap();
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn emit_async_provides_uses_resolve_phase() {
+    // M12: a @Singleton @Component with one async @Provides Pool and
+    // an unscoped @Provides Db that depends on Pool. Codegen should:
+    //   - emit `_pool: Pool | undefined` cache field.
+    //   - emit `static async _resolve(d)` that does `d._pool = await
+    //     DatabaseModule.pool();` (no Db here — Db is unscoped).
+    //   - emit sync `getPool()` returning `this._pool!`.
+    //   - emit sync `getDb()` returning `new Db(this.getPool())`.
+    //   - emit `static async create(): Promise<App>` and
+    //     `export async function createApp(): Promise<App>`.
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let comp_path: String = root.join("app-component.ts").to_string_lossy().into_owned();
+    let mod_path: String = root.join("db-module.ts").to_string_lossy().into_owned();
+    let pool_path: String = root.join("pool.ts").to_string_lossy().into_owned();
+    let db_path: String = root.join("db.ts").to_string_lossy().into_owned();
+
+    let pool_key = class_key(&pool_path, "Pool");
+    let db_key = class_key(&db_path, "Db");
+
+    let module = ModuleDecl {
+        class: class_ref(&mod_path, "DatabaseModule"),
+        provides: vec![
+            Binding {
+                key: pool_key.clone(),
+                provider: Provider::ProvidesMethod {
+                    module: class_ref(&mod_path, "DatabaseModule"),
+                    method: "pool".into(),
+                    is_async: true,
+                },
+                scope: Scope::Singleton,
+                deps: vec![],
+                source: span_of(&mod_path),
+                role: MultibindRole::None,
+            },
+            Binding {
+                key: db_key.clone(),
+                provider: Provider::ProvidesMethod {
+                    module: class_ref(&mod_path, "DatabaseModule"),
+                    method: "db".into(),
+                    is_async: false,
+                },
+                scope: Scope::Unscoped,
+                deps: vec![pool_key.clone()],
+                source: span_of(&mod_path),
+                role: MultibindRole::None,
+            },
+        ],
+        source: span_of(&mod_path),
+    };
+
+    let component = ComponentDecl {
+        class: class_ref(&comp_path, "App"),
+        modules: vec![class_ref(&mod_path, "DatabaseModule")],
+        scope: Scope::Singleton,
+        entry_points: vec![
+            EntryPoint {
+                name: "pool".into(),
+                key: pool_key,
+                source: span_of(&comp_path),
+                factory_params: vec![],
+            },
+            EntryPoint {
+                name: "db".into(),
+                key: db_key,
+                source: span_of(&comp_path),
+                factory_params: vec![],
+            },
+        ],
+        source: span_of(&comp_path),
+    };
+
+    let out = emit_component(&component, &[module], &[], &[], "0.0.1").unwrap();
     insta::assert_snapshot!(out);
 }
 
@@ -581,7 +663,7 @@ fn emit_preserves_node_modules_specifier() {
         out.contains(r#"import { Tracer } from "vendor-lib";"#),
         "expected bare-specifier import, got:\n{out}",
     );
-    // â€¦and emphatically *not* a relative path into node_modules.
+    // Ã¢â‚¬Â¦and emphatically *not* a relative path into node_modules.
     assert!(
         !out.contains("node_modules"),
         "must not leak the node_modules path into emitted imports:\n{out}",

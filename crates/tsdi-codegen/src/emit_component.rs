@@ -288,6 +288,7 @@ fn import_specifier_for(out_dir: &Path, mp: &tsdi_core::ir::ModulePath) -> Strin
     relative_ts_specifier(out_dir, &abs, /* keep_ext */ false)
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_ts_source(
     component: &ComponentDecl,
     graph: &DependencyGraph,
@@ -329,6 +330,12 @@ fn build_ts_source(
         }
     }
 
+    // M12: an "async-resolving" graph has at least one async @Provides
+    // binding. The dagger emits a `_resolve` phase that awaits each in
+    // topo order; `static create()` becomes async and the top-level
+    // `createX()` returns `Promise<X>`.
+    let parent_is_async = graph.is_async();
+
     writeln!(s, "export class {dagger_name} extends {comp_name} {{").expect("write to String");
     emit_class_body(
         &mut s,
@@ -339,24 +346,43 @@ fn build_ts_source(
         /* sub_factory_method_names */ &sub_factory_method_names,
         /* entry_points */ &component.entry_points,
         /* expose_factories_for */ &parent_keys_exposed,
+        /* graph_is_async */ parent_is_async,
+        /* self_dagger */ &dagger_name,
     );
-    writeln!(
-        s,
-        "  static create(): {comp_name} {{ return new {dagger_name}(); }}"
-    )
-    .expect("write to String");
+    if parent_is_async {
+        writeln!(
+            s,
+            "  static async create(): Promise<{comp_name}> {{ const d = new {dagger_name}(); await {dagger_name}._resolve(d); return d; }}"
+        )
+        .expect("write to String");
+    } else {
+        writeln!(
+            s,
+            "  static create(): {comp_name} {{ return new {dagger_name}(); }}"
+        )
+        .expect("write to String");
+    }
     s.push_str("}\n");
-    writeln!(
-        s,
-        "export function create{comp_name}(): {comp_name} {{ return {dagger_name}.create(); }}"
-    )
-    .expect("write to String");
+    if parent_is_async {
+        writeln!(
+            s,
+            "export async function create{comp_name}(): Promise<{comp_name}> {{ return {dagger_name}.create(); }}"
+        )
+        .expect("write to String");
+    } else {
+        writeln!(
+            s,
+            "export function create{comp_name}(): {comp_name} {{ return {dagger_name}.create(); }}"
+        )
+        .expect("write to String");
+    }
 
     // One Dagger<Sub> class per subcomponent factory.
     for (factory_idx, child_topo) in child_topos {
         let fact = &graph.subcomponent_factories[*factory_idx];
         let sub_name = &fact.subcomponent.name;
         let sub_dagger = format!("Dagger{sub_name}");
+        let child_is_async = fact.child_graph.is_async();
         s.push('\n');
         writeln!(s, "export class {sub_dagger} extends {sub_name} {{").expect("write to String");
         // M11: ctor takes the parent dagger plus one private field per
@@ -381,14 +407,40 @@ fn build_ts_source(
             /* sub_factory_method_names */ &HashSet::new(),
             /* entry_points */ &fact.child_entry_points,
             /* expose_factories_for */ &HashSet::new(),
+            /* graph_is_async */ child_is_async,
+            /* self_dagger */ &sub_dagger,
         );
+        if child_is_async {
+            // Async `static create` that takes the same args as the
+            // ctor — the parent's factory method forwards `req`/`res`
+            // straight through. We emit `create` rather than awaiting
+            // inside the parent's factory body so the child class is
+            // self-sufficient (e.g. unit tests can call it directly).
+            let mut create_params = format!("parent: {dagger_name}");
+            for fp in &fact.factory_params {
+                create_params.push_str(", ");
+                create_params.push_str(&fp.name);
+                create_params.push_str(": ");
+                create_params.push_str(&type_string_of(&fp.key));
+            }
+            let mut forwarded = String::from("parent");
+            for fp in &fact.factory_params {
+                forwarded.push_str(", ");
+                forwarded.push_str(&fp.name);
+            }
+            writeln!(
+                s,
+                "  static async create({create_params}): Promise<{sub_name}> {{ const d = new {sub_dagger}({forwarded}); await {sub_dagger}._resolve(d); return d; }}"
+            )
+            .expect("write to String");
+        }
         s.push_str("}\n");
     }
 
     s
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn emit_class_body(
     s: &mut String,
     graph: &DependencyGraph,
@@ -398,6 +450,8 @@ fn emit_class_body(
     sub_factory_method_names: &HashSet<&str>,
     entry_points: &[EntryPoint],
     expose_factories_for: &HashSet<Key>,
+    graph_is_async: bool,
+    self_dagger: &str,
 ) {
     // Cache fields for every singleton binding, in topo order so they
     // match the factory order users will read.
@@ -410,35 +464,24 @@ fn emit_class_body(
         }
     }
 
-    for k in topo {
+    // Helper that builds the bare body expression for a binding (no
+    // surrounding `return …;` and no caching). Used both for sync
+    // factory bodies and for the async `_resolve` phase below.
+    let body_expr_for = |k: &Key| -> String {
         let b = &graph.bindings[k];
-        let type_string = type_string_of(k);
-        let factory = factory_name_for(k);
         let dep_args = b
             .deps
             .iter()
             .map(|d| dep_call(d, graph, parent_dagger))
             .collect::<Vec<_>>()
             .join(", ");
-
-        let body_expr = match &b.provider {
+        match &b.provider {
             Provider::InjectCtor { class } => format!("new {}({})", class.name, dep_args),
-            Provider::ProvidesMethod { module, method } => {
+            Provider::ProvidesMethod { module, method, .. } => {
                 format!("{}.{}({})", module.name, method, dep_args)
             }
-            Provider::Binds { target } => {
-                // Delegate straight to the target's factory. Scope on
-                // the @Binds method itself decides whether the result
-                // is *also* cached on this binding (via the singleton
-                // path below); typically scope is Unscoped and the
-                // target's own scope (if Singleton) does the caching.
-                dep_call(target, graph, parent_dagger)
-            }
+            Provider::Binds { target } => dep_call(target, graph, parent_dagger),
             Provider::SetMultibinding { contributors } => {
-                // `new Set([m1.foo(...), m2.bar(...)])`. Each contributor
-                // owns its own argument list (its `deps`), so we emit
-                // per-contributor calls rather than a single shared dep
-                // string.
                 let parts: Vec<String> = contributors
                     .iter()
                     .map(|c| {
@@ -453,22 +496,32 @@ fn emit_class_body(
                     .collect();
                 format!("new Set([{}])", parts.join(", "))
             }
-            Provider::FactoryParam { name } => {
-                // The runtime value lives on `this.<name>` (set by the
-                // child dagger's constructor). The factory just hands
-                // it back. Singleton scope on a factory param is
-                // rejected at validation time, so the cache-field
-                // wrapping below is dead code for this arm — but the
-                // expression we return is the same shape as any other
-                // body, keeping the call-site uniform.
-                format!("this.{name}")
-            }
-        };
+            Provider::FactoryParam { name } => format!("this.{name}"),
+        }
+    };
 
+    // M12: in async-resolving graphs, all Singleton values are eagerly
+    // populated by `_resolve` before any factory or entry point is
+    // called. Sync getters then just return the cached value
+    // (`return this._x!`) — no `??=`, no per-call await, no virality.
+    // Unscoped factories stay sync-fresh (an Unscoped binding can't be
+    // async because `AsyncBindingNeedsSingletonComponent` rejects that
+    // shape at validation time).
+    for k in topo {
+        let b = &graph.bindings[k];
+        let type_string = type_string_of(k);
+        let factory = factory_name_for(k);
         let return_stmt = if matches!(b.scope, Scope::Singleton) {
-            let field = cache_field_for(k);
-            format!("return this.{field} ??= {body_expr}")
+            if graph_is_async {
+                let field = cache_field_for(k);
+                format!("return this.{field}!")
+            } else {
+                let field = cache_field_for(k);
+                let body_expr = body_expr_for(k);
+                format!("return this.{field} ??= {body_expr}")
+            }
         } else {
+            let body_expr = body_expr_for(k);
             format!("return {body_expr}")
         };
 
@@ -482,6 +535,40 @@ fn emit_class_body(
             "  {visibility}{factory}(): {type_string} {{ {return_stmt}; }}"
         )
         .expect("write to String");
+    }
+
+    // M12: emit the async resolution phase. Walks the topo array in
+    // dep order and assigns each Singleton's resolved value to its
+    // cache field. Async @Provides methods are awaited; sync factories
+    // produce their value directly. Unscoped bindings and factory-param
+    // bindings are NOT resolved here — they're either fresh-per-call
+    // (Unscoped) or already supplied via the constructor (FactoryParam).
+    if graph_is_async {
+        writeln!(
+            s,
+            "  static async _resolve(d: {self_dagger}): Promise<void> {{"
+        )
+        .expect("write to String");
+        for k in topo {
+            let b = &graph.bindings[k];
+            if !matches!(b.scope, Scope::Singleton) {
+                continue;
+            }
+            let field = cache_field_for(k);
+            // Re-render the body expression but rooted on `d.` (the
+            // first arg) instead of `this.`, since `_resolve` is a
+            // static method. We do this by string-rewriting `this.` to
+            // `d.` — every dep call goes through `this.<get>()` so
+            // this is a closed transform.
+            let raw = body_expr_for(k).replace("this.", "d.");
+            let prefix = if graph.binding_is_async(k) {
+                "await "
+            } else {
+                ""
+            };
+            writeln!(s, "    d.{field} = {prefix}{raw};").expect("write to String");
+        }
+        s.push_str("  }\n");
     }
 
     for ep in entry_points {
@@ -504,6 +591,9 @@ fn emit_class_body(
     // constructs the child Dagger with `this` as the parent reference.
     // M11: when factory_params is non-empty, the parent method takes
     // them as args and forwards them to the child constructor.
+    // M12: when the child graph is async, the parent's factory method
+    // returns Promise<Sub> and forwards through the child's static
+    // `async create(...)` instead of constructing directly.
     for fact in subcomponent_factories {
         let sub_name = &fact.subcomponent.name;
         let sub_dagger = format!("Dagger{sub_name}");
@@ -518,12 +608,21 @@ fn emit_class_body(
             forwarded_args.push_str(", ");
             forwarded_args.push_str(&fp.name);
         }
-        writeln!(
-            s,
-            "  {}({}): {} {{ return new {}({}); }}",
-            fact.method_name, params_sig, sub_name, sub_dagger, forwarded_args
-        )
-        .expect("write to String");
+        if fact.child_graph.is_async() {
+            writeln!(
+                s,
+                "  async {}({}): Promise<{}> {{ return {}.create({}); }}",
+                fact.method_name, params_sig, sub_name, sub_dagger, forwarded_args
+            )
+            .expect("write to String");
+        } else {
+            writeln!(
+                s,
+                "  {}({}): {} {{ return new {}({}); }}",
+                fact.method_name, params_sig, sub_name, sub_dagger, forwarded_args
+            )
+            .expect("write to String");
+        }
     }
 }
 

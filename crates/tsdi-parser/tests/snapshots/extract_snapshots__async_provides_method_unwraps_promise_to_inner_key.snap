@@ -3,7 +3,7 @@ source: crates/tsdi-parser/tests/extract_snapshots.rs
 expression: parsed
 ---
 ParsedFile {
-    path: "coffee_module.ts",
+    path: "database-module.ts",
     modules: [
         ModuleDecl {
             class: ClassRef {
@@ -11,18 +11,18 @@ ParsedFile {
                     abs: "<self>",
                     original: None,
                 },
-                name: "CoffeeModule",
+                name: "DatabaseModule",
             },
             provides: [
                 Binding {
                     key: Class {
                         module: ModulePath {
-                            abs: "./pump",
+                            abs: "./pool",
                             original: Some(
-                                "./pump",
+                                "./pool",
                             ),
                         },
-                        name: "Pump",
+                        name: "Pool",
                     },
                     provider: ProvidesMethod {
                         module: ClassRef {
@@ -30,25 +30,35 @@ ParsedFile {
                                 abs: "<self>",
                                 original: None,
                             },
-                            name: "CoffeeModule",
+                            name: "DatabaseModule",
                         },
-                        method: "providePump",
-                        is_async: false,
+                        method: "pool",
+                        is_async: true,
                     },
-                    scope: Unscoped,
-                    deps: [],
+                    scope: Singleton,
+                    deps: [
+                        Class {
+                            module: ModulePath {
+                                abs: "./config",
+                                original: Some(
+                                    "./config",
+                                ),
+                            },
+                            name: "Config",
+                        },
+                    ],
                     source: SourceSpan {
-                        path: "coffee_module.ts",
-                        start: 154,
-                        end: 213,
+                        path: "database-module.ts",
+                        start: 210,
+                        end: 355,
                     },
                     role: None,
                 },
             ],
             source: SourceSpan {
-                path: "coffee_module.ts",
-                start: 121,
-                end: 223,
+                path: "database-module.ts",
+                start: 175,
+                end: 365,
             },
         },
     ],

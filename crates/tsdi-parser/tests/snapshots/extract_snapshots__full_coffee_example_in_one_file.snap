@@ -31,6 +31,7 @@ ParsedFile {
                             name: "CoffeeModule",
                         },
                         method: "provideTimer",
+                        is_async: false,
                     },
                     scope: Unscoped,
                     deps: [],

@@ -8,12 +8,12 @@
 //!
 //! 1. [`build_and_validate`] takes a [`GraphInput`] (one component plus the
 //!    project's full set of `@Module` declarations and `@Inject` self-bindings).
-//! 2. It aggregates the component's bindings — `@Provides` from included
-//!    modules plus all `@Inject` self-bindings — into a [`DependencyGraph`].
+//! 2. It aggregates the component's bindings â€” `@Provides` from included
+//!    modules plus all `@Inject` self-bindings â€” into a [`DependencyGraph`].
 //! 3. It runs the four diagnostic rules:
 //!    - **Duplicate**: two bindings declared for the same key.
 //!    - **Missing**: a dep (or entry-point) with no declared binding.
-//!    - **Cycle**: a strongly-connected component of size ≥ 2 (Tarjan SCC).
+//!    - **Cycle**: a strongly-connected component of size â‰¥ 2 (Tarjan SCC).
 //!    - **`ScopeMismatch`**: a [`Scope::Singleton`] binding inside a
 //!      non-singleton component.
 //! 4. It returns the (best-effort) graph plus a `Vec<Diagnostic>`. The
@@ -37,7 +37,7 @@ use crate::validate::{Diagnostic, DiagnosticKind, Label};
 
 /// Inputs to [`build_and_validate`].
 ///
-/// The caller — typically `tsdi-cli` — is responsible for collecting these
+/// The caller â€” typically `tsdi-cli` â€” is responsible for collecting these
 /// from the parser's [`crate::ir::ParsedFile`] outputs.
 #[derive(Clone, Copy, Debug)]
 pub struct GraphInput<'a> {
@@ -51,7 +51,7 @@ pub struct GraphInput<'a> {
     /// the project. All are eligible to satisfy a key.
     pub inject_classes: &'a [Binding],
     /// Every `@Subcomponent` declaration the parser saw. Used to recognize
-    /// entry-point keys whose return type names a subcomponent class —
+    /// entry-point keys whose return type names a subcomponent class â€”
     /// those become subcomponent **factories**, not regular bindings.
     pub subcomponents: &'a [SubcomponentDecl],
 }
@@ -123,6 +123,32 @@ impl DependencyGraph {
     #[must_use]
     pub fn edge_count(&self) -> usize {
         self.graph.edge_count()
+    }
+
+    /// Whether this graph contains any async resolution (M12).
+    ///
+    /// True iff some reachable binding's provider is an async
+    /// `@Provides` method. Codegen consults this to decide whether the
+    /// dagger's `static create()` is `async`, whether a `_resolve`
+    /// phase needs to be emitted, and whether top-level
+    /// `createX()` returns `Promise<X>`.
+    #[must_use]
+    pub fn is_async(&self) -> bool {
+        self.bindings
+            .values()
+            .any(|b| matches!(&b.provider, Provider::ProvidesMethod { is_async: true, .. }))
+    }
+
+    /// Whether `key`'s factory expression is itself async. Used by
+    /// codegen to emit `await Module.method(...)` only for the methods
+    /// that actually need it (not every binding in an async graph
+    /// needs an await â€” only the async-`@Provides` ones do).
+    #[must_use]
+    pub fn binding_is_async(&self, key: &Key) -> bool {
+        matches!(
+            self.bindings.get(key).map(|b| &b.provider),
+            Some(Provider::ProvidesMethod { is_async: true, .. })
+        )
     }
 }
 
@@ -254,7 +280,7 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         }
 
         // M11: factory parameters on a regular @Component entry point
-        // would have nowhere to come from — `createApp()` is zero-arg.
+        // would have nowhere to come from â€” `createApp()` is zero-arg.
         if !ep.factory_params.is_empty() {
             diagnostics.push(Diagnostic {
                 kind: DiagnosticKind::FactoryParamsOnNonSubcomponentEntry {
@@ -292,6 +318,11 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         &input.component.source,
         "component is not @Singleton",
     ));
+    diagnostics.extend(detect_async_needs_singleton(
+        &bindings,
+        input.component.scope,
+        &input.component.class,
+    ));
 
     let dep_graph = DependencyGraph {
         component: input.component.class.clone(),
@@ -315,7 +346,7 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
 /// bindings injected into the child's binding map *before* the petgraph
 /// pass, so any child binding that requests a factory-param key
 /// resolves locally rather than via the parent. Factory params shadow
-/// any same-keyed parent binding on purpose — that's the whole point.
+/// any same-keyed parent binding on purpose â€” that's the whole point.
 fn build_child_graph(
     sub: &SubcomponentDecl,
     all_modules: &[ModuleDecl],
@@ -332,7 +363,7 @@ fn build_child_graph(
     );
 
     // M11: inject factory-param bindings. These take priority over both
-    // module/inject bindings and parent-inherited bindings — the runtime
+    // module/inject bindings and parent-inherited bindings â€” the runtime
     // value supplied at the factory call site is authoritative.
     for fp in factory_params {
         bindings.insert(
@@ -351,7 +382,7 @@ fn build_child_graph(
     }
 
     // M11: prune to bindings reachable from the subcomponent's entry
-    // points. Same rationale as the parent path — keeps spurious
+    // points. Same rationale as the parent path â€” keeps spurious
     // missing-dep diagnostics from leaking out of the project-wide
     // @Inject pool, and ensures codegen only emits factories that
     // matter to this component.
@@ -362,7 +393,7 @@ fn build_child_graph(
     diagnostics.extend(missing);
 
     // Compute which keys are inherited (reached via parent for some binding's deps).
-    // Factory params satisfy locally — they are *never* inherited even
+    // Factory params satisfy locally â€” they are *never* inherited even
     // when the parent also has the same key.
     let mut inherited_keys: HashSet<Key> = HashSet::new();
     for b in bindings.values() {
@@ -427,7 +458,7 @@ fn build_child_graph(
 ///
 /// `owner_scope` is the component-or-subcomponent's own scope. **Scope
 /// determines ownership**: a `Scope::Singleton` `@Inject` self-binding
-/// only contributes to a `Scope::Singleton` component's pool — for any
+/// only contributes to a `Scope::Singleton` component's pool â€” for any
 /// other component (subcomponent with factory params, or unscoped
 /// component) the singleton binding is skipped here and lives instead
 /// on the singleton ancestor. This implements Dagger's
@@ -487,7 +518,7 @@ fn aggregate_bindings(
     // Synthesize one Provider::SetMultibinding per element type. Multiple
     // contributions to the same Set<T> are intentional, not duplicates.
     for (set_key, (contributors, scope, source)) in set_contribs {
-        // Don't pre-filter the synthesized aggregate by scope —
+        // Don't pre-filter the synthesized aggregate by scope â€”
         // multibinding contributors come from @Provides methods which
         // were already registered above, and the M3 ScopeMismatch rule
         // surfaces any conflict over the resulting bindings.
@@ -542,13 +573,13 @@ fn aggregate_bindings(
 
 /// Append a contributor record to the pending multibinding map under the
 /// `Key::Set { element: <binding.key> }` aggregate. Validates the binding's
-/// provider shape — only `Provider::ProvidesMethod` is supported in v0.1
+/// provider shape â€” only `Provider::ProvidesMethod` is supported in v0.1
 /// (the parser already rejected `@IntoSet` on `@Binds` / `@Inject`).
 fn collect_set_contributor(
     b: &Binding,
     set_contribs: &mut HashMap<Key, (Vec<SetContributor>, Scope, SourceSpan)>,
 ) {
-    let Provider::ProvidesMethod { module, method } = &b.provider else {
+    let Provider::ProvidesMethod { module, method, .. } = &b.provider else {
         // The parser is responsible for ensuring this; skip silently if it
         // ever gets through. The graph would surface the binding as a
         // missing key for whoever requested Set<T>, which is acceptable
@@ -600,7 +631,7 @@ fn build_petgraph(
 }
 
 /// Run Tarjan SCC and emit one [`DiagnosticKind::Cycle`] per non-trivial
-/// strongly-connected component (size ≥ 2 or self-loop).
+/// strongly-connected component (size â‰¥ 2 or self-loop).
 fn detect_cycles(
     graph: &DiGraph<Key, ()>,
     bindings: &HashMap<Key, Binding>,
@@ -686,7 +717,7 @@ fn register_binding(
 
 /// Prune `bindings` to entries reachable from `roots` via the binding
 /// dep edges. Bindings whose keys aren't transitively requested by any
-/// entry point are dropped — this matches Dagger's "only validate what's
+/// entry point are dropped â€” this matches Dagger's "only validate what's
 /// used" policy and avoids surfacing spurious missing-dep diagnostics
 /// for project-wide `@Inject` classes that only make sense in a
 /// subcomponent's scope (M11).
@@ -711,8 +742,8 @@ fn prune_unreachable_bindings(bindings: &mut HashMap<Key, Binding>, roots: &[Key
 /// Same as [`prune_unreachable_bindings`] but accepts a `parent_bindings`
 /// fallback used to follow inherited deps across the parent boundary
 /// (so a child binding's parent-satisfied dep still pulls in any further
-/// child deps reachable from it). Today the inherited side is shallow —
-/// we only need to walk into the child's own bindings — so the
+/// child deps reachable from it). Today the inherited side is shallow â€”
+/// we only need to walk into the child's own bindings â€” so the
 /// implementation collapses back to a regular pure-child walk; the
 /// `parent_bindings` argument is kept for symmetry and future
 /// generalization (e.g. nested subcomponents).
@@ -723,6 +754,35 @@ fn prune_unreachable_bindings_with_fallback(
 ) {
     let _ = parent_bindings;
     prune_unreachable_bindings(bindings, roots);
+}
+
+/// Emit one [`DiagnosticKind::AsyncBindingNeedsSingletonComponent`]
+/// per async `@Provides` binding hosted by a non-`@Singleton`
+/// component (M12). Subcomponents are exempt â€” per-call awaits are
+/// fine there because the subcomponent itself is fresh per-call.
+fn detect_async_needs_singleton(
+    bindings: &HashMap<Key, Binding>,
+    owner_scope: Scope,
+    owner_class: &ClassRef,
+) -> Vec<Diagnostic> {
+    if owner_scope == Scope::Singleton {
+        return Vec::new();
+    }
+    bindings
+        .values()
+        .filter(|b| matches!(&b.provider, Provider::ProvidesMethod { is_async: true, .. }))
+        .map(|b| Diagnostic {
+            kind: DiagnosticKind::AsyncBindingNeedsSingletonComponent {
+                key: b.key.clone(),
+                component: owner_class.clone(),
+            },
+            primary: Label {
+                span: b.source.clone(),
+                message: "async @Provides without @Singleton".to_owned(),
+            },
+            related: vec![],
+        })
+        .collect()
 }
 
 /// Report `DuplicateFactoryParam` if the same key appears more than
@@ -829,6 +889,7 @@ mod tests {
             provider: Provider::ProvidesMethod {
                 module: class_ref(module_name),
                 method: format!("provide{ret}"),
+                is_async: false,
             },
             scope,
             deps,
@@ -1012,9 +1073,9 @@ mod tests {
         // M11: A @Singleton @Inject only contributes to a @Singleton
         // component's pool. Pairing it with a non-@Singleton component
         // results in MissingBinding (the class isn't owned anywhere
-        // reachable). The underlying user error is the same — they
+        // reachable). The underlying user error is the same â€” they
         // either forgot @Singleton on the component or didn't want it
-        // on the class — but the diagnostic shape changes.
+        // on the class â€” but the diagnostic shape changes.
         let heater = inject("Heater", vec![], Scope::Singleton);
         let mut comp = empty_component("Comp", vec![], Scope::Unscoped);
         comp.entry_points.push(ep("h", key("Heater")));
@@ -1107,6 +1168,7 @@ mod tests {
                 provider: Provider::ProvidesMethod {
                     module: class_ref("RequestModule"),
                     method: "handler".into(),
+                    is_async: false,
                 },
                 scope: Scope::Unscoped,
                 deps: vec![request_key.clone(), response_key.clone()],
@@ -1258,6 +1320,71 @@ mod tests {
                 DiagnosticKind::SingletonSubcomponentWithFactoryParams { .. }
             )),
             "expected SingletonSubcomponentWithFactoryParams, got {ds:?}",
+        );
+    }
+
+    fn async_provides(module_name: &str, ret: &str, scope: Scope) -> Binding {
+        Binding {
+            key: key(ret),
+            provider: Provider::ProvidesMethod {
+                module: class_ref(module_name),
+                method: format!("provide{ret}"),
+                is_async: true,
+            },
+            scope,
+            deps: vec![],
+            source: span(module_name, 100),
+            role: MultibindRole::None,
+        }
+    }
+
+    #[test]
+    fn async_binding_in_singleton_component_is_ok() {
+        // M12: an async @Provides paired with a @Singleton component
+        // is the canonical async shape — no diagnostic should fire.
+        let module = ModuleDecl {
+            class: class_ref("DbModule"),
+            provides: vec![async_provides("DbModule", "Pool", Scope::Singleton)],
+            source: span("DbModule", 0),
+        };
+        let mut comp = empty_component("App", vec![class_ref("DbModule")], Scope::Singleton);
+        comp.entry_points.push(ep("pool", key("Pool")));
+
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[module],
+            inject_classes: &[],
+            subcomponents: &[],
+        });
+        assert!(ds.is_empty(), "diagnostics: {ds:?}");
+        assert!(g.is_async());
+        assert!(g.binding_is_async(&key("Pool")));
+    }
+
+    #[test]
+    fn async_binding_in_unscoped_component_is_rejected() {
+        // M12: without @Singleton there's nowhere to cache the resolved
+        // value — every entry-point call would re-await.
+        let module = ModuleDecl {
+            class: class_ref("DbModule"),
+            provides: vec![async_provides("DbModule", "Pool", Scope::Singleton)],
+            source: span("DbModule", 0),
+        };
+        let mut comp = empty_component("App", vec![class_ref("DbModule")], Scope::Unscoped);
+        comp.entry_points.push(ep("pool", key("Pool")));
+
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[module],
+            inject_classes: &[],
+            subcomponents: &[],
+        });
+        assert!(
+            ds.iter().any(|d| matches!(
+                d.kind,
+                DiagnosticKind::AsyncBindingNeedsSingletonComponent { .. }
+            )),
+            "expected AsyncBindingNeedsSingletonComponent, got {ds:?}",
         );
     }
 

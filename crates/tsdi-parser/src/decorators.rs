@@ -154,6 +154,30 @@ pub enum ExtractError {
         /// Source span.
         span: Span,
     },
+    /// An async `@Provides` method's return type isn't `Promise<T>`.
+    /// M12: tsdi unwraps the inner type for the binding key, so the
+    /// annotation must be exactly a single-argument `Promise<…>`.
+    #[error("async @Provides return type in '{context}' must be `Promise<T>` for some concrete T")]
+    AsyncProvidesMissingPromise {
+        /// Where the offending type annotation appeared.
+        context: String,
+        /// Source span of the offending annotation.
+        span: Span,
+    },
+    /// `@Inject` was placed on a class whose constructor is `async`.
+    /// TypeScript doesn't permit async constructors (TS error 1107) —
+    /// we surface a tsdi-flavored diagnostic so the user knows to move
+    /// the async work into an `@Provides` method instead.
+    #[error(
+        "@Inject class '{class}' has an async constructor — TypeScript doesn't permit \
+         async constructors. Move the async work into an `@Provides` method instead."
+    )]
+    AsyncInjectCtor {
+        /// Class name.
+        class: String,
+        /// Source span of the offending constructor.
+        span: Span,
+    },
     /// `@IntoSet` was placed on something other than a `@Provides` method
     /// (in v0.1, e.g. a `@Binds` method or a method with no provider decorator).
     #[error("@IntoSet on '{module}.{method}' is only supported on @Provides methods in v0.1")]
@@ -189,6 +213,7 @@ fn to_ir_span(file_path: &str, span: Span) -> SourceSpan {
 }
 
 /// Walk a parsed program and produce a [`ParsedFile`].
+#[allow(clippy::too_many_lines)]
 pub fn extract(
     program: &oxc_ast::ast::Program<'_>,
     imports: &ImportMap,
@@ -288,6 +313,15 @@ pub fn extract(
             });
         }
         if class_decorators.iter().any(|d| d.name == "Inject") {
+            // M12: an async constructor isn't valid TS (TS error 1107)
+            // and tsdi has no way to await one. Reject early with a
+            // helpful diagnostic that points the user at @Provides.
+            if let Some(span) = constructor_async_span(&class.body.body) {
+                return Err(ExtractError::AsyncInjectCtor {
+                    class: class_name.to_owned(),
+                    span,
+                });
+            }
             let (binding_span, params) = find_constructor(&class.body.body)
                 .map_or((class.span, &[][..]), |(span, params)| (span, params));
             let deps = params_to_keys(params, class_name, "constructor", imports, &local_set)?;
@@ -448,15 +482,22 @@ fn extract_provides_method(
                 method: method_name.to_owned(),
                 span: m.span,
             })?;
-    let key = type_annotation_to_key(
-        return_ann,
-        &format!(
-            "@Provides {}.{} return type",
-            module_class.name, method_name
-        ),
-        imports,
-        local_classes,
-    )?;
+
+    // M12: an `async` @Provides method has return type `Promise<T>` —
+    // unwrap to T for the binding's key. The dagger awaits the call
+    // during its `_resolve` phase and consumers see only the resolved
+    // value. Sync @Provides keep the old behavior.
+    let is_async = m.value.r#async;
+    let context = format!(
+        "@Provides {}.{} return type",
+        module_class.name, method_name
+    );
+    let key = if is_async {
+        promise_unwrap_to_key(return_ann, &context, imports, local_classes)?
+    } else {
+        type_annotation_to_key(return_ann, &context, imports, local_classes)?
+    };
+
     let deps = params_to_keys(
         &m.value.params.items,
         &module_class.name,
@@ -469,12 +510,56 @@ fn extract_provides_method(
         provider: Provider::ProvidesMethod {
             module: module_class.clone(),
             method: method_name.to_owned(),
+            is_async,
         },
         scope,
         deps,
         source: to_ir_span(file_path, m.span),
         role,
     })
+}
+
+/// Unwrap a `Promise<T>` type annotation into its inner key. Used for
+/// async `@Provides` methods (M12) — the binding's identity is the
+/// resolved type, not `Promise<T>`.
+fn promise_unwrap_to_key(
+    ann: &TSTypeAnnotation<'_>,
+    context: &str,
+    imports: &ImportMap,
+    local_classes: &HashSet<&str>,
+) -> Result<Key> {
+    let TSType::TSTypeReference(tref) = &ann.type_annotation else {
+        return Err(ExtractError::AsyncProvidesMissingPromise {
+            context: context.to_owned(),
+            span: ann.span,
+        });
+    };
+    let oxc_ast::ast::TSTypeName::IdentifierReference(id) = &tref.type_name else {
+        return Err(ExtractError::AsyncProvidesMissingPromise {
+            context: context.to_owned(),
+            span: ann.span,
+        });
+    };
+    if id.name.as_str() != "Promise" {
+        return Err(ExtractError::AsyncProvidesMissingPromise {
+            context: context.to_owned(),
+            span: ann.span,
+        });
+    }
+    let Some(args) = tref.type_arguments.as_deref() else {
+        return Err(ExtractError::AsyncProvidesMissingPromise {
+            context: context.to_owned(),
+            span: ann.span,
+        });
+    };
+    if args.params.len() != 1 {
+        return Err(ExtractError::AsyncProvidesMissingPromise {
+            context: context.to_owned(),
+            span: ann.span,
+        });
+    }
+    let inner = args.params.first().expect("len 1");
+    ts_type_to_key(inner, context, imports, local_classes, ann.span)
 }
 
 fn extract_binds_method(
@@ -665,6 +750,22 @@ fn find_constructor<'a>(body: &'a [ClassElement<'a>]) -> Option<(Span, &'a [Form
         };
         if matches!(m.kind, MethodDefinitionKind::Constructor) {
             return Some((m.span, m.value.params.items.as_slice()));
+        }
+    }
+    None
+}
+
+/// If the class has an `async` constructor, return its span. M12 uses
+/// this to reject async-on-`@Inject` with a tsdi-flavored diagnostic
+/// (TypeScript would also flag TS1107, but our error names the right
+/// remediation: move the async work into a `@Provides`).
+fn constructor_async_span(body: &[ClassElement<'_>]) -> Option<Span> {
+    for member in body {
+        let ClassElement::MethodDefinition(m) = member else {
+            continue;
+        };
+        if matches!(m.kind, MethodDefinitionKind::Constructor) && m.value.r#async {
+            return Some(m.span);
         }
     }
     None

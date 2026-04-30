@@ -191,11 +191,20 @@ pub enum Provider {
         class: ClassRef,
     },
     /// A static `@Provides` method on a `@Module` class.
+    ///
+    /// `is_async` (M12) is set when the method is declared `async`
+    /// (its return type is `Promise<T>`). The codegen treats it
+    /// specially: instead of a sync getter, the value is awaited during
+    /// the dagger's resolution phase and the **resolved** value is
+    /// stashed in the cache field. Downstream consumers — entry points,
+    /// `@Inject` ctors, subcomponents — see only the resolved type.
     ProvidesMethod {
         /// The owning module class.
         module: ClassRef,
         /// The method name on the module.
         method: String,
+        /// Whether the method was declared `async`. M12.
+        is_async: bool,
     },
     /// An abstract `@Binds` method on a `@Module` class. The binding's
     /// `key` is the method's return type; this provider redirects all
