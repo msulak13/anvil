@@ -381,7 +381,7 @@ fn run_build(entry: &Path, tsconfig: Option<PathBuf>) -> Result<BuildSummary, Ch
             version,
         )
         .map_err(anyhow::Error::from)?;
-        let out_path = output_path_for(&c.class.module.0)?;
+        let out_path = output_path_for(&c.class.module.abs)?;
         std::fs::write(&out_path, &code)
             .map_err(|e| anyhow::anyhow!("failed to write {}: {e}", out_path.display()))?;
         written.push(out_path);

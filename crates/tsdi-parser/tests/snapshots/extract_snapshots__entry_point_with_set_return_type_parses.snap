@@ -8,9 +8,10 @@ ParsedFile {
     components: [
         ComponentDecl {
             class: ClassRef {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "App",
             },
             modules: [],
@@ -20,9 +21,12 @@ ParsedFile {
                     name: "plugins",
                     key: Set {
                         element: Class {
-                            module: ModulePath(
-                                "./plugin",
-                            ),
+                            module: ModulePath {
+                                abs: "./plugin",
+                                original: Some(
+                                    "./plugin",
+                                ),
+                            },
                             name: "Plugin",
                         },
                     },

@@ -10,25 +10,30 @@ ParsedFile {
     inject_classes: [
         Binding {
             key: Class {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "Pump",
             },
             provider: InjectCtor {
                 class: ClassRef {
-                    module: ModulePath(
-                        "<self>",
-                    ),
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
                     name: "Pump",
                 },
             },
             scope: Unscoped,
             deps: [
                 Class {
-                    module: ModulePath(
-                        "./heater",
-                    ),
+                    module: ModulePath {
+                        abs: "./heater",
+                        original: Some(
+                            "./heater",
+                        ),
+                    },
                     name: "Heater",
                 },
             ],

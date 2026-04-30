@@ -195,34 +195,40 @@ fn normalize_parsed(
     let mut cache: HashMap<String, PathBuf> = HashMap::new();
     let self_path_string = self_path.to_string_lossy().into_owned();
 
-    let mut resolve_one = |mp: &mut ModulePath,
-                           discovered: &mut Vec<PathBuf>|
-     -> Result<(), SymbolError> {
-        if mp.0 == ModulePath::SAME_FILE {
-            mp.0.clone_from(&self_path_string);
-            return Ok(());
-        }
-        let abs = if let Some(cached) = cache.get(&mp.0) {
-            cached.clone()
-        } else {
-            let abs = resolver
-                .resolve(self_dir, &mp.0)
-                .map_err(|source| SymbolError::Resolve {
-                    specifier: mp.0.clone(),
-                    importer: self_path.to_path_buf(),
-                    source: Box::new(source),
-                })?;
-            let abs = canonicalize_or_keep(&abs);
-            cache.insert(mp.0.clone(), abs.clone());
-            abs
+    let mut resolve_one =
+        |mp: &mut ModulePath, discovered: &mut Vec<PathBuf>| -> Result<(), SymbolError> {
+            // Same-file sentinel: rewrite `abs` to the importing file's
+            // canonical path. `original` stays `None` (there's no
+            // user-written specifier for a same-file ref).
+            if mp.abs == ModulePath::SAME_FILE {
+                mp.abs.clone_from(&self_path_string);
+                return Ok(());
+            }
+            // For real specifiers, only `abs` gets rewritten — `original`
+            // is what the user wrote, which codegen needs verbatim for
+            // node_modules imports.
+            let abs = if let Some(cached) = cache.get(&mp.abs) {
+                cached.clone()
+            } else {
+                let abs =
+                    resolver
+                        .resolve(self_dir, &mp.abs)
+                        .map_err(|source| SymbolError::Resolve {
+                            specifier: mp.abs.clone(),
+                            importer: self_path.to_path_buf(),
+                            source: Box::new(source),
+                        })?;
+                let abs = canonicalize_or_keep(&abs);
+                cache.insert(mp.abs.clone(), abs.clone());
+                abs
+            };
+            mp.abs = abs.to_string_lossy().into_owned();
+            // Only recurse into project source files.
+            if is_source_ts(&abs) && !in_node_modules(&abs) {
+                discovered.push(abs);
+            }
+            Ok(())
         };
-        mp.0 = abs.to_string_lossy().into_owned();
-        // Only recurse into project source files.
-        if is_source_ts(&abs) && !in_node_modules(&abs) {
-            discovered.push(abs);
-        }
-        Ok(())
-    };
 
     for m in &mut parsed.modules {
         rewrite_classref(&mut m.class, &mut resolve_one, discovered)?;

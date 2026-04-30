@@ -740,7 +740,7 @@ fn resolve_name_to_key(name: &str, imports: &ImportMap, local_classes: &HashSet<
     }) = imports.get(name)
     {
         return Key::Class {
-            module: ModulePath(specifier.clone()),
+            module: ModulePath::from_specifier(specifier.clone()),
             name: exported_name.clone(),
         };
     }

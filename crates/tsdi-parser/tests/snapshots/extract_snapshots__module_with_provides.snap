@@ -7,24 +7,29 @@ ParsedFile {
     modules: [
         ModuleDecl {
             class: ClassRef {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "CoffeeModule",
             },
             provides: [
                 Binding {
                     key: Class {
-                        module: ModulePath(
-                            "./pump",
-                        ),
+                        module: ModulePath {
+                            abs: "./pump",
+                            original: Some(
+                                "./pump",
+                            ),
+                        },
                         name: "Pump",
                     },
                     provider: ProvidesMethod {
                         module: ClassRef {
-                            module: ModulePath(
-                                "<self>",
-                            ),
+                            module: ModulePath {
+                                abs: "<self>",
+                                original: None,
+                            },
                             name: "CoffeeModule",
                         },
                         method: "providePump",

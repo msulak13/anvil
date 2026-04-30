@@ -569,14 +569,14 @@ mod tests {
 
     fn key(name: &str) -> Key {
         Key::Class {
-            module: ModulePath(format!("/p/{name}.ts")),
+            module: ModulePath::from_abs(format!("/p/{name}.ts")),
             name: name.to_owned(),
         }
     }
 
     fn class_ref(name: &str) -> ClassRef {
         ClassRef {
-            module: ModulePath(format!("/p/{name}.ts")),
+            module: ModulePath::from_abs(format!("/p/{name}.ts")),
             name: name.to_owned(),
         }
     }

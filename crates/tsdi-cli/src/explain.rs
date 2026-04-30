@@ -72,7 +72,7 @@ fn key_name_of(k: &Key) -> String {
 
 fn key_module(k: &Key) -> &str {
     match k {
-        Key::Class { module, .. } => module.0.as_str(),
+        Key::Class { module, .. } => module.abs.as_str(),
         Key::Set { element } => key_module(element),
     }
 }

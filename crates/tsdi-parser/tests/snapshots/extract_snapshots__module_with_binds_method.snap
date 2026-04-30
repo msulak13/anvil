@@ -7,33 +7,43 @@ ParsedFile {
     modules: [
         ModuleDecl {
             class: ClassRef {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "HeaterModule",
             },
             provides: [
                 Binding {
                     key: Class {
-                        module: ModulePath(
-                            "./heater",
-                        ),
+                        module: ModulePath {
+                            abs: "./heater",
+                            original: Some(
+                                "./heater",
+                            ),
+                        },
                         name: "Heater",
                     },
                     provider: Binds {
                         target: Class {
-                            module: ModulePath(
-                                "./electric_heater",
-                            ),
+                            module: ModulePath {
+                                abs: "./electric_heater",
+                                original: Some(
+                                    "./electric_heater",
+                                ),
+                            },
                             name: "ElectricHeater",
                         },
                     },
                     scope: Unscoped,
                     deps: [
                         Class {
-                            module: ModulePath(
-                                "./electric_heater",
-                            ),
+                            module: ModulePath {
+                                abs: "./electric_heater",
+                                original: Some(
+                                    "./electric_heater",
+                                ),
+                            },
                             name: "ElectricHeater",
                         },
                     ],

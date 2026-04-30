@@ -22,14 +22,14 @@ fn span_of(path: &str) -> SourceSpan {
 
 fn class_key(module: &str, name: &str) -> Key {
     Key::Class {
-        module: ModulePath(module.into()),
+        module: ModulePath::from_abs(module),
         name: name.into(),
     }
 }
 
 fn class_ref(module: &str, name: &str) -> ClassRef {
     ClassRef {
-        module: ModulePath(module.into()),
+        module: ModulePath::from_abs(module),
         name: name.into(),
     }
 }
@@ -424,6 +424,71 @@ fn emit_into_set_aggregates_contributions() {
 
     let out = emit_component(&component, &[module], &[], &[], "0.0.1").unwrap();
     insta::assert_snapshot!(out);
+}
+
+#[test]
+fn emit_preserves_node_modules_specifier() {
+    // M10: when a binding's class lives under node_modules (e.g. a type
+    // re-exported by an installed package), the dagger must import it
+    // by the user's original bare specifier ("vendor-lib"), not by a
+    // brittle relative path into node_modules.
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let comp_path: String = root.join("app-component.ts").to_string_lossy().into_owned();
+    let pkg_path: String = root
+        .join("node_modules/vendor-lib/index.d.ts")
+        .to_string_lossy()
+        .into_owned();
+
+    // The vendor type lives in node_modules with `original = "vendor-lib"`.
+    let vendor_key = Key::Class {
+        module: ModulePath {
+            abs: pkg_path.clone(),
+            original: Some("vendor-lib".to_owned()),
+        },
+        name: "Tracer".into(),
+    };
+    let vendor_classref = ClassRef {
+        module: ModulePath {
+            abs: pkg_path.clone(),
+            original: Some("vendor-lib".to_owned()),
+        },
+        name: "Tracer".into(),
+    };
+
+    let inject_classes = vec![Binding {
+        key: vendor_key.clone(),
+        provider: Provider::InjectCtor {
+            class: vendor_classref,
+        },
+        scope: Scope::Unscoped,
+        deps: vec![],
+        source: span_of(&pkg_path),
+        role: MultibindRole::None,
+    }];
+
+    let component = ComponentDecl {
+        class: class_ref(&comp_path, "App"),
+        modules: vec![],
+        scope: Scope::Unscoped,
+        entry_points: vec![EntryPoint {
+            name: "tracer".into(),
+            key: vendor_key,
+            source: span_of(&comp_path),
+        }],
+        source: span_of(&comp_path),
+    };
+
+    let out = emit_component(&component, &[], &inject_classes, &[], "0.0.1").unwrap();
+    assert!(
+        out.contains(r#"import { Tracer } from "vendor-lib";"#),
+        "expected bare-specifier import, got:\n{out}",
+    );
+    // …and emphatically *not* a relative path into node_modules.
+    assert!(
+        !out.contains("node_modules"),
+        "must not leak the node_modules path into emitted imports:\n{out}",
+    );
 }
 
 #[test]

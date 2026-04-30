@@ -35,21 +35,92 @@ pub enum Key {
     },
 }
 
-/// A module path. M1 stores the raw import specifier; M2 normalizes to an
-/// absolute filesystem path.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ModulePath(pub String);
+/// A module path. M1 stores the raw import specifier in `abs`; M2's
+/// resolver rewrites `abs` to an absolute filesystem path while keeping
+/// the user's original specifier in `original` so `tsdi-codegen` can
+/// re-emit the same import shape (essential for `node_modules` packages
+/// where a relative path doesn't make sense — `import { Request } from
+/// "express"` instead of `import { Request } from "../../node_modules/..."`).
+///
+/// **Equality is on `abs` only.** Two `ModulePath` values compare equal
+/// iff they refer to the same file, regardless of how each importer
+/// happened to spell the specifier. This preserves M2's contract that
+/// equivalent imports across files produce equal `Key`s.
+///
+/// The struct is **not** a tuple anymore. Construction goes through the
+/// named-field syntax or the convenience constructors below.
+#[derive(Clone, Debug)]
+pub struct ModulePath {
+    /// Absolute, canonical filesystem path (M2+) or the [`Self::SAME_FILE`]
+    /// sentinel (M1, pre-resolution).
+    pub abs: String,
+    /// The user's original import specifier (e.g. `"./heater"`, `"express"`).
+    /// `None` for same-file references and for tooling-built paths
+    /// (graph tests, golden fixtures) that have no source specifier.
+    pub original: Option<String>,
+}
 
 impl ModulePath {
     /// Sentinel used by the parser when a referenced type is declared in
     /// the same file as the reference. M2's resolver replaces this with the
-    /// file's own absolute path during cross-file pass.
+    /// file's own absolute path during the cross-file pass.
     pub const SAME_FILE: &'static str = "<self>";
 
-    /// Construct a [`ModulePath`] for a same-file reference.
+    /// Construct a [`ModulePath`] for a same-file reference. `original` is
+    /// [`None`] because there is no user-written specifier — the type is
+    /// declared in the importing file itself.
     #[must_use]
     pub fn same_file() -> Self {
-        Self(Self::SAME_FILE.to_owned())
+        Self {
+            abs: Self::SAME_FILE.to_owned(),
+            original: None,
+        }
+    }
+
+    /// Build from a user-written import specifier. Initially both `abs`
+    /// and `original` carry the specifier verbatim; M2's resolver then
+    /// rewrites `abs` to the canonical absolute path. `original` is
+    /// preserved through that pass so codegen can prefer it for
+    /// `node_modules` imports.
+    #[must_use]
+    pub fn from_specifier(spec: impl Into<String>) -> Self {
+        let s = spec.into();
+        Self {
+            abs: s.clone(),
+            original: Some(s),
+        }
+    }
+
+    /// Build from a known-absolute path with no preserved specifier.
+    /// Used by graph tests and tooling that doesn't need to round-trip
+    /// import emission. Codegen falls back to a relative-path
+    /// computation when `original` is `None`.
+    #[must_use]
+    pub fn from_abs(abs: impl Into<String>) -> Self {
+        Self {
+            abs: abs.into(),
+            original: None,
+        }
+    }
+
+    /// Whether `abs` resolves into a `node_modules` directory. Codegen
+    /// uses this to decide whether to emit the user's bare specifier
+    /// (e.g. `"express"`) instead of a brittle relative path.
+    #[must_use]
+    pub fn is_node_modules(&self) -> bool {
+        self.abs.contains("node_modules")
+    }
+}
+
+impl PartialEq for ModulePath {
+    fn eq(&self, other: &Self) -> bool {
+        self.abs == other.abs
+    }
+}
+impl Eq for ModulePath {}
+impl std::hash::Hash for ModulePath {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.abs.hash(state);
     }
 }
 
@@ -285,19 +356,58 @@ mod tests {
     #[test]
     fn key_equality_uses_module_and_name() {
         let a = Key::Class {
-            module: ModulePath("/abs/heater.ts".into()),
+            module: ModulePath::from_abs("/abs/heater.ts"),
             name: "Heater".into(),
         };
         let b = Key::Class {
-            module: ModulePath("/abs/heater.ts".into()),
+            module: ModulePath::from_abs("/abs/heater.ts"),
             name: "Heater".into(),
         };
         let c = Key::Class {
-            module: ModulePath("/abs/other.ts".into()),
+            module: ModulePath::from_abs("/abs/other.ts"),
             name: "Heater".into(),
         };
         assert_eq!(a, b);
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn module_path_equality_ignores_original_specifier() {
+        // Two importers may spell the same file differently — equality
+        // must be on `abs` only or M2's resolver contract breaks.
+        let from_relative = ModulePath {
+            abs: "/abs/heater.ts".into(),
+            original: Some("./heater".into()),
+        };
+        let from_alias = ModulePath {
+            abs: "/abs/heater.ts".into(),
+            original: Some("@/heater".into()),
+        };
+        assert_eq!(from_relative, from_alias);
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut hasher2 = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&from_relative, &mut hasher);
+        std::hash::Hash::hash(&from_alias, &mut hasher2);
+        assert_eq!(
+            std::hash::Hasher::finish(&hasher),
+            std::hash::Hasher::finish(&hasher2),
+            "Hash must agree with PartialEq",
+        );
+    }
+
+    #[test]
+    fn from_specifier_seeds_both_fields() {
+        let mp = ModulePath::from_specifier("./pump");
+        assert_eq!(mp.abs, "./pump");
+        assert_eq!(mp.original.as_deref(), Some("./pump"));
+    }
+
+    #[test]
+    fn is_node_modules_detection() {
+        let local = ModulePath::from_abs("/abs/proj/src/heater.ts");
+        let pkg = ModulePath::from_abs("/abs/proj/node_modules/express/index.d.ts");
+        assert!(!local.is_node_modules());
+        assert!(pkg.is_node_modules());
     }
 
     #[test]
@@ -310,7 +420,9 @@ mod tests {
 
     #[test]
     fn same_file_sentinel_is_stable() {
-        assert_eq!(ModulePath::same_file().0, "<self>");
+        let mp = ModulePath::same_file();
+        assert_eq!(mp.abs, "<self>");
+        assert!(mp.original.is_none());
     }
 
     #[test]

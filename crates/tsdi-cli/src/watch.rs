@@ -206,8 +206,8 @@ fn rebuild_one(entry: &Path, tsconfig: Option<PathBuf>) -> Result<HashSet<PathBu
             version,
         )
         .map_err(|e| format!("emit failed: {e}"))?;
-        let out = output_path_for(&c.class.module.0)
-            .ok_or_else(|| format!("bad component path: {}", c.class.module.0))?;
+        let out = output_path_for(&c.class.module.abs)
+            .ok_or_else(|| format!("bad component path: {}", c.class.module.abs))?;
         std::fs::write(&out, &code).map_err(|e| format!("write {}: {e}", out.display()))?;
         written += 1;
     }

@@ -129,7 +129,7 @@ pub enum DiagnosticKind {
 #[must_use]
 pub fn key_display(key: &Key) -> String {
     match key {
-        Key::Class { module, name } => format!("{name}@{}", module.0),
+        Key::Class { module, name } => format!("{name}@{}", module.abs),
         Key::Set { element } => format!("Set<{}>", key_display(element)),
     }
 }
@@ -177,7 +177,7 @@ mod tests {
 
     fn k(name: &str) -> Key {
         Key::Class {
-            module: ModulePath(format!("/proj/{name}.ts")),
+            module: ModulePath::from_abs(format!("/proj/{name}.ts")),
             name: name.to_owned(),
         }
     }

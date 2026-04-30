@@ -10,16 +10,18 @@ ParsedFile {
     inject_classes: [
         Binding {
             key: Class {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "Heater",
             },
             provider: InjectCtor {
                 class: ClassRef {
-                    module: ModulePath(
-                        "<self>",
-                    ),
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
                     name: "Heater",
                 },
             },

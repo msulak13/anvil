@@ -15,8 +15,15 @@ pub enum Key {
     // Token { module: ModulePath, name: String },  // v0.2
 }
 
-pub struct ModulePath(pub String);  // M1: raw import specifier; M2+: absolute, normalized path
+pub struct ModulePath {
+    pub abs: String,                // M1: raw import specifier; M2+: absolute, normalized path
+    pub original: Option<String>,   // M10: user's original specifier (e.g. "express", "./pump")
+}
 ```
+
+`abs` carries identity — `ModulePath` equality and hashing use it alone, so two importers spelling the same file differently still produce equal `Key`s. `original` carries provenance: codegen prefers it for `node_modules` imports so the dagger emits `import { Request } from "express"` instead of an `import { Request } from "../../node_modules/..."` relative path that would only resolve from one specific output location.
+
+The parser populates `original = Some(spec)` whenever a `Key` is minted from an import-map entry. The M2 resolver rewrites `abs` to the canonical filesystem path while leaving `original` alone. For same-file references and tooling-built paths (graph tests, golden fixtures), `original` is `None` and codegen falls back to a relative-path computation.
 
 `Key::Set` represents a `Set<T>` aggregate produced from one or more `@IntoSet @Provides` contributions. The `element` is always a `Key::Class` in v0.1 (no `Set<Set<T>>`-of-`Set` chains in user code). The graph aggregator synthesizes one `Provider::SetMultibinding` binding per element key from the raw `MultibindRole::IntoSet` bindings the parser emits (see [Multibindings](#multibindings) below).
 

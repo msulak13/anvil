@@ -61,14 +61,14 @@ fn for_each_key<'a>(parsed: &'a ParsedFile, mut f: impl FnMut(&'a ModulePath)) {
 fn assert_all_keys_absolute(parsed: &ParsedFile) {
     for_each_key(parsed, |mp| {
         assert!(
-            mp.0 != ModulePath::SAME_FILE,
+            mp.abs != ModulePath::SAME_FILE,
             "found unrewritten SAME_FILE sentinel in {:?}",
             parsed.path,
         );
         assert!(
-            Path::new(&mp.0).is_absolute(),
+            Path::new(&mp.abs).is_absolute(),
             "expected absolute module path, got {:?} in {:?}",
-            mp.0,
+            mp.abs,
             parsed.path,
         );
     });
@@ -154,12 +154,12 @@ fn relative_imports_are_resolved_to_absolute_paths() {
     let pump_dep = match &pump.inject_classes[0].deps[0] {
         Key::Class { module, name } => {
             assert_eq!(name, "Heater");
-            module.0.clone()
+            module.abs.clone()
         }
         Key::Set { .. } => panic!("expected Key::Class"),
     };
     let heater_self = match &heater.1.inject_classes[0].key {
-        Key::Class { module, .. } => module.0.clone(),
+        Key::Class { module, .. } => module.abs.clone(),
         Key::Set { .. } => panic!("expected Key::Class"),
     };
     assert_eq!(pump_dep, heater_self);
@@ -260,7 +260,7 @@ fn barrel_reexport_resolves_to_real_file() {
     let dep = match &pump.inject_classes[0].deps[0] {
         Key::Class { module, name } => {
             assert_eq!(name, "Heater");
-            module.0.clone()
+            module.abs.clone()
         }
         Key::Set { .. } => panic!("expected Key::Class"),
     };
@@ -314,12 +314,18 @@ fn node_modules_imports_resolve_but_are_not_walked() {
     let pump = graph.files.values().next().unwrap();
     assert_all_keys_absolute(pump);
     let dep = match &pump.inject_classes[0].deps[0] {
-        Key::Class { module, .. } => module.0.clone(),
+        Key::Class { module, .. } => (module.abs.clone(), module.original.clone()),
         Key::Set { .. } => panic!("expected Key::Class"),
     };
     assert!(
-        dep.contains("node_modules") && dep.contains("some-lib"),
-        "Logger dep should resolve into node_modules: {dep}"
+        dep.0.contains("node_modules") && dep.0.contains("some-lib"),
+        "Logger dep should resolve into node_modules: {}",
+        dep.0,
+    );
+    assert_eq!(
+        dep.1.as_deref(),
+        Some("some-lib"),
+        "M2 must preserve the user's original specifier alongside abs",
     );
 }
 

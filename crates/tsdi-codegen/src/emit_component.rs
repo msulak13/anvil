@@ -67,7 +67,7 @@ pub fn emit_component(
         return Err(EmitError::Invalid(diagnostics));
     }
 
-    let component_path = PathBuf::from(&component.class.module.0);
+    let component_path = PathBuf::from(&component.class.module.abs);
     let out_dir = component_path
         .parent()
         .ok_or_else(|| EmitError::BadComponentPath(component_path.display().to_string()))?
@@ -110,7 +110,7 @@ pub fn emit_component(
 
 fn key_module(key: &Key) -> &str {
     match key {
-        Key::Class { module, .. } => &module.0,
+        Key::Class { module, .. } => &module.abs,
         Key::Set { element } => key_module(element),
     }
 }
@@ -252,12 +252,34 @@ fn populate_imports(
 }
 
 fn add_classref_import(imports: &mut ImportMap, out_dir: &Path, cref: &ClassRef) {
-    let abs = PathBuf::from(&cref.module.0);
-    let specifier = relative_ts_specifier(out_dir, &abs, /* keep_ext */ false);
+    let specifier = import_specifier_for(out_dir, &cref.module);
     imports
         .entry(specifier)
         .or_default()
         .insert(cref.name.clone());
+}
+
+/// Decide what string to emit as the import specifier for `mp`.
+///
+/// **Rule:** if `mp` resolves into `node_modules`, prefer the user's
+/// original specifier (`"express"`, `"@scope/pkg"`, …). A relative path
+/// into `node_modules/foo/index.d.ts` would be brittle and wrong — the
+/// dagger consumes the package by name like every other importer.
+///
+/// For project-internal paths (or when `original` is unavailable),
+/// recompute a relative path from the dagger's output directory. This
+/// is correct even when the original specifier was relative to *a
+/// different* importing file (e.g. the @Component imports `./pump` but
+/// a deep `@Module` imports `../pump` — both must become `./pump`-shaped
+/// when emitted alongside the dagger).
+fn import_specifier_for(out_dir: &Path, mp: &tsdi_core::ir::ModulePath) -> String {
+    if mp.is_node_modules() {
+        if let Some(orig) = mp.original.as_deref() {
+            return orig.to_owned();
+        }
+    }
+    let abs = PathBuf::from(&mp.abs);
+    relative_ts_specifier(out_dir, &abs, /* keep_ext */ false)
 }
 
 fn build_ts_source(
@@ -564,7 +586,7 @@ mod tests {
     #[test]
     fn factory_name_prefixes_get() {
         let key = Key::Class {
-            module: tsdi_core::ir::ModulePath("/p/Heater.ts".to_owned()),
+            module: tsdi_core::ir::ModulePath::from_abs("/p/Heater.ts"),
             name: "Heater".to_owned(),
         };
         assert_eq!(factory_name_for(&key), "getHeater");
@@ -573,7 +595,7 @@ mod tests {
     #[test]
     fn factory_name_for_set_uses_set_of_prefix() {
         let element = Key::Class {
-            module: tsdi_core::ir::ModulePath("/p/Plugin.ts".to_owned()),
+            module: tsdi_core::ir::ModulePath::from_abs("/p/Plugin.ts"),
             name: "Plugin".to_owned(),
         };
         let key = Key::Set {

@@ -90,7 +90,7 @@ mod tests {
 
     fn k(name: &str) -> Key {
         Key::Class {
-            module: ModulePath(format!("/p/{name}.ts")),
+            module: ModulePath::from_abs(format!("/p/{name}.ts")),
             name: name.to_owned(),
         }
     }

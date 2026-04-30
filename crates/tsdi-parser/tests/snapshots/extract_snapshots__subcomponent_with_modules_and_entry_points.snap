@@ -8,9 +8,10 @@ ParsedFile {
     components: [
         ComponentDecl {
             class: ClassRef {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "App",
             },
             modules: [],
@@ -19,9 +20,10 @@ ParsedFile {
                 EntryPoint {
                     name: "requestComponent",
                     key: Class {
-                        module: ModulePath(
-                            "<self>",
-                        ),
+                        module: ModulePath {
+                            abs: "<self>",
+                            original: None,
+                        },
                         name: "RequestComponent",
                     },
                     source: SourceSpan {
@@ -41,9 +43,10 @@ ParsedFile {
     subcomponents: [
         SubcomponentDecl {
             class: ClassRef {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "RequestComponent",
             },
             modules: [],
@@ -52,9 +55,10 @@ ParsedFile {
                 EntryPoint {
                     name: "handler",
                     key: Class {
-                        module: ModulePath(
-                            "<self>",
-                        ),
+                        module: ModulePath {
+                            abs: "<self>",
+                            original: None,
+                        },
                         name: "RequestHandler",
                     },
                     source: SourceSpan {

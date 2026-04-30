@@ -32,7 +32,18 @@ Imports are emitted in this order:
 2. Every module class referenced by `@Component({ modules: [...] })`.
 3. Every concrete class that appears as a binding.
 
-Each import uses the **same module specifier the user wrote**, so the generated file lives next to source and resolves identically.
+### Specifier policy
+
+For each import, codegen picks one of two strategies based on `ModulePath`:
+
+| Source location | Strategy | Example |
+|---|---|---|
+| Inside `node_modules` (any package) | Use `ModulePath.original` verbatim | `import { Request } from "express"` |
+| Project-local (anywhere else) | Recompute relative path from the dagger's output dir | `import { Pump } from "./pump"` |
+
+The recomputation matters even for relative imports the user originally wrote: a deep `@Module` may have written `import { Heater } from "../../shared/heater"`, but emitted next to the `@Component` that path becomes something else. Codegen always recomputes from the dagger's location so every import is correct at the *output* site, not the original importer site.
+
+For `node_modules` packages relative paths would land somewhere like `../../node_modules/express/index` — fragile and meaningless once the project is published. The `original` specifier (recorded by the parser at the import statement) is the package's bare name; codegen forwards it as-is.
 
 ## Class shape
 

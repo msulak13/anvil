@@ -8,16 +8,20 @@ ParsedFile {
     components: [
         ComponentDecl {
             class: ClassRef {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "CoffeeShop",
             },
             modules: [
                 ClassRef {
-                    module: ModulePath(
-                        "./coffee_module",
-                    ),
+                    module: ModulePath {
+                        abs: "./coffee_module",
+                        original: Some(
+                            "./coffee_module",
+                        ),
+                    },
                     name: "CoffeeModule",
                 },
             ],
@@ -26,9 +30,12 @@ ParsedFile {
                 EntryPoint {
                     name: "pump",
                     key: Class {
-                        module: ModulePath(
-                            "./pump",
-                        ),
+                        module: ModulePath {
+                            abs: "./pump",
+                            original: Some(
+                                "./pump",
+                            ),
+                        },
                         name: "Pump",
                     },
                     source: SourceSpan {
@@ -40,9 +47,12 @@ ParsedFile {
                 EntryPoint {
                     name: "heater",
                     key: Class {
-                        module: ModulePath(
-                            "./heater",
-                        ),
+                        module: ModulePath {
+                            abs: "./heater",
+                            original: Some(
+                                "./heater",
+                            ),
+                        },
                         name: "Heater",
                     },
                     source: SourceSpan {

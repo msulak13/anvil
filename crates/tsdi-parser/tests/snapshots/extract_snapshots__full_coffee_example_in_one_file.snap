@@ -7,24 +7,27 @@ ParsedFile {
     modules: [
         ModuleDecl {
             class: ClassRef {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "CoffeeModule",
             },
             provides: [
                 Binding {
                     key: Class {
-                        module: ModulePath(
-                            "<self>",
-                        ),
+                        module: ModulePath {
+                            abs: "<self>",
+                            original: None,
+                        },
                         name: "Heater",
                     },
                     provider: ProvidesMethod {
                         module: ClassRef {
-                            module: ModulePath(
-                                "<self>",
-                            ),
+                            module: ModulePath {
+                                abs: "<self>",
+                                original: None,
+                            },
                             name: "CoffeeModule",
                         },
                         method: "provideTimer",
@@ -49,16 +52,18 @@ ParsedFile {
     components: [
         ComponentDecl {
             class: ClassRef {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "CoffeeShop",
             },
             modules: [
                 ClassRef {
-                    module: ModulePath(
-                        "<self>",
-                    ),
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
                     name: "CoffeeModule",
                 },
             ],
@@ -67,9 +72,10 @@ ParsedFile {
                 EntryPoint {
                     name: "pump",
                     key: Class {
-                        module: ModulePath(
-                            "<self>",
-                        ),
+                        module: ModulePath {
+                            abs: "<self>",
+                            original: None,
+                        },
                         name: "Pump",
                     },
                     source: SourceSpan {
@@ -90,16 +96,18 @@ ParsedFile {
     inject_classes: [
         Binding {
             key: Class {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "Heater",
             },
             provider: InjectCtor {
                 class: ClassRef {
-                    module: ModulePath(
-                        "<self>",
-                    ),
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
                     name: "Heater",
                 },
             },
@@ -114,25 +122,28 @@ ParsedFile {
         },
         Binding {
             key: Class {
-                module: ModulePath(
-                    "<self>",
-                ),
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
                 name: "Pump",
             },
             provider: InjectCtor {
                 class: ClassRef {
-                    module: ModulePath(
-                        "<self>",
-                    ),
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
                     name: "Pump",
                 },
             },
             scope: Unscoped,
             deps: [
                 Class {
-                    module: ModulePath(
-                        "<self>",
-                    ),
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
                     name: "Heater",
                 },
             ],
