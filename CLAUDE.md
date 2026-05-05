@@ -57,6 +57,11 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 4. End-to-end TS validation via `assert_cmd` invoking `npx tsc --noEmit` and `npx vitest run` against fixture output (M4+).
 5. Examples-as-tests: every `examples/*` builds in CI on every push (M4+).
 
+## Sibling packages
+
+- **`packages/tsdi`** — runtime decorator stubs (`@Inject`, `@Provides`, `@Module`, `@Component`, `@Singleton`, `@Binds`, `@Subcomponent`, `@IntoSet`). All no-ops at runtime; the Rust toolchain reads decorator presence from the AST. M12 added a method-decorator overload to `@Singleton` so `@Singleton @Provides` typechecks.
+- **`packages/tsdi-unplugin`** — bundler integration via [unplugin](https://github.com/unjs/unplugin). One adapter exports per-bundler entry points (`/vite`, `/rollup`, `/webpack`, `/rspack`, `/esbuild`); each plugin runs `tsdi build` on `buildStart` and on debounced filesystem changes, blocking the bundler until codegen finishes so the bundler's TS pipeline picks up fresh `.tsdi.ts` files. Today shells out to the native `tsdi` Rust binary (passed via the `cli` option, defaults to `"tsdi"` on `$PATH`); a future WASM-compiled `tsdi-codegen` would let the package stand alone with no native deps. Tests in `src/index.test.ts` exercise `buildStart` against the real Rust binary in a tempdir fixture (4 tests, all green).
+
 ## Milestone log
 
 - **M0** — Cargo + npm workspaces compile. Smoke tests in every crate. Runtime package exports Stage-3 decorator stubs and `Token<T>` with TSDoc + Vitest coverage. Top-level docs and ADRs seeded.
