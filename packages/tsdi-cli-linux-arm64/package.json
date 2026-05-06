@@ -1,0 +1,14 @@
+{
+  "name": "tsdi-cli-linux-arm64",
+  "version": "0.0.1",
+  "description": "Prebuilt tsdi CLI binary for linux/arm64. Resolved by `tsdi-cli` at runtime.",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "main": "index.js",
+  "files": ["bin/tsdi", "index.js"],
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

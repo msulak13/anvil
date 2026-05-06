@@ -26,6 +26,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import { createUnplugin, type UnpluginInstance } from "unplugin";
+import { resolveBinaryPath, unresolvableBinaryError } from "tsdi-cli";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,10 +45,13 @@ export interface TsdiPluginOptions {
    */
   tsconfig?: string;
   /**
-   * Path to (or name of) the `tsdi` binary. Defaults to `"tsdi"`,
-   * which expects it on `$PATH` or in `node_modules/.bin/`. Override
-   * when running from a workspace root that hasn't yet installed the
-   * binary into `node_modules`.
+   * Path to the `tsdi` binary. When unset, the plugin resolves the
+   * native binary via the `tsdi-cli` npm launcher — which in turn
+   * picks the right per-platform package (`tsdi-cli-linux-x64`,
+   * `tsdi-cli-darwin-arm64`, etc.) installed alongside it.
+   *
+   * Override only when you need to point at a custom build (e.g. a
+   * `cargo build`-produced binary outside `node_modules`).
    */
   cli?: string;
   /**
@@ -73,9 +77,15 @@ export interface TsdiPluginOptions {
  */
 export const tsdiUnplugin: UnpluginInstance<TsdiPluginOptions | undefined, false> =
   createUnplugin<TsdiPluginOptions | undefined>((rawOptions) => {
-    const options: Required<Omit<TsdiPluginOptions, "entries" | "tsconfig">> &
-      Pick<TsdiPluginOptions, "entries" | "tsconfig"> = {
-      cli: rawOptions?.cli ?? "tsdi",
+    // Default `cli` to whatever `tsdi-cli` resolves at runtime (the
+    // matching `tsdi-cli-<platform>-<arch>` package, or the
+    // `TSDI_CLI_BIN` env override). This is the recommended path for
+    // npm-distributed users; explicit `cli:` overrides take priority
+    // for monorepo dev where the binary lives in `target/release`.
+    const resolvedCli = rawOptions?.cli ?? resolveBinaryPath();
+    const options: Required<Omit<TsdiPluginOptions, "entries" | "tsconfig" | "cli">> &
+      Pick<TsdiPluginOptions, "entries" | "tsconfig"> & { cli: string | null } = {
+      cli: resolvedCli,
       debounceMs: rawOptions?.debounceMs ?? 100,
       include: rawOptions?.include ?? ["**/*.ts"],
       entries: rawOptions?.entries,
@@ -137,10 +147,14 @@ export const tsdiUnplugin: UnpluginInstance<TsdiPluginOptions | undefined, false
   });
 
 async function invokeBuild(options: {
-  cli: string;
+  cli: string | null;
   entries?: string[];
   tsconfig?: string;
 }): Promise<void> {
+  if (options.cli === null) {
+    throw new Error(unresolvableBinaryError());
+  }
+  const cli: string = options.cli;
   // The CLI accepts a single --entry per invocation. When the user
   // supplies multiple, we spawn once per entry — concurrency is fine
   // because each entry's output file is co-located with that entry,
@@ -149,12 +163,12 @@ async function invokeBuild(options: {
   if (options.entries === undefined || options.entries.length === 0) {
     // Let the CLI auto-discover from `tsdi.config.json` /
     // `package.json#tsdi`.
-    await execFileAsync(options.cli, ["build", ...tsconfigArgs]);
+    await execFileAsync(cli, ["build", ...tsconfigArgs]);
     return;
   }
   await Promise.all(
     options.entries.map((entry) =>
-      execFileAsync(options.cli, [
+      execFileAsync(cli, [
         "build",
         "--entry",
         path.resolve(entry),

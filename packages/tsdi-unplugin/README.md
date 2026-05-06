@@ -65,8 +65,14 @@ The plugin invokes the `tsdi` CLI as a child process:
 
 The bundler's normal TypeScript pipeline then picks up the freshly generated `*.tsdi.ts` files. There's no special TS plugin; `.tsdi.ts` is just `.ts`.
 
+## How the binary gets there
+
+`tsdi-unplugin` depends on [`tsdi-cli`](../tsdi-cli/README.md), which is the npm launcher for tsdi's native Rust binary. `tsdi-cli` declares one `optionalDependencies` entry per supported platform (`tsdi-cli-linux-x64`, `tsdi-cli-darwin-arm64`, etc.); npm installs **only** the matching one based on `os`/`cpu` filters. At runtime the unplugin calls `resolveBinaryPath()` from `tsdi-cli` to find the binary — no PATH manipulation or `cargo install` required.
+
+The same `cli` option still works if you want to point at a custom build (a `cargo build --release`'d binary outside `node_modules`, for example).
+
 ## Limitations (v0.2)
 
-- The plugin shells out to the native `tsdi` Rust binary. You need that binary installed (today: `cargo install` from the workspace, or use the published npm wrapper once it ships). A pure-WASM build of `tsdi-codegen` is on the roadmap — that would let `tsdi-unplugin` stand alone with no native deps.
+- The plugin spawns one process per build. Hot reload is fast (~50–200ms for a typical project) but not instant; a future WASM-compiled `tsdi-codegen` would close that gap further.
 - Diagnostics flow as raw `tsdi` stderr through the bundler's error API. Future work: parse the structured `tsdi-cli` output and emit per-file diagnostics with source maps.
 - Watch granularity is "any `.ts` change re-runs codegen for all configured entries". The CLI's M5 watch mode does smarter per-entry source-closure tracking; future versions of this plugin should reuse that data instead of duplicating its own filter.

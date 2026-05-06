@@ -52,8 +52,49 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
 
+  packages/tsdi-cli:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.17)
+    optionalDependencies:
+      tsdi-cli-darwin-arm64:
+        specifier: workspace:*
+        version: link:../tsdi-cli-darwin-arm64
+      tsdi-cli-darwin-x64:
+        specifier: workspace:*
+        version: link:../tsdi-cli-darwin-x64
+      tsdi-cli-linux-arm64:
+        specifier: workspace:*
+        version: link:../tsdi-cli-linux-arm64
+      tsdi-cli-linux-x64:
+        specifier: workspace:*
+        version: link:../tsdi-cli-linux-x64
+      tsdi-cli-win32-x64:
+        specifier: workspace:*
+        version: link:../tsdi-cli-win32-x64
+
+  packages/tsdi-cli-darwin-arm64: {}
+
+  packages/tsdi-cli-darwin-x64: {}
+
+  packages/tsdi-cli-linux-arm64: {}
+
+  packages/tsdi-cli-linux-x64: {}
+
+  packages/tsdi-cli-win32-x64: {}
+
   packages/tsdi-unplugin:
     dependencies:
+      tsdi-cli:
+        specifier: workspace:*
+        version: link:../tsdi-cli
       unplugin:
         specifier: ^1.16.0
         version: 1.16.1
