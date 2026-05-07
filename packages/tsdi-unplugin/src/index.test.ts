@@ -121,6 +121,26 @@ describe("tsdi-unplugin", () => {
     plugin.watchChange!("/tmp/foo.css", {});
   });
 
+  it("compiles in-process via WASM mode and emits the .tsdi.ts file", async () => {
+    const { dir, entry, output } = makeFixture();
+    try {
+      const plugin = tsdiUnplugin.rollup({
+        mode: "wasm",
+        entries: [entry],
+        rootDir: dir,
+      }) as { name: string; buildStart?: () => Promise<void> };
+      await plugin.buildStart!.call({});
+      const generated = readFileSync(output, "utf8");
+      expect(generated).toContain("DaggerCoffeeShop");
+      expect(generated).toContain("export function createCoffeeShop");
+      // The WASM build produces the same shape as the native one —
+      // smoke-check by comparing the dagger class declaration line.
+      expect(generated).toMatch(/export class DaggerCoffeeShop extends CoffeeShop/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   // Use the spy avoidance above to keep the suite from accidentally
   // depending on the real cargo binary at runtime.
   it("exposes per-bundler entry points", () => {

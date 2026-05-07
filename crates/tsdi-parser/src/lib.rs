@@ -29,6 +29,7 @@
 
 pub mod decorators;
 pub mod imports;
+pub mod map_source;
 pub mod symbols;
 
 use std::path::{Path, PathBuf};

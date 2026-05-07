@@ -29,6 +29,7 @@ use oxc_resolver::{
 use thiserror::Error;
 use tsdi_core::ir::{Binding, ClassRef, Key, ModulePath, ParsedFile};
 
+use crate::map_source::{FileMap, MapResolveError, MapResolver};
 use crate::ParseError;
 
 /// A TypeScript-aware module resolver.
@@ -118,6 +119,21 @@ pub enum SymbolError {
         #[source]
         source: Box<ResolveError>,
     },
+    /// A specifier could not be resolved against an in-memory file
+    /// map (M13). Surfaces the exact same shape as the native
+    /// [`Self::Resolve`] error, but sources from
+    /// [`MapResolveError`] instead of `oxc_resolver`'s error type so
+    /// the WASM build can avoid pulling `oxc_resolver` in.
+    #[error("failed to resolve {specifier:?} from {importer}: {source}")]
+    MapResolve {
+        /// The specifier that failed.
+        specifier: String,
+        /// The file that imported it.
+        importer: PathBuf,
+        /// The underlying map-resolver error.
+        #[source]
+        source: MapResolveError,
+    },
     /// An entry path is missing or has no parent directory.
     #[error("invalid entry path {0}")]
     BadEntry(PathBuf),
@@ -174,6 +190,57 @@ impl ProjectGraph {
             // diagnostics (and the SAME_FILE rewrite) line up.
             parsed.path = abs_path.to_string_lossy().into_owned();
             graph.files.insert(abs_path, parsed);
+            queue.extend(next);
+        }
+        Ok(graph)
+    }
+
+    /// Walk the import graph starting from `entry`, sourcing every
+    /// file's contents from the supplied [`FileMap`] instead of the
+    /// real filesystem (M13). Mirrors [`Self::build_from_entry`] in
+    /// every other respect — same canonicalization shape, same
+    /// node_modules-as-leaf rule, same per-file IR normalization.
+    ///
+    /// Built for the WASM crate so the same codegen pipeline works
+    /// in browsers / Workers / Vite's in-process mode without
+    /// touching `std::fs`. Native callers should keep using
+    /// [`Self::build_from_entry`] — it has a more capable resolver
+    /// (full `oxc_resolver` semantics) and avoids materializing the
+    /// project's source into RAM up front.
+    pub fn build_from_map(
+        entry: &Path,
+        files: &FileMap,
+        resolver: &MapResolver,
+    ) -> Result<Self, SymbolError> {
+        let entry = crate::map_source::normalize(entry);
+        let mut graph = ProjectGraph::default();
+        let mut queue: Vec<PathBuf> = vec![entry];
+        let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
+
+        while let Some(path) = queue.pop() {
+            if !seen.insert(path.clone()) {
+                continue;
+            }
+            if !is_source_ts(&path) || in_node_modules(&path) {
+                continue;
+            }
+            let source = files.read(&path).ok_or_else(|| {
+                SymbolError::Parse(ParseError::Io {
+                    path: path.clone(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("file {} not present in FileMap", path.display()),
+                    ),
+                })
+            })?;
+            let mut parsed = crate::parse_source(source, &path.display().to_string())?;
+            let dir = path
+                .parent()
+                .ok_or_else(|| SymbolError::BadEntry(path.clone()))?;
+            let mut next: Vec<PathBuf> = Vec::new();
+            normalize_parsed_with_map(&mut parsed, &path, dir, resolver, files, &mut next)?;
+            parsed.path = path.to_string_lossy().into_owned();
+            graph.files.insert(path, parsed);
             queue.extend(next);
         }
         Ok(graph)
@@ -249,6 +316,95 @@ fn normalize_parsed(
             ep.source.path.clone_from(&self_path_string);
             // M11: factory-param keys must be normalized too so they
             // compare equal to the same Key minted elsewhere.
+            for fp in &mut ep.factory_params {
+                rewrite_key(&mut fp.key, &mut resolve_one, discovered)?;
+                fp.source.path.clone_from(&self_path_string);
+            }
+        }
+    }
+    for s in &mut parsed.subcomponents {
+        rewrite_classref(&mut s.class, &mut resolve_one, discovered)?;
+        s.source.path.clone_from(&self_path_string);
+        for cm in &mut s.modules {
+            rewrite_classref(cm, &mut resolve_one, discovered)?;
+        }
+        for ep in &mut s.entry_points {
+            rewrite_key(&mut ep.key, &mut resolve_one, discovered)?;
+            ep.source.path.clone_from(&self_path_string);
+            for fp in &mut ep.factory_params {
+                rewrite_key(&mut fp.key, &mut resolve_one, discovered)?;
+                fp.source.path.clone_from(&self_path_string);
+            }
+        }
+    }
+    for b in &mut parsed.inject_classes {
+        rewrite_binding(b, &mut resolve_one, discovered)?;
+        b.source.path.clone_from(&self_path_string);
+    }
+    Ok(())
+}
+
+/// M13: WASM-side counterpart to [`normalize_parsed`]. Same control
+/// flow (rewrite every embedded `ModulePath`, queue project-internal
+/// discoveries) but consults a [`FileMap`] + [`MapResolver`] instead
+/// of `oxc_resolver` + `std::fs`. The two functions diverge only in
+/// the `resolve_one` closure they use; everything below it is shared
+/// via the existing `rewrite_*` helpers.
+fn normalize_parsed_with_map(
+    parsed: &mut ParsedFile,
+    self_path: &Path,
+    self_dir: &Path,
+    resolver: &MapResolver,
+    files: &FileMap,
+    discovered: &mut Vec<PathBuf>,
+) -> Result<(), SymbolError> {
+    let mut cache: HashMap<String, PathBuf> = HashMap::new();
+    let self_path_string = self_path.to_string_lossy().into_owned();
+
+    let mut resolve_one =
+        |mp: &mut ModulePath, discovered: &mut Vec<PathBuf>| -> Result<(), SymbolError> {
+            if mp.abs == ModulePath::SAME_FILE {
+                mp.abs.clone_from(&self_path_string);
+                return Ok(());
+            }
+            let abs = if let Some(cached) = cache.get(&mp.abs) {
+                cached.clone()
+            } else {
+                let abs = resolver
+                    .resolve(self_dir, &mp.abs, files)
+                    .map_err(|source| SymbolError::MapResolve {
+                        specifier: mp.abs.clone(),
+                        importer: self_path.to_path_buf(),
+                        source,
+                    })?;
+                let abs = crate::map_source::normalize(&abs);
+                cache.insert(mp.abs.clone(), abs.clone());
+                abs
+            };
+            mp.abs = abs.to_string_lossy().into_owned();
+            if is_source_ts(&abs) && !in_node_modules(&abs) {
+                discovered.push(abs);
+            }
+            Ok(())
+        };
+
+    for m in &mut parsed.modules {
+        rewrite_classref(&mut m.class, &mut resolve_one, discovered)?;
+        m.source.path.clone_from(&self_path_string);
+        for b in &mut m.provides {
+            rewrite_binding(b, &mut resolve_one, discovered)?;
+            b.source.path.clone_from(&self_path_string);
+        }
+    }
+    for c in &mut parsed.components {
+        rewrite_classref(&mut c.class, &mut resolve_one, discovered)?;
+        c.source.path.clone_from(&self_path_string);
+        for cm in &mut c.modules {
+            rewrite_classref(cm, &mut resolve_one, discovered)?;
+        }
+        for ep in &mut c.entry_points {
+            rewrite_key(&mut ep.key, &mut resolve_one, discovered)?;
+            ep.source.path.clone_from(&self_path_string);
             for fp in &mut ep.factory_params {
                 rewrite_key(&mut fp.key, &mut resolve_one, discovered)?;
                 fp.source.path.clone_from(&self_path_string);

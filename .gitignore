@@ -12,6 +12,12 @@ node_modules/
 # TypeScript build output
 dist/
 *.tsbuildinfo
+# wasm-pack output for tsdi-codegen-wasm IS checked in: it's the actual
+# distributable, built once per release on CI and committed so npm
+# consumers don't need wasm-pack locally and so the workspace's
+# tsdi-unplugin can use it without a rebuild step.
+!packages/tsdi-codegen-wasm/dist/
+!packages/tsdi-codegen-wasm/dist/**
 
 # Editor / OS
 .DS_Store

@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "tsdi-cli": "workspace:*",
+    "tsdi-codegen-wasm": "workspace:*",
     "unplugin": "^1.16.0"
   },
   "devDependencies": {

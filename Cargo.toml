@@ -5,6 +5,7 @@ members = [
     "crates/tsdi-parser",
     "crates/tsdi-codegen",
     "crates/tsdi-cli",
+    "crates/tsdi-codegen-wasm",
 ]
 
 [workspace.package]

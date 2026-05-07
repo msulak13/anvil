@@ -90,11 +90,26 @@ importers:
 
   packages/tsdi-cli-win32-x64: {}
 
+  packages/tsdi-codegen-wasm:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.17)
+
   packages/tsdi-unplugin:
     dependencies:
       tsdi-cli:
         specifier: workspace:*
         version: link:../tsdi-cli
+      tsdi-codegen-wasm:
+        specifier: workspace:*
+        version: link:../tsdi-codegen-wasm
       unplugin:
         specifier: ^1.16.0
         version: 1.16.1
