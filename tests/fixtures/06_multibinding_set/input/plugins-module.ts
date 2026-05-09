@@ -1,4 +1,4 @@
-import { Module, Provides, IntoSet } from "tsdi";
+import { Module, Provides, IntoSet } from "@msulak/anvil";
 import { Plugin } from "./plugin";
 import { AuthPlugin } from "./auth-plugin";
 import { LoggingPlugin } from "./logging-plugin";

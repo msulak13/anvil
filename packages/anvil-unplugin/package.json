@@ -1,0 +1,55 @@
+{
+  "name": "@msulak/anvil-unplugin",
+  "version": "0.0.1",
+  "description": "Run anvil codegen as part of your bundler's normal pipeline. One plugin, every bundler (Vite, Rollup, Webpack, Rspack, esbuild) via unplugin.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
+    },
+    "./rollup": {
+      "types": "./dist/rollup.d.ts",
+      "import": "./dist/rollup.js"
+    },
+    "./webpack": {
+      "types": "./dist/webpack.d.ts",
+      "import": "./dist/webpack.js"
+    },
+    "./rspack": {
+      "types": "./dist/rspack.d.ts",
+      "import": "./dist/rspack.js"
+    },
+    "./esbuild": {
+      "types": "./dist/esbuild.d.ts",
+      "import": "./dist/esbuild.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@msulak/anvil-cli": "workspace:*",
+    "@msulak/anvil-codegen-wasm": "workspace:*",
+    "unplugin": "^1.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

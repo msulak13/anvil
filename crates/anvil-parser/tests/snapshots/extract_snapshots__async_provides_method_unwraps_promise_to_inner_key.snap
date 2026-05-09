@@ -1,0 +1,68 @@
+---
+source: crates/anvil-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "database-module.ts",
+    modules: [
+        ModuleDecl {
+            class: ClassRef {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "DatabaseModule",
+            },
+            provides: [
+                Binding {
+                    key: Class {
+                        module: ModulePath {
+                            abs: "./pool",
+                            original: Some(
+                                "./pool",
+                            ),
+                        },
+                        name: "Pool",
+                    },
+                    provider: ProvidesMethod {
+                        module: ClassRef {
+                            module: ModulePath {
+                                abs: "<self>",
+                                original: None,
+                            },
+                            name: "DatabaseModule",
+                        },
+                        method: "pool",
+                        is_async: true,
+                    },
+                    scope: Singleton,
+                    deps: [
+                        Class {
+                            module: ModulePath {
+                                abs: "./config",
+                                original: Some(
+                                    "./config",
+                                ),
+                            },
+                            name: "Config",
+                        },
+                    ],
+                    source: SourceSpan {
+                        path: "database-module.ts",
+                        start: 219,
+                        end: 364,
+                    },
+                    role: None,
+                },
+            ],
+            source: SourceSpan {
+                path: "database-module.ts",
+                start: 184,
+                end: 374,
+            },
+        },
+    ],
+    components: [],
+    subcomponents: [],
+    inject_classes: [],
+}

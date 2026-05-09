@@ -1,4 +1,4 @@
-import { Component, Singleton } from "tsdi";
+import { Component, Singleton } from "@msulak/anvil";
 import { AppModule } from "./app-module";
 import { Logger } from "./logger";
 import { UserService } from "./user-service";

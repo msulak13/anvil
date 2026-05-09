@@ -1,4 +1,4 @@
-import { Inject } from "tsdi";
+import { Inject } from "@msulak/anvil";
 import { Logger } from "./logger";
 import { User, UserRepository } from "./user-repository";
 

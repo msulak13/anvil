@@ -1,4 +1,4 @@
-import { Module, Binds } from "tsdi";
+import { Module, Binds } from "@msulak/anvil";
 import { Heater } from "./heater";
 import { ElectricHeater } from "./electric-heater";
 

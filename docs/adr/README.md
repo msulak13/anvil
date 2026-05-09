@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-This directory captures the design decisions that shape `tsdi`. Each ADR is a numbered, append-only document. Superseded ADRs are marked, not deleted — the trail of past decisions is the point.
+This directory captures the design decisions that shape `anvil`. Each ADR is a numbered, append-only document. Superseded ADRs are marked, not deleted — the trail of past decisions is the point.
 
 ## Format
 

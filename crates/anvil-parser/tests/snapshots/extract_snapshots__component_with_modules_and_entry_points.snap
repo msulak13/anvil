@@ -1,0 +1,76 @@
+---
+source: crates/anvil-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "coffee_shop.ts",
+    modules: [],
+    components: [
+        ComponentDecl {
+            class: ClassRef {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "CoffeeShop",
+            },
+            modules: [
+                ClassRef {
+                    module: ModulePath {
+                        abs: "./coffee_module",
+                        original: Some(
+                            "./coffee_module",
+                        ),
+                    },
+                    name: "CoffeeModule",
+                },
+            ],
+            scope: Singleton,
+            entry_points: [
+                EntryPoint {
+                    name: "pump",
+                    key: Class {
+                        module: ModulePath {
+                            abs: "./pump",
+                            original: Some(
+                                "./pump",
+                            ),
+                        },
+                        name: "Pump",
+                    },
+                    source: SourceSpan {
+                        path: "coffee_shop.ts",
+                        start: 324,
+                        end: 346,
+                    },
+                    factory_params: [],
+                },
+                EntryPoint {
+                    name: "heater",
+                    key: Class {
+                        module: ModulePath {
+                            abs: "./heater",
+                            original: Some(
+                                "./heater",
+                            ),
+                        },
+                        name: "Heater",
+                    },
+                    source: SourceSpan {
+                        path: "coffee_shop.ts",
+                        start: 359,
+                        end: 385,
+                    },
+                    factory_params: [],
+                },
+            ],
+            source: SourceSpan {
+                path: "coffee_shop.ts",
+                start: 284,
+                end: 395,
+            },
+        },
+    ],
+    subcomponents: [],
+    inject_classes: [],
+}

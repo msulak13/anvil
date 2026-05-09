@@ -1,4 +1,4 @@
-import { Component, Singleton } from "tsdi";
+import { Component, Singleton } from "@msulak/anvil";
 import { Pump } from "./pump";
 import { Heater } from "./heater";
 

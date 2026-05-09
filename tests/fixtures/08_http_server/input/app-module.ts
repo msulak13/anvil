@@ -1,4 +1,4 @@
-import { Module, Binds } from "tsdi";
+import { Module, Binds } from "@msulak/anvil";
 import { Logger } from "./logger";
 import { ConsoleLogger } from "./console-logger";
 

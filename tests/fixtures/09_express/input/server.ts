@@ -6,7 +6,7 @@
 // startup and translate each `register` call into the matching
 // `app.get` / `app.post` / etc. on the Express instance.
 import express, { Express, Request, RequestHandler, Response } from "express";
-import { createAppComponent } from "./app-component.tsdi";
+import { createAppComponent } from "./app-component.anvil";
 import { Method } from "./route-registrar";
 
 const dagger = createAppComponent();

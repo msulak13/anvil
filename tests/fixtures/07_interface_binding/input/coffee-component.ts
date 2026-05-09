@@ -1,4 +1,4 @@
-import { Component } from "tsdi";
+import { Component } from "@msulak/anvil";
 import { HeaterModule } from "./heater-module";
 import { Heater } from "./heater";
 import { Pump } from "./pump";

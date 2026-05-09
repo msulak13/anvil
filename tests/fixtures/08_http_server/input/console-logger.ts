@@ -1,4 +1,4 @@
-import { Inject, Singleton } from "tsdi";
+import { Inject, Singleton } from "@msulak/anvil";
 import { Logger } from "./logger";
 
 // @Singleton + @Inject: one ConsoleLogger per AppComponent, lazily

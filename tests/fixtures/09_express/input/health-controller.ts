@@ -1,4 +1,4 @@
-import { Inject, Singleton } from "tsdi";
+import { Inject, Singleton } from "@msulak/anvil";
 import { RegisterFn, RouteRegistrar } from "./route-registrar";
 
 // A second registrar to demonstrate that @IntoSet collects all

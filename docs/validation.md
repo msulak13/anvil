@@ -1,6 +1,6 @@
 # Validation rules
 
-The rules `tsdi-core::graph::build_and_validate` enforces over the dependency graph. Each rule has a corresponding `DiagnosticKind` variant in [`crates/tsdi-core/src/validate.rs`](../crates/tsdi-core/src/validate.rs) and a CLI integration test in [`crates/tsdi-cli/tests/check_command.rs`](../crates/tsdi-cli/tests/check_command.rs).
+The rules `anvil-core::graph::build_and_validate` enforces over the dependency graph. Each rule has a corresponding `DiagnosticKind` variant in [`crates/anvil-core/src/validate.rs`](../crates/anvil-core/src/validate.rs) and a CLI integration test in [`crates/anvil-cli/tests/check_command.rs`](../crates/anvil-cli/tests/check_command.rs).
 
 Update this page whenever a rule is added, refined, or relaxed.
 
@@ -21,15 +21,15 @@ Multibinding-specific validation (`@IntoSet` on `@Binds` or with no `@Provides`)
 
 ## Producing diagnostics
 
-`tsdi-core` is I/O-free: `build_and_validate(GraphInput)` returns a `(DependencyGraph, Vec<Diagnostic>)` pair. Each `Diagnostic` carries:
+`anvil-core` is I/O-free: `build_and_validate(GraphInput)` returns a `(DependencyGraph, Vec<Diagnostic>)` pair. Each `Diagnostic` carries:
 
-- a [`DiagnosticKind`](../crates/tsdi-core/src/validate.rs) discriminator,
+- a [`DiagnosticKind`](../crates/anvil-core/src/validate.rs) discriminator,
 - a `primary: Label` (the location to anchor the error on),
 - zero or more `related: Vec<Label>` (notes pointing at second declarations, cycle members, the enclosing component, etc.).
 
 Each `Label` is a `(SourceSpan, message)` pair. `SourceSpan { path, start, end }` uses absolute paths supplied by the M2 resolver, so multi-file diagnostics work.
 
-The CLI's [`crates/tsdi-cli/src/diagnostics.rs`](../crates/tsdi-cli/src/diagnostics.rs) module reads each diagnostic's primary file from disk and renders the diagnostic as a `miette::Report` with inline snippets. Labels in *other* files become trailing help-text notes — the same convention `rustc` uses for cross-file errors.
+The CLI's [`crates/anvil-cli/src/diagnostics.rs`](../crates/anvil-cli/src/diagnostics.rs) module reads each diagnostic's primary file from disk and renders the diagnostic as a `miette::Report` with inline snippets. Labels in *other* files become trailing help-text notes — the same convention `rustc` uses for cross-file errors.
 
 ## `MissingBinding`
 
@@ -76,7 +76,7 @@ error: dependency cycle
 ```
 
 ### Detection
-Tarjan's strongly-connected-components algorithm via `petgraph::algo::tarjan_scc`, run after the graph is fully populated. Any SCC of size > 1 (or a self-loop) yields a `Cycle` diagnostic containing the keys in traversal order. Implemented in `tsdi-core::graph::detect_cycles`.
+Tarjan's strongly-connected-components algorithm via `petgraph::algo::tarjan_scc`, run after the graph is fully populated. Any SCC of size > 1 (or a self-loop) yields a `Cycle` diagnostic containing the keys in traversal order. Implemented in `anvil-core::graph::detect_cycles`.
 
 ## `Duplicate`
 
@@ -123,7 +123,7 @@ export abstract class Comp { abstract heater(): Heater; }
 
 ### Diagnostic shape
 ```
-error[tsdi::scope_mismatch]: scope mismatch on Heater@/p/heater.ts: binding is Singleton but component is Unscoped
+error[anvil::scope_mismatch]: scope mismatch on Heater@/p/heater.ts: binding is Singleton but component is Unscoped
   ┌─ src/heater.ts
   │
   │   @Inject
@@ -134,7 +134,7 @@ error[tsdi::scope_mismatch]: scope mismatch on Heater@/p/heater.ts: binding is S
 ```
 
 ### Detection
-`tsdi-core::graph::detect_scope_mismatches` walks the aggregated bindings once and emits one diagnostic per offending key. Skipped entirely when the component is `Singleton`.
+`anvil-core::graph::detect_scope_mismatches` walks the aggregated bindings once and emits one diagnostic per offending key. Skipped entirely when the component is `Singleton`.
 
 ### Subcomponents (M8)
 Each `@Subcomponent` reachable from a `@Component`'s entry points runs `detect_scope_mismatches` against *its own* scope and *its own* local bindings only — bindings inherited from the parent are not re-validated, since the parent already validated them under its own scope. Missing-binding and cycle checks run against the child graph **after** parent fallback: a child dep that only the parent provides is satisfied (no `MissingBinding`) and contributes an inherited-key edge that doesn't participate in cycle detection on the child side. A cycle that crosses the parent/child boundary is a v0.2 limitation — current detection runs per-graph.
@@ -143,7 +143,7 @@ Each `@Subcomponent` reachable from a `@Component`'s entry points runs `detect_s
 
 Diagnostics flow through two layers:
 
-1. **`tsdi-core`** emits structured `Diagnostic` values. No I/O, no formatting — pure data.
-2. **`tsdi-cli`** ([`src/diagnostics.rs`](../crates/tsdi-cli/src/diagnostics.rs)) loads the primary span's source file and builds a `miette::MietteDiagnostic` with `LabeledSpan`s for every label in that file. Labels in other files are appended as `help` notes.
+1. **`anvil-core`** emits structured `Diagnostic` values. No I/O, no formatting — pure data.
+2. **`anvil-cli`** ([`src/diagnostics.rs`](../crates/anvil-cli/src/diagnostics.rs)) loads the primary span's source file and builds a `miette::MietteDiagnostic` with `LabeledSpan`s for every label in that file. Labels in other files are appended as `help` notes.
 
-Integration tests in [`crates/tsdi-cli/tests/check_command.rs`](../crates/tsdi-cli/tests/check_command.rs) materialize fixture projects in tempdirs and assert that each diagnostic's summary appears on stderr with the right exit code (`1` for diagnostic output, `2` for tooling errors).
+Integration tests in [`crates/anvil-cli/tests/check_command.rs`](../crates/anvil-cli/tests/check_command.rs) materialize fixture projects in tempdirs and assert that each diagnostic's summary appears on stderr with the right exit code (`1` for diagnostic output, `2` for tooling errors).

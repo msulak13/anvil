@@ -1,4 +1,4 @@
-# tsdi
+# anvil
 
 > **Status:** pre-alpha (M0 scaffolding). Not yet usable.
 
@@ -11,7 +11,7 @@ The TypeScript DI ecosystem today splits into two camps:
 - **Heavy runtime-reflection frameworks** (NestJS, InversifyJS, tsyringe) that depend on `reflect-metadata` and resolve graphs at startup, with errors surfacing at runtime.
 - **Compile-time-typed containers** (`typed-inject`, `@wessberg/DI`) that catch mistakes earlier but lack Dagger's higher-level features: scopes, subcomponents, multibindings, and a generated zero-cost component implementation.
 
-`tsdi` aims to fill that gap — Dagger's developer experience, on top of TypeScript, with a Rust toolchain in the spirit of `swc` and `esbuild`.
+`anvil` aims to fill that gap — Dagger's developer experience, on top of TypeScript, with a Rust toolchain in the spirit of `swc` and `esbuild`.
 
 ## How it works
 
@@ -20,24 +20,24 @@ The TypeScript DI ecosystem today splits into two camps:
                               |
                               v
           ┌────────────────────────────────────────┐
-          │   tsdi (Rust CLI, built on Oxc)        │
+          │   anvil (Rust CLI, built on Oxc)        │
           │   parse → IR → graph → validate → emit │
           └────────────────────────────────────────┘
                               |
                               v
-        co-located *.tsdi.ts files containing the wired graph
+        co-located *.anvil.ts files containing the wired graph
                               |
                               v
                   user's tsc compiles everything
 ```
 
-User decorators from the `tsdi` npm package are no-op identity functions; all real wiring happens at codegen time.
+User decorators from the `anvil` npm package are no-op identity functions; all real wiring happens at codegen time.
 
 ## Quickstart (target API for v0.1)
 
 ```ts
 // src/coffee/heater.ts
-import { Inject, Singleton } from "tsdi";
+import { Inject, Singleton } from "@msulak/anvil";
 
 @Inject
 @Singleton
@@ -47,7 +47,7 @@ export class Heater {
 }
 
 // src/coffee/pump.ts
-import { Inject } from "tsdi";
+import { Inject } from "@msulak/anvil";
 import { Heater } from "./heater";
 
 @Inject
@@ -57,7 +57,7 @@ export class Pump {
 }
 
 // src/coffee/coffee-component.ts
-import { Component, Singleton } from "tsdi";
+import { Component, Singleton } from "@msulak/anvil";
 import { Pump } from "./pump";
 
 @Singleton
@@ -68,13 +68,13 @@ export abstract class CoffeeShop {
 ```
 
 ```bash
-$ tsdi build
-# generates src/coffee/coffee-component.tsdi.ts containing DaggerCoffeeShop
+$ anvil build
+# generates src/coffee/coffee-component.anvil.ts containing DaggerCoffeeShop
 ```
 
 ```ts
 // later, in app code
-import { createCoffeeShop } from "./coffee/coffee-component.tsdi";
+import { createCoffeeShop } from "./coffee/coffee-component.anvil";
 createCoffeeShop().pump().pump();
 ```
 
@@ -82,12 +82,12 @@ createCoffeeShop().pump().pump();
 
 ```
 crates/
-  tsdi-core/      # IR, dependency graph, validation rules
-  tsdi-parser/    # TypeScript parser + decorator extractor (Oxc, M1+)
-  tsdi-codegen/   # TS emitter (M4+)
-  tsdi-cli/       # `tsdi` binary
+  anvil-core/      # IR, dependency graph, validation rules
+  anvil-parser/    # TypeScript parser + decorator extractor (Oxc, M1+)
+  anvil-codegen/   # TS emitter (M4+)
+  anvil-cli/       # `anvil` binary
 packages/
-  tsdi/           # runtime: no-op decorator stubs + Token<T>
+  anvil/          # runtime: no-op decorator stubs + Token<T>
 docs/
   architecture.md, ir.md, codegen.md, validation.md, cli.md
   adr/            # Architecture Decision Records

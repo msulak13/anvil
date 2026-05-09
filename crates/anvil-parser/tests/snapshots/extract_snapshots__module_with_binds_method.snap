@@ -1,0 +1,68 @@
+---
+source: crates/anvil-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "heater_module.ts",
+    modules: [
+        ModuleDecl {
+            class: ClassRef {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "HeaterModule",
+            },
+            provides: [
+                Binding {
+                    key: Class {
+                        module: ModulePath {
+                            abs: "./heater",
+                            original: Some(
+                                "./heater",
+                            ),
+                        },
+                        name: "Heater",
+                    },
+                    provider: Binds {
+                        target: Class {
+                            module: ModulePath {
+                                abs: "./electric_heater",
+                                original: Some(
+                                    "./electric_heater",
+                                ),
+                            },
+                            name: "ElectricHeater",
+                        },
+                    },
+                    scope: Unscoped,
+                    deps: [
+                        Class {
+                            module: ModulePath {
+                                abs: "./electric_heater",
+                                original: Some(
+                                    "./electric_heater",
+                                ),
+                            },
+                            name: "ElectricHeater",
+                        },
+                    ],
+                    source: SourceSpan {
+                        path: "heater_module.ts",
+                        start: 224,
+                        end: 295,
+                    },
+                    role: None,
+                },
+            ],
+            source: SourceSpan {
+                path: "heater_module.ts",
+                start: 191,
+                end: 305,
+            },
+        },
+    ],
+    components: [],
+    subcomponents: [],
+    inject_classes: [],
+}

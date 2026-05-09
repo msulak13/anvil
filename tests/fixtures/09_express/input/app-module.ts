@@ -1,4 +1,4 @@
-import { Module, Binds, Provides, IntoSet } from "tsdi";
+import { Module, Binds, Provides, IntoSet } from "@msulak/anvil";
 import { Logger } from "./logger";
 import { ConsoleLogger } from "./console-logger";
 import { RouteRegistrar } from "./route-registrar";

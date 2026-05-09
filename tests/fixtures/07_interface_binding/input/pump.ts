@@ -1,4 +1,4 @@
-import { Inject } from "tsdi";
+import { Inject } from "@msulak/anvil";
 import { Heater } from "./heater";
 
 // Consumer takes the *interface* as a constructor dep. The generated

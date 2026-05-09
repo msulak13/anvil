@@ -1,4 +1,4 @@
-import { Inject, Singleton } from "tsdi";
+import { Inject, Singleton } from "@msulak/anvil";
 
 @Inject
 @Singleton

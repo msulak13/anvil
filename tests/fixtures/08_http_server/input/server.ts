@@ -3,7 +3,7 @@
 // startup, and request handlers reach into it through the entry-point
 // methods on the abstract class.
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { createAppComponent } from "./app-component.tsdi";
+import { createAppComponent } from "./app-component.anvil";
 
 const app = createAppComponent();
 const log = app.logger();

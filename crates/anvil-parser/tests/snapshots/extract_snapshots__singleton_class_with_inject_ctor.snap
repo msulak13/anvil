@@ -1,0 +1,38 @@
+---
+source: crates/anvil-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "heater.ts",
+    modules: [],
+    components: [],
+    subcomponents: [],
+    inject_classes: [
+        Binding {
+            key: Class {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "Heater",
+            },
+            provider: InjectCtor {
+                class: ClassRef {
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
+                    name: "Heater",
+                },
+            },
+            scope: Singleton,
+            deps: [],
+            source: SourceSpan {
+                path: "heater.ts",
+                start: 138,
+                end: 154,
+            },
+            role: None,
+        },
+    ],
+}

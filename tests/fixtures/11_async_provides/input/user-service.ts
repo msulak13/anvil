@@ -1,4 +1,4 @@
-import { Inject } from "tsdi";
+import { Inject } from "@msulak/anvil";
 import { Database } from "./database";
 
 // Sync @Inject consumer of an async-produced Database. Once the dagger

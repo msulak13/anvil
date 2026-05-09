@@ -1,8 +1,8 @@
-import { Module, Provides, Singleton } from "tsdi";
+import { Module, Provides, Singleton } from "@msulak/anvil";
 import { Config } from "./config";
 
 // Async @Provides demonstrating the M12 shape: the method is `async`
-// and returns `Promise<Config>`. tsdi unwraps the `Promise<T>` for
+// and returns `Promise<Config>`. anvil unwraps the `Promise<T>` for
 // the binding key (so consumers see Config, not Promise<Config>) and
 // awaits the value during the dagger's `_resolve` phase.
 @Module

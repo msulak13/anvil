@@ -1,4 +1,4 @@
-# Contributing to tsdi
+# Contributing to anvil
 
 Thanks for your interest. This document covers the developer workflow and the testing pyramid every change is expected to clear.
 
@@ -30,11 +30,11 @@ All five layers must pass for a PR to merge.
 
 1. **Rust unit tests** — colocated with each module. Run with `cargo test --workspace`. Should stay under ~5 seconds in M0–M3.
 
-2. **IR snapshot tests** (M1+) — `insta` snapshots of parsed `ModuleDecl` / `ComponentDecl` trees. Live in `crates/tsdi-parser/src/snapshots/`. Review with `cargo insta review`.
+2. **IR snapshot tests** (M1+) — `insta` snapshots of parsed `ModuleDecl` / `ComponentDecl` trees. Live in `crates/anvil-parser/src/snapshots/`. Review with `cargo insta review`.
 
-3. **Diagnostic snapshot tests** (M3+) — `insta` snapshots of rendered `miette` errors for every validation rule. Live in `crates/tsdi-core/src/snapshots/`.
+3. **Diagnostic snapshot tests** (M3+) — `insta` snapshots of rendered `miette` errors for every validation rule. Live in `crates/anvil-core/src/snapshots/`.
 
-4. **Codegen snapshot tests** (M4+) — `insta` snapshots of emitted TS in `crates/tsdi-codegen/src/snapshots/`. Organized by feature (modules, scopes, etc.).
+4. **Codegen snapshot tests** (M4+) — `insta` snapshots of emitted TS in `crates/anvil-codegen/src/snapshots/`. Organized by feature (modules, scopes, etc.).
 
 5. **Golden-file fixture tests** (M3+) — `tests/fixtures/<case>/{input/, expected/}`. A single Rust integration test walks the directory, runs the pipeline on `input/`, and diffs against `expected/`. For end-to-end correctness, the same test then invokes `npx tsc --noEmit` and `npx vitest run` against the generated output via `assert_cmd`.
 

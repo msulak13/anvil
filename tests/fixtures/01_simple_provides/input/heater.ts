@@ -1,4 +1,4 @@
-import { Inject } from "tsdi";
+import { Inject } from "@msulak/anvil";
 
 @Inject
 export class Heater {

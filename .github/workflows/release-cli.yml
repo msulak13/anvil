@@ -1,7 +1,7 @@
-# Release workflow for the tsdi CLI binary.
+# Release workflow for the anvil CLI binary.
 #
-# Builds `tsdi-cli` for every supported platform, drops the resulting
-# binary into the matching `packages/tsdi-cli-<platform>-<arch>/bin/`
+# Builds `anvil-cli` for every supported platform, drops the resulting
+# binary into the matching `packages/anvil-cli-<platform>-<arch>/bin/`
 # directory, and publishes everything to npm.
 #
 # Triggered manually (workflow_dispatch) or on a `cli-v*` git tag.
@@ -34,25 +34,25 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            package: tsdi-cli-linux-x64
-            bin: tsdi
+            package: anvil-cli-linux-x64
+            bin: anvil
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            package: tsdi-cli-linux-arm64
-            bin: tsdi
+            package: anvil-cli-linux-arm64
+            bin: anvil
             cross: true
           - target: x86_64-apple-darwin
             os: macos-13           # Intel runner — built natively
-            package: tsdi-cli-darwin-x64
-            bin: tsdi
+            package: anvil-cli-darwin-x64
+            bin: anvil
           - target: aarch64-apple-darwin
             os: macos-14           # Apple Silicon runner
-            package: tsdi-cli-darwin-arm64
-            bin: tsdi
+            package: anvil-cli-darwin-arm64
+            bin: anvil
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            package: tsdi-cli-win32-x64
-            bin: tsdi.exe
+            package: anvil-cli-win32-x64
+            bin: anvil.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -66,9 +66,9 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.cross }}" == "true" ]]; then
-            cross build --release -p tsdi-cli --target ${{ matrix.target }}
+            cross build --release -p anvil-cli --target ${{ matrix.target }}
           else
-            cargo build --release -p tsdi-cli --target ${{ matrix.target }}
+            cargo build --release -p anvil-cli --target ${{ matrix.target }}
           fi
       - name: Stage binary into platform package
         shell: bash
@@ -100,17 +100,17 @@ jobs:
           path: artifacts
       - name: Stage binaries into platform packages
         run: |
-          for plat in tsdi-cli-darwin-arm64 tsdi-cli-darwin-x64 \
-                      tsdi-cli-linux-arm64 tsdi-cli-linux-x64 \
-                      tsdi-cli-win32-x64; do
+          for plat in anvil-cli-darwin-arm64 anvil-cli-darwin-x64 \
+                      anvil-cli-linux-arm64 anvil-cli-linux-x64 \
+                      anvil-cli-win32-x64; do
             mkdir -p packages/$plat/bin
             cp -r artifacts/$plat/* packages/$plat/bin/
           done
       - name: Publish per-platform packages
         run: |
-          for plat in tsdi-cli-darwin-arm64 tsdi-cli-darwin-x64 \
-                      tsdi-cli-linux-arm64 tsdi-cli-linux-x64 \
-                      tsdi-cli-win32-x64; do
+          for plat in anvil-cli-darwin-arm64 anvil-cli-darwin-x64 \
+                      anvil-cli-linux-arm64 anvil-cli-linux-x64 \
+                      anvil-cli-win32-x64; do
             (cd packages/$plat && npm publish --provenance --access public)
           done
         env:
@@ -118,7 +118,7 @@ jobs:
       - name: Build + publish launcher
         run: |
           pnpm install --frozen-lockfile
-          pnpm -C packages/tsdi-cli run build
-          (cd packages/tsdi-cli && npm publish --provenance --access public)
+          pnpm -C packages/anvil-cli run build
+          (cd packages/anvil-cli && npm publish --provenance --access public)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

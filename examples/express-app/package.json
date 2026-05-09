@@ -2,20 +2,20 @@
   "name": "express-app",
   "version": "0.0.1",
   "private": true,
-  "description": "Express server with per-request DI scopes via tsdi @Subcomponent factory parameters (M11).",
+  "description": "Express server with per-request DI scopes via anvil @Subcomponent factory parameters (M11).",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "tsdi:build": "cargo run --quiet -p tsdi-cli --manifest-path ../../Cargo.toml -- build --entry src/app-component.ts",
-    "tsdi:check": "cargo run --quiet -p tsdi-cli --manifest-path ../../Cargo.toml -- check --entry src/app-component.ts",
-    "build": "pnpm tsdi:build && tsc -p tsconfig.json",
-    "typecheck": "pnpm tsdi:build && tsc -p tsconfig.json --noEmit",
-    "start": "pnpm tsdi:build && tsx src/server.ts",
-    "test": "pnpm tsdi:build && vitest run"
+    "anvil:build": "cargo run --quiet -p anvil-cli --manifest-path ../../Cargo.toml -- build --entry src/app-component.ts",
+    "anvil:check": "cargo run --quiet -p anvil-cli --manifest-path ../../Cargo.toml -- check --entry src/app-component.ts",
+    "build": "pnpm anvil:build && tsc -p tsconfig.json",
+    "typecheck": "pnpm anvil:build && tsc -p tsconfig.json --noEmit",
+    "start": "pnpm anvil:build && tsx src/server.ts",
+    "test": "pnpm anvil:build && vitest run"
   },
   "dependencies": {
     "express": "^4.21.2",
-    "tsdi": "workspace:*"
+    "@msulak/anvil": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

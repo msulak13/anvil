@@ -1,0 +1,33 @@
+[package]
+name = "anvil-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for the anvil TypeScript DI framework."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "anvil"
+path = "src/main.rs"
+
+[dependencies]
+anvil-core.workspace = true
+anvil-parser.workspace = true
+anvil-codegen.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+miette.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+glob.workspace = true
+notify.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
+insta.workspace = true

@@ -9,7 +9,7 @@ The codegen toolchain needs a Rust-native TypeScript parser that can:
 
 - Parse TC39 Stage-3 decorator syntax
 - Preserve type annotations in the AST so we can read parameter types of decorated constructors
-- Provide a stable codegen / printer for emitting the generated `.tsdi.ts`
+- Provide a stable codegen / printer for emitting the generated `.anvil.ts`
 - Run fast enough to drive a sub-200ms watch-mode rebuild on a 100-component project
 
 Two viable options exist:

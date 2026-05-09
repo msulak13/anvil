@@ -14,7 +14,7 @@ User code using one syntax cannot consume libraries written against the other wi
 
 ## Decision
 
-**`tsdi` supports Stage-3 decorators only.** Sample code, fixtures, examples, and the runtime `tsdi` package's decorators all assume Stage-3 semantics. `tsconfig.base.json` explicitly sets `experimentalDecorators: false`. The parser will reject (with a clear diagnostic) any input file that uses legacy decorator shapes.
+**`anvil` supports Stage-3 decorators only.** Sample code, fixtures, examples, and the runtime `anvil` package's decorators all assume Stage-3 semantics. `tsconfig.base.json` explicitly sets `experimentalDecorators: false`. The parser will reject (with a clear diagnostic) any input file that uses legacy decorator shapes.
 
 ## Consequences
 
@@ -25,7 +25,7 @@ User code using one syntax cannot consume libraries written against the other wi
 - Generated code can rely on the well-defined `ClassDecoratorContext` / `ClassMethodDecoratorContext` types, simplifying any runtime introspection if added later.
 
 ### Negative
-- Excludes users on existing legacy-decorator codebases (NestJS, older Angular). They cannot adopt `tsdi` without migrating their decorators.
+- Excludes users on existing legacy-decorator codebases (NestJS, older Angular). They cannot adopt `anvil` without migrating their decorators.
 - The user-facing API will look different from familiar Dagger-style examples that rely on legacy decorator-metadata patterns.
 
 ## Alternatives considered

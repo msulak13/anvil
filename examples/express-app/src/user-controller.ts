@@ -1,4 +1,4 @@
-import { Inject } from "tsdi";
+import { Inject } from "@msulak/anvil";
 import type { Response } from "express";
 import type { Logger } from "./logger.js";
 import { RequestContext } from "./request-context.js";

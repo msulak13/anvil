@@ -1,0 +1,160 @@
+---
+source: crates/anvil-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "coffee.ts",
+    modules: [
+        ModuleDecl {
+            class: ClassRef {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "CoffeeModule",
+            },
+            provides: [
+                Binding {
+                    key: Class {
+                        module: ModulePath {
+                            abs: "<self>",
+                            original: None,
+                        },
+                        name: "Heater",
+                    },
+                    provider: ProvidesMethod {
+                        module: ClassRef {
+                            module: ModulePath {
+                                abs: "<self>",
+                                original: None,
+                            },
+                            name: "CoffeeModule",
+                        },
+                        method: "provideTimer",
+                        is_async: false,
+                    },
+                    scope: Unscoped,
+                    deps: [],
+                    source: SourceSpan {
+                        path: "coffee.ts",
+                        start: 365,
+                        end: 429,
+                    },
+                    role: None,
+                },
+            ],
+            source: SourceSpan {
+                path: "coffee.ts",
+                start: 332,
+                end: 439,
+            },
+        },
+    ],
+    components: [
+        ComponentDecl {
+            class: ClassRef {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "CoffeeShop",
+            },
+            modules: [
+                ClassRef {
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
+                    name: "CoffeeModule",
+                },
+            ],
+            scope: Unscoped,
+            entry_points: [
+                EntryPoint {
+                    name: "pump",
+                    key: Class {
+                        module: ModulePath {
+                            abs: "<self>",
+                            original: None,
+                        },
+                        name: "Pump",
+                    },
+                    source: SourceSpan {
+                        path: "coffee.ts",
+                        start: 544,
+                        end: 566,
+                    },
+                    factory_params: [],
+                },
+            ],
+            source: SourceSpan {
+                path: "coffee.ts",
+                start: 504,
+                end: 576,
+            },
+        },
+    ],
+    subcomponents: [],
+    inject_classes: [
+        Binding {
+            key: Class {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "Heater",
+            },
+            provider: InjectCtor {
+                class: ClassRef {
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
+                    name: "Heater",
+                },
+            },
+            scope: Singleton,
+            deps: [],
+            source: SourceSpan {
+                path: "coffee.ts",
+                start: 167,
+                end: 183,
+            },
+            role: None,
+        },
+        Binding {
+            key: Class {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "Pump",
+            },
+            provider: InjectCtor {
+                class: ClassRef {
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
+                    name: "Pump",
+                },
+            },
+            scope: Unscoped,
+            deps: [
+                Class {
+                    module: ModulePath {
+                        abs: "<self>",
+                        original: None,
+                    },
+                    name: "Heater",
+                },
+            ],
+            source: SourceSpan {
+                path: "coffee.ts",
+                start: 251,
+                end: 289,
+            },
+            role: None,
+        },
+    ],
+}

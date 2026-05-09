@@ -1,4 +1,4 @@
-import { Component } from "tsdi";
+import { Component } from "@msulak/anvil";
 import { PluginsModule } from "./plugins-module";
 import { Plugin } from "./plugin";
 

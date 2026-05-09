@@ -1,4 +1,4 @@
-import { Component, Singleton } from "tsdi";
+import { Component, Singleton } from "@msulak/anvil";
 import { Heater } from "./heater";
 import { RequestComponent } from "./request-component";
 

@@ -1,6 +1,6 @@
 # IR specification
 
-The internal representation of the binding graph. This is the **stable contract** between `tsdi-parser` and `tsdi-codegen`. Definitions live in [`crates/tsdi-core/src/ir.rs`](../crates/tsdi-core/src/ir.rs).
+The internal representation of the binding graph. This is the **stable contract** between `anvil-parser` and `anvil-codegen`. Definitions live in [`crates/anvil-core/src/ir.rs`](../crates/anvil-core/src/ir.rs).
 
 Update this page whenever a variant is added or removed.
 
@@ -27,7 +27,7 @@ The parser populates `original = Some(spec)` whenever a `Key` is minted from an 
 
 `Key::Set` represents a `Set<T>` aggregate produced from one or more `@IntoSet @Provides` contributions. The `element` is always a `Key::Class` in v0.1 (no `Set<Set<T>>`-of-`Set` chains in user code). The graph aggregator synthesizes one `Provider::SetMultibinding` binding per element key from the raw `MultibindRole::IntoSet` bindings the parser emits (see [Multibindings](#multibindings) below).
 
-In **M1** the parser stores the *raw import specifier* in `ModulePath` (e.g. `"./heater"`, `"tsdi"`, `"my-pkg/sub"`). M2's cross-file resolver rewrites these to absolute paths so equivalent imports compare equal. For type identifiers declared in the same file as their reference, the parser uses the sentinel `ModulePath::SAME_FILE` (`"<self>"`); M2 swaps it for the file's actual absolute path.
+In **M1** the parser stores the *raw import specifier* in `ModulePath` (e.g. `"./heater"`, `"@msulak/anvil"`, `"my-pkg/sub"`). M2's cross-file resolver rewrites these to absolute paths so equivalent imports compare equal. For type identifiers declared in the same file as their reference, the parser uses the sentinel `ModulePath::SAME_FILE` (`"<self>"`); M2 swaps it for the file's actual absolute path.
 
 ### How a `Key` is minted
 
@@ -94,7 +94,7 @@ pub struct SetContributor {
 - **`ProvidesMethod`** — static method on a `@Module`. The codegen emits `ModuleName.methodName(deps...)`. M12: `is_async` is set when the method is declared `async` (the parser unwraps the `Promise<T>` return-type annotation into the inner key). In an async graph, async `ProvidesMethod` factories are awaited inside the dagger's `static async _resolve()` phase and the **resolved** value is cached. See [Async `@Provides`](#async-provides-m12) below.
 - **`Binds`** (M7) — alias binding. The owning `@Module` exposes a `static` method whose single parameter type is the implementation and whose return type is the alias. The binding's `key` is the return type (the alias); `target` is the parameter type (the implementation). `deps` is `vec![target]` so the topo walk visits the target's binding before the alias's factory references it. Codegen emits `return this.<getTarget>()` — no `new` is performed by the alias factory; the target's scope governs caching.
 
-  TC39 Stage-3 decorators cannot decorate abstract methods (TS error 1249), so `@Binds` methods are `static` with a body. `tsdi-codegen` ignores the body and emits the delegate; the body still has to compile (e.g. `return impl;`) so the user's `tsc` accepts the source file.
+  TC39 Stage-3 decorators cannot decorate abstract methods (TS error 1249), so `@Binds` methods are `static` with a body. `anvil-codegen` ignores the body and emits the delegate; the body still has to compile (e.g. `return impl;`) so the user's `tsc` accepts the source file.
 
 - **`FactoryParam`** (M11) — synthesized virtual binding for a runtime value supplied to a `@Subcomponent` factory's parameter list. The graph layer injects one `Provider::FactoryParam { name }` binding per parameter into the child's binding map; codegen materializes that as a `private <name>: T` field on the child dagger plus a trivial `private get<T>(): T { return this.<name>; }` getter so dep-call sites stay uniform. See [Subcomponent factory parameters](#subcomponent-factory-parameters-m11) below.
 
@@ -110,7 +110,7 @@ pub struct SourceSpan {
 }
 ```
 
-A parser-agnostic byte range used by validation diagnostics. Kept free of any `oxc_*` types so `tsdi-core` stays parser-independent. The parser converts each `oxc_span::Span` into a `SourceSpan` at extraction time (M1+); the M2 resolver rewrites every `path` field to absolute form alongside the same canonicalization it does for `ModulePath`.
+A parser-agnostic byte range used by validation diagnostics. Kept free of any `oxc_*` types so `anvil-core` stays parser-independent. The parser converts each `oxc_span::Span` into a `SourceSpan` at extraction time (M1+); the M2 resolver rewrites every `path` field to absolute form alongside the same canonicalization it does for `ModulePath`.
 
 ## `Binding`
 
@@ -205,7 +205,7 @@ Reachability pruning was added alongside M11: the graph builder now does a BFS f
 
 ## Async `@Provides` (M12)
 
-A `@Provides` method declared `async` returns `Promise<T>`. tsdi unwraps the `Promise<T>` for the binding key (so consumers see the resolved type, not `Promise<T>`) and sets `is_async: true` on the provider. The dagger's resolution semantics:
+A `@Provides` method declared `async` returns `Promise<T>`. anvil unwraps the `Promise<T>` for the binding key (so consumers see the resolved type, not `Promise<T>`) and sets `is_async: true` on the provider. The dagger's resolution semantics:
 
 ```ts
 @Module
@@ -231,7 +231,7 @@ Pipeline:
 2. M2 resolver normalizes module paths same as any other binding — async-ness is orthogonal to identity.
 3. Graph layer exposes `DependencyGraph::is_async()` (any reachable binding async?) and `binding_is_async(&Key)` (this specific binding async?). New validation rule `AsyncBindingNeedsSingletonComponent` rejects async `@Provides` outside `@Singleton` components — there'd be no place to cache the awaited value, every entry-point call would re-await, and the entry-point method itself would have to become async (viral). Subcomponents are exempt because they're already fresh per-call.
 4. Codegen emits a `static async _resolve(d: DaggerX): Promise<void>` method that walks the topo array assigning `d._x = await Module.method(d.getDep())` for async `@Provides` and `d._x = new Class(d.getDep())` for sync Singleton bindings in the same graph. Sync `getX()` getters return `this._x!`. `static create()` becomes `async` and `createX()` returns `Promise<X>`. Subcomponent factories on the parent become `async requestComponent(req, res): Promise<RequestComponent>` when the child graph is async.
-5. `@Inject` constructors stay synchronous — TS forbids `async constructor`, and any async work must live in `@Provides`. The `ExtractError::AsyncInjectCtor` variant exists as defense-in-depth; Oxc rejects the syntax before tsdi-parser sees it.
+5. `@Inject` constructors stay synchronous — TS forbids `async constructor`, and any async work must live in `@Provides`. The `ExtractError::AsyncInjectCtor` variant exists as defense-in-depth; Oxc rejects the syntax before anvil-parser sees it.
 
 Out of scope for v0.2: lazy async resolution (every call awaits on demand), `Promise<T>` as a directly-injectable binding type (would require `Token<Promise<T>>`), async `@Inject` factories.
 
@@ -255,14 +255,14 @@ export abstract class App {
 Pipeline:
 
 1. Parser emits two raw `Binding`s with `key = Key::Class { ... "Plugin" }`, `provider = ProvidesMethod`, and `role = MultibindRole::IntoSet`.
-2. Graph aggregator (`tsdi-core::graph::aggregate_bindings`) folds them: it groups all `IntoSet` raw bindings by `key`, lifts the key to `Key::Set { element: Box::new(plugin_key) }`, and constructs a synthesized `Binding` whose provider is `Provider::SetMultibinding { contributors: [...] }`. The synthesized binding's `deps` is the union of every contributor's deps. Multiple `@IntoSet` contributions to the same element type are **never** flagged as duplicates.
+2. Graph aggregator (`anvil-core::graph::aggregate_bindings`) folds them: it groups all `IntoSet` raw bindings by `key`, lifts the key to `Key::Set { element: Box::new(plugin_key) }`, and constructs a synthesized `Binding` whose provider is `Provider::SetMultibinding { contributors: [...] }`. The synthesized binding's `deps` is the union of every contributor's deps. Multiple `@IntoSet` contributions to the same element type are **never** flagged as duplicates.
 3. Codegen emits one factory per `Set<T>` key — `getSetOfPlugin(): Set<Plugin>` — whose body is `new Set([PluginsModule.auth(), PluginsModule.logging()])`. Singleton scope on the multibinding cachs the constructed `Set<T>` itself; per-element scope is unaffected.
 
 Out of scope for v0.1: `@IntoMap` / `@StringKey`, `@IntoSet` on `@Binds` (rejected by `IntoSetWithoutProvides`), `@IntoSet` on `@Inject` ctors, and child-subcomponent contributions to a parent's `Set<T>`.
 
 ## `ParsedFile`
 
-Everything a single `.ts` file contributes to the IR. Produced by `tsdi_parser::parse_file` (or `parse_source`) and aggregated across files by the CLI before being handed to `tsdi-core`'s graph builder.
+Everything a single `.ts` file contributes to the IR. Produced by `anvil_parser::parse_file` (or `parse_source`) and aggregated across files by the CLI before being handed to `anvil-core`'s graph builder.
 
 ```rust
 pub struct ParsedFile {

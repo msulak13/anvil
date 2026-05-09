@@ -1,4 +1,4 @@
-import { Subcomponent } from "tsdi";
+import { Subcomponent } from "@msulak/anvil";
 import { RequestModule } from "./request-module";
 import { Handler } from "./handler";
 

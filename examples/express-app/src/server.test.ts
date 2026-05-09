@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import request from "supertest";
-import { createAppComponent } from "./app-component.tsdi.js";
+import { createAppComponent } from "./app-component.anvil.js";
 import type { RequestComponent } from "./request-component.js";
 
 type ResWithDi = Response & { locals: { di: RequestComponent } };
@@ -35,7 +35,7 @@ function buildApp(): express.Express {
   return app;
 }
 
-describe("tsdi express-app", () => {
+describe("anvil express-app", () => {
   it("lists seeded users (app-scoped repository shared across requests)", async () => {
     const app = buildApp();
     const res = await request(app).get("/users").expect(200);

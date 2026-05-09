@@ -1,0 +1,88 @@
+---
+source: crates/anvil-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "plugins-module.ts",
+    modules: [
+        ModuleDecl {
+            class: ClassRef {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "PluginsModule",
+            },
+            provides: [
+                Binding {
+                    key: Class {
+                        module: ModulePath {
+                            abs: "./plugin",
+                            original: Some(
+                                "./plugin",
+                            ),
+                        },
+                        name: "Plugin",
+                    },
+                    provider: ProvidesMethod {
+                        module: ClassRef {
+                            module: ModulePath {
+                                abs: "<self>",
+                                original: None,
+                            },
+                            name: "PluginsModule",
+                        },
+                        method: "auth",
+                        is_async: false,
+                    },
+                    scope: Unscoped,
+                    deps: [],
+                    source: SourceSpan {
+                        path: "plugins-module.ts",
+                        start: 287,
+                        end: 356,
+                    },
+                    role: IntoSet,
+                },
+                Binding {
+                    key: Class {
+                        module: ModulePath {
+                            abs: "./plugin",
+                            original: Some(
+                                "./plugin",
+                            ),
+                        },
+                        name: "Plugin",
+                    },
+                    provider: ProvidesMethod {
+                        module: ClassRef {
+                            module: ModulePath {
+                                abs: "<self>",
+                                original: None,
+                            },
+                            name: "PluginsModule",
+                        },
+                        method: "logging",
+                        is_async: false,
+                    },
+                    scope: Unscoped,
+                    deps: [],
+                    source: SourceSpan {
+                        path: "plugins-module.ts",
+                        start: 369,
+                        end: 444,
+                    },
+                    role: IntoSet,
+                },
+            ],
+            source: SourceSpan {
+                path: "plugins-module.ts",
+                start: 253,
+                end: 454,
+            },
+        },
+    ],
+    components: [],
+    subcomponents: [],
+    inject_classes: [],
+}

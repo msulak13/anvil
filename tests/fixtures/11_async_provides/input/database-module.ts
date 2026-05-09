@@ -1,4 +1,4 @@
-import { Module, Provides, Singleton } from "tsdi";
+import { Module, Provides, Singleton } from "@msulak/anvil";
 import { Config } from "./config";
 import { Database } from "./database";
 

@@ -1,4 +1,4 @@
-# 0004 — One generated `.tsdi.ts` file per `@Component`, co-located with source
+# 0004 — One generated `.anvil.ts` file per `@Component`, co-located with source
 
 **Status:** Accepted
 **Date:** 2026-04-25
@@ -7,16 +7,16 @@
 
 Dagger emits one Java file per generated artifact and places them in a separate `generated/` source root. Other compile-time DI tools (`@wessberg/DI`) inject directly into the user's `tsc` build via a transformer, with no separate output. We have several plausible shapes:
 
-1. **One file per `@Component`, co-located** — `Foo.ts` → `Foo.tsdi.ts` next to it.
-2. **One file per `@Component`, in a `generated/` mirror tree** — `src/foo.ts` → `generated/src/foo.tsdi.ts`.
-3. **One monolithic `tsdi.generated.ts`** containing every component's wiring.
+1. **One file per `@Component`, co-located** — `Foo.ts` → `Foo.anvil.ts` next to it.
+2. **One file per `@Component`, in a `generated/` mirror tree** — `src/foo.ts` → `generated/src/foo.anvil.ts`.
+3. **One monolithic `anvil.generated.ts`** containing every component's wiring.
 4. **No file at all** — operate as a `tsc` transformer plugin.
 
 Watch-mode efficiency, debuggability, and the user's `git` workflow all interact here.
 
 ## Decision
 
-**Adopt approach (1): one file per `@Component`, co-located with the source file as `<name>.tsdi.ts`** (suffix configurable via `outputSuffix`).
+**Adopt approach (1): one file per `@Component`, co-located with the source file as `<name>.anvil.ts`** (suffix configurable via `outputSuffix`).
 
 ## Consequences
 
@@ -28,8 +28,8 @@ Watch-mode efficiency, debuggability, and the user's `git` workflow all interact
 - Failure mode is local: a problem with one component doesn't strand a monolithic generated file.
 
 ### Negative
-- The user's source tree gains `.tsdi.ts` files that look hand-edited at first glance. Mitigated by the banner and by ensuring the generator writes `// AUTO-GENERATED` as the very first line.
-- Users must add `*.tsdi.ts` to their `.gitignore` if they prefer not to commit generated code. v0.1 docs recommend committing them — review benefit outweighs noise.
+- The user's source tree gains `.anvil.ts` files that look hand-edited at first glance. Mitigated by the banner and by ensuring the generator writes `// AUTO-GENERATED` as the very first line.
+- Users must add `*.anvil.ts` to their `.gitignore` if they prefer not to commit generated code. v0.1 docs recommend committing them — review benefit outweighs noise.
 - A single component spread across many modules still produces only one generated file (the component's own); large graphs concentrate emission in one place. This is fine but worth noting.
 
 ## Alternatives considered
@@ -42,5 +42,5 @@ Watch-mode efficiency, debuggability, and the user's `git` workflow all interact
 
 Reopen this decision if:
 
-1. Users consistently report that co-located generated files clutter their tree beyond the value provided. Switching to (2) is mechanical: only the path math in `tsdi-cli` changes.
+1. Users consistently report that co-located generated files clutter their tree beyond the value provided. Switching to (2) is mechanical: only the path math in `anvil-cli` changes.
 2. We want to share generated symbols across components (e.g. for code-splitting or shared singletons across components within the same scope graph) — that may push toward a hybrid where shared code lives in a sidecar file.

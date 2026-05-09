@@ -1,4 +1,4 @@
-import { Inject } from "tsdi";
+import { Inject } from "@msulak/anvil";
 import { HttpResponse } from "./http";
 import { RequestContext } from "./request-context";
 

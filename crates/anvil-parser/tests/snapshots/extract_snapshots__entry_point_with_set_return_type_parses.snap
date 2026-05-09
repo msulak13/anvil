@@ -1,0 +1,50 @@
+---
+source: crates/anvil-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "app.ts",
+    modules: [],
+    components: [
+        ComponentDecl {
+            class: ClassRef {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "App",
+            },
+            modules: [],
+            scope: Unscoped,
+            entry_points: [
+                EntryPoint {
+                    name: "plugins",
+                    key: Set {
+                        element: Class {
+                            module: ModulePath {
+                                abs: "./plugin",
+                                original: Some(
+                                    "./plugin",
+                                ),
+                            },
+                            name: "Plugin",
+                        },
+                    },
+                    source: SourceSpan {
+                        path: "app.ts",
+                        start: 180,
+                        end: 212,
+                    },
+                    factory_params: [],
+                },
+            ],
+            source: SourceSpan {
+                path: "app.ts",
+                start: 147,
+                end: 222,
+            },
+        },
+    ],
+    subcomponents: [],
+    inject_classes: [],
+}

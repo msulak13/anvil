@@ -1,0 +1,58 @@
+---
+source: crates/anvil-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "coffee_module.ts",
+    modules: [
+        ModuleDecl {
+            class: ClassRef {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "CoffeeModule",
+            },
+            provides: [
+                Binding {
+                    key: Class {
+                        module: ModulePath {
+                            abs: "./pump",
+                            original: Some(
+                                "./pump",
+                            ),
+                        },
+                        name: "Pump",
+                    },
+                    provider: ProvidesMethod {
+                        module: ClassRef {
+                            module: ModulePath {
+                                abs: "<self>",
+                                original: None,
+                            },
+                            name: "CoffeeModule",
+                        },
+                        method: "providePump",
+                        is_async: false,
+                    },
+                    scope: Unscoped,
+                    deps: [],
+                    source: SourceSpan {
+                        path: "coffee_module.ts",
+                        start: 163,
+                        end: 222,
+                    },
+                    role: None,
+                },
+            ],
+            source: SourceSpan {
+                path: "coffee_module.ts",
+                start: 130,
+                end: 232,
+            },
+        },
+    ],
+    components: [],
+    subcomponents: [],
+    inject_classes: [],
+}

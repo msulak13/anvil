@@ -1,6 +1,6 @@
 # `examples/express-app`
 
-A small Express server demonstrating tsdi's per-request DI scopes, built around `@Subcomponent` factory parameters (M11). Express's `Request` and `Response` flow into a request-scoped graph as runtime values; everything else (logger, repository) stays app-scoped on the parent component.
+A small Express server demonstrating anvil's per-request DI scopes, built around `@Subcomponent` factory parameters (M11). Express's `Request` and `Response` flow into a request-scoped graph as runtime values; everything else (logger, repository) stays app-scoped on the parent component.
 
 ## Layout
 
@@ -26,11 +26,11 @@ pnpm --filter express-app test           # run the supertest suite
 pnpm --filter express-app typecheck      # tsc --noEmit
 ```
 
-The `start` and `test` scripts invoke `tsdi build` first to (re)generate `src/app-component.tsdi.ts` from the decorated source.
+The `start` and `test` scripts invoke `anvil build` first to (re)generate `src/app-component.anvil.ts` from the decorated source.
 
 ## What the dagger emits
 
-Running `tsdi build --entry src/app-component.ts` produces `src/app-component.tsdi.ts` containing:
+Running `anvil build --entry src/app-component.ts` produces `src/app-component.anvil.ts` containing:
 
 ```ts
 class DaggerAppComponent extends AppComponent {
@@ -71,5 +71,5 @@ Each HTTP request gets a fresh `DaggerRequestComponent`, so `RequestContext` is 
 ## What this proves
 
 1. **Request scope without `AsyncLocalStorage` or middleware globals.** The `req` and `res` flow through the type system into the dagger.
-2. **Lifetime correctness is checked at compile time.** A `@Singleton @Subcomponent` taking factory params is rejected by `tsdi check` (the cache would freeze the first call's args).
+2. **Lifetime correctness is checked at compile time.** A `@Singleton @Subcomponent` taking factory params is rejected by `anvil check` (the cache would freeze the first call's args).
 3. **Inheritance works automatically.** The user code never says "this binding lives on the parent" — the graph layer detects that `Logger` / `UserRepository` are unsatisfiable inside the child and routes their getters through `this.parent.getX()`.

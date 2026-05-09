@@ -1,0 +1,81 @@
+---
+source: crates/anvil-parser/tests/extract_snapshots.rs
+expression: parsed
+---
+ParsedFile {
+    path: "app.ts",
+    modules: [],
+    components: [
+        ComponentDecl {
+            class: ClassRef {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "App",
+            },
+            modules: [],
+            scope: Unscoped,
+            entry_points: [
+                EntryPoint {
+                    name: "requestComponent",
+                    key: Class {
+                        module: ModulePath {
+                            abs: "<self>",
+                            original: None,
+                        },
+                        name: "RequestComponent",
+                    },
+                    source: SourceSpan {
+                        path: "app.ts",
+                        start: 298,
+                        end: 344,
+                    },
+                    factory_params: [],
+                },
+            ],
+            source: SourceSpan {
+                path: "app.ts",
+                start: 265,
+                end: 354,
+            },
+        },
+    ],
+    subcomponents: [
+        SubcomponentDecl {
+            class: ClassRef {
+                module: ModulePath {
+                    abs: "<self>",
+                    original: None,
+                },
+                name: "RequestComponent",
+            },
+            modules: [],
+            scope: Unscoped,
+            entry_points: [
+                EntryPoint {
+                    name: "handler",
+                    key: Class {
+                        module: ModulePath {
+                            abs: "<self>",
+                            original: None,
+                        },
+                        name: "RequestHandler",
+                    },
+                    source: SourceSpan {
+                        path: "app.ts",
+                        start: 167,
+                        end: 202,
+                    },
+                    factory_params: [],
+                },
+            ],
+            source: SourceSpan {
+                path: "app.ts",
+                start: 121,
+                end: 212,
+            },
+        },
+    ],
+    inject_classes: [],
+}

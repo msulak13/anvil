@@ -8,7 +8,7 @@
 // and inherited app-scoped services.
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
-import { createAppComponent } from "./app-component.tsdi.js";
+import { createAppComponent } from "./app-component.anvil.js";
 import type { RequestComponent } from "./request-component.js";
 
 const app = express();
@@ -50,5 +50,5 @@ app.get("/whoami", (_req, res) => {
 
 const port = Number(process.env["PORT"] ?? 3000);
 app.listen(port, () => {
-  log.info(`tsdi express-app listening on :${port}`);
+  log.info(`anvil express-app listening on :${port}`);
 });

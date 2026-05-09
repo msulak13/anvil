@@ -1,0 +1,21 @@
+{
+  "name": "@msulak/anvil-cli-win32-x64",
+  "version": "0.0.1",
+  "description": "Prebuilt anvil CLI binary for win32/x64. Resolved by `@msulak/anvil-cli` at runtime.",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "main": "index.js",
+  "files": [
+    "bin/anvil.exe",
+    "index.js"
+  ],
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
