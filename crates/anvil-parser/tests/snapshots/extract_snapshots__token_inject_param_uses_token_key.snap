@@ -3,7 +3,7 @@ source: crates/anvil-parser/tests/extract_snapshots.rs
 expression: parsed
 ---
 ParsedFile {
-    path: "heater.ts",
+    path: "service.ts",
     modules: [],
     components: [],
     subcomponents: [],
@@ -14,7 +14,7 @@ ParsedFile {
                     abs: "<self>",
                     original: None,
                 },
-                name: "Heater",
+                name: "Service",
                 type_args: [],
             },
             provider: InjectCtor {
@@ -23,15 +23,19 @@ ParsedFile {
                         abs: "<self>",
                         original: None,
                     },
-                    name: "Heater",
+                    name: "Service",
                 },
             },
-            scope: Singleton,
-            deps: [],
+            scope: Unscoped,
+            deps: [
+                Token {
+                    name: "primary-db",
+                },
+            ],
             source: SourceSpan {
-                path: "heater.ts",
-                start: 138,
-                end: 154,
+                path: "service.ts",
+                start: 203,
+                end: 260,
             },
             role: None,
             token_inner_type: None,

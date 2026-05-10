@@ -28,6 +28,7 @@ ParsedFile {
                                 ),
                             },
                             name: "Plugin",
+                            type_args: [],
                         },
                     },
                     source: SourceSpan {

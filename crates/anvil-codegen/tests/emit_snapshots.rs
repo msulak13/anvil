@@ -21,10 +21,7 @@ fn span_of(path: &str) -> SourceSpan {
 }
 
 fn class_key(module: &str, name: &str) -> Key {
-    Key::Class {
-        module: ModulePath::from_abs(module),
-        name: name.into(),
-    }
+    Key::class(ModulePath::from_abs(module), name)
 }
 
 fn class_ref(module: &str, name: &str) -> ClassRef {
@@ -63,6 +60,7 @@ fn emit_simple_provides_module() {
                 deps: vec![],
                 source: span_of(&mod_path),
                 role: MultibindRole::None,
+                token_inner_type: None,
             },
             Binding {
                 key: pump_key.clone(),
@@ -75,6 +73,7 @@ fn emit_simple_provides_module() {
                 deps: vec![heater_key.clone()],
                 source: span_of(&mod_path),
                 role: MultibindRole::None,
+                token_inner_type: None,
             },
         ],
         source: span_of(&mod_path),
@@ -130,6 +129,7 @@ fn emit_inject_ctor_chain() {
             deps: vec![],
             source: span_of(&heater_path),
             role: MultibindRole::None,
+            token_inner_type: None,
         },
         Binding {
             key: pump_key.clone(),
@@ -140,6 +140,7 @@ fn emit_inject_ctor_chain() {
             deps: vec![heater_key.clone()],
             source: span_of(&pump_path),
             role: MultibindRole::None,
+            token_inner_type: None,
         },
     ];
 
@@ -187,6 +188,7 @@ fn emit_singleton_caches_via_lazy_field() {
             deps: vec![],
             source: span_of(&heater_path),
             role: MultibindRole::None,
+            token_inner_type: None,
         },
         Binding {
             key: pump_key.clone(),
@@ -197,6 +199,7 @@ fn emit_singleton_caches_via_lazy_field() {
             deps: vec![heater_key.clone()],
             source: span_of(&pump_path),
             role: MultibindRole::None,
+            token_inner_type: None,
         },
     ];
 
@@ -257,6 +260,7 @@ fn emit_binds_alias_delegates_to_target() {
             deps: vec![electric_key.clone()],
             source: span_of(&mod_path),
             role: MultibindRole::None,
+            token_inner_type: None,
         }],
         source: span_of(&mod_path),
     };
@@ -270,6 +274,7 @@ fn emit_binds_alias_delegates_to_target() {
         deps: vec![],
         source: span_of(&electric_path),
         role: MultibindRole::None,
+        token_inner_type: None,
     }];
 
     let component = ComponentDecl {
@@ -322,6 +327,7 @@ fn emit_subcomponent_with_inherited_dep_and_local_factory() {
             deps: vec![],
             source: span_of(&heater_path),
             role: MultibindRole::None,
+            token_inner_type: None,
         },
         Binding {
             key: pump_key.clone(),
@@ -332,6 +338,7 @@ fn emit_subcomponent_with_inherited_dep_and_local_factory() {
             deps: vec![heater_key.clone()],
             source: span_of(&pump_path),
             role: MultibindRole::None,
+            token_inner_type: None,
         },
     ];
 
@@ -406,6 +413,7 @@ fn emit_into_set_aggregates_contributions() {
                 deps: vec![],
                 source: span_of(&mod_path),
                 role: MultibindRole::IntoSet,
+                token_inner_type: None,
             },
             Binding {
                 key: plugin_key.clone(),
@@ -418,6 +426,7 @@ fn emit_into_set_aggregates_contributions() {
                 deps: vec![],
                 source: span_of(&mod_path),
                 role: MultibindRole::IntoSet,
+                token_inner_type: None,
             },
         ],
         source: span_of(&mod_path),
@@ -482,6 +491,7 @@ fn emit_subcomponent_factory_with_runtime_parameters() {
             deps: vec![request_key.clone(), response_key.clone()],
             source: span_of(&mod_path),
             role: MultibindRole::None,
+            token_inner_type: None,
         }],
         source: span_of(&mod_path),
     };
@@ -562,6 +572,7 @@ fn emit_async_provides_uses_resolve_phase() {
                 deps: vec![],
                 source: span_of(&mod_path),
                 role: MultibindRole::None,
+                token_inner_type: None,
             },
             Binding {
                 key: db_key.clone(),
@@ -574,6 +585,7 @@ fn emit_async_provides_uses_resolve_phase() {
                 deps: vec![pool_key.clone()],
                 source: span_of(&mod_path),
                 role: MultibindRole::None,
+                token_inner_type: None,
             },
         ],
         source: span_of(&mod_path),
@@ -625,6 +637,7 @@ fn emit_preserves_node_modules_specifier() {
             original: Some("vendor-lib".to_owned()),
         },
         name: "Tracer".into(),
+        type_args: vec![],
     };
     let vendor_classref = ClassRef {
         module: ModulePath {
@@ -643,6 +656,7 @@ fn emit_preserves_node_modules_specifier() {
         deps: vec![],
         source: span_of(&pkg_path),
         role: MultibindRole::None,
+        token_inner_type: None,
     }];
 
     let component = ComponentDecl {
@@ -698,4 +712,106 @@ fn validation_failure_short_circuits() {
         msg.contains("validation") || msg.contains("diagnostic"),
         "got: {msg}"
     );
+}
+
+#[test]
+fn emit_token_binding_uses_inner_type_and_cast() {
+    // M14: a Key::Token binding's factory method uses token_inner_type as
+    // the return annotation, and the @Provides call is wrapped in
+    // `as unknown as InnerType` so the generated code is type-sound.
+    use insta::assert_snapshot;
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let comp_path: String = root.join("app-component.ts").to_string_lossy().into_owned();
+    let mod_path: String = root.join("db-module.ts").to_string_lossy().into_owned();
+
+    let token_key = Key::Token { name: "primary-db".into() };
+    let module = ModuleDecl {
+        class: class_ref(&mod_path, "DbModule"),
+        provides: vec![Binding {
+            key: token_key.clone(),
+            provider: Provider::ProvidesMethod {
+                module: class_ref(&mod_path, "DbModule"),
+                method: "primaryDb".into(),
+                is_async: false,
+            },
+            scope: Scope::Singleton,
+            deps: vec![],
+            source: span_of(&mod_path),
+            role: MultibindRole::None,
+            token_inner_type: Some("Database".into()),
+        }],
+        source: span_of(&mod_path),
+    };
+
+    let component = ComponentDecl {
+        class: class_ref(&comp_path, "App"),
+        modules: vec![class_ref(&mod_path, "DbModule")],
+        scope: Scope::Singleton,
+        entry_points: vec![EntryPoint {
+            name: "db".into(),
+            key: token_key,
+            source: span_of(&comp_path),
+            factory_params: vec![],
+        }],
+        source: span_of(&comp_path),
+    };
+
+    let out = emit_component(&component, &[module], &[], &[], "0.0.1").unwrap();
+    assert_snapshot!(out);
+}
+
+#[test]
+fn emit_generic_key_produces_typed_factory() {
+    // M15: Key::Class with type_args emits the correct generic return type
+    // annotation (Repository<User>) and a factory name that disambiguates
+    // from a non-generic Repository (getRepositoryOfUser).
+    use insta::assert_snapshot;
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let comp_path: String = root.join("app-component.ts").to_string_lossy().into_owned();
+    let mod_path: String = root.join("user-module.ts").to_string_lossy().into_owned();
+    let repo_path: String = root.join("repository.ts").to_string_lossy().into_owned();
+    let user_path: String = root.join("user.ts").to_string_lossy().into_owned();
+
+    let user_key = class_key(&user_path, "User");
+    let repo_key = Key::Class {
+        module: ModulePath::from_abs(&repo_path),
+        name: "Repository".into(),
+        type_args: vec![user_key],
+    };
+
+    let module = ModuleDecl {
+        class: class_ref(&mod_path, "UserModule"),
+        provides: vec![Binding {
+            key: repo_key.clone(),
+            provider: Provider::ProvidesMethod {
+                module: class_ref(&mod_path, "UserModule"),
+                method: "users".into(),
+                is_async: false,
+            },
+            scope: Scope::Unscoped,
+            deps: vec![],
+            source: span_of(&mod_path),
+            role: MultibindRole::None,
+            token_inner_type: None,
+        }],
+        source: span_of(&mod_path),
+    };
+
+    let component = ComponentDecl {
+        class: class_ref(&comp_path, "App"),
+        modules: vec![class_ref(&mod_path, "UserModule")],
+        scope: Scope::Unscoped,
+        entry_points: vec![EntryPoint {
+            name: "users".into(),
+            key: repo_key,
+            source: span_of(&comp_path),
+            factory_params: vec![],
+        }],
+        source: span_of(&comp_path),
+    };
+
+    let out = emit_component(&component, &[module], &[], &[], "0.0.1").unwrap();
+    assert_snapshot!(out);
 }

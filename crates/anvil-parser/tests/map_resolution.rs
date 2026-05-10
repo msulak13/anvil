@@ -93,11 +93,11 @@ fn build_from_map_walks_relative_imports_and_normalizes_keys() {
         .1;
     let pump_dep_module = match &pump.inject_classes[0].deps[0] {
         Key::Class { module, .. } => module.abs.clone(),
-        Key::Set { .. } => panic!("expected Key::Class"),
+        Key::Set { .. } | Key::Token { .. } => panic!("expected Key::Class"),
     };
     let heater_self_module = match &heater.inject_classes[0].key {
         Key::Class { module, .. } => module.abs.clone(),
-        Key::Set { .. } => panic!("expected Key::Class"),
+        Key::Set { .. } | Key::Token { .. } => panic!("expected Key::Class"),
     };
     assert_eq!(
         pump_dep_module, heater_self_module,
@@ -180,7 +180,7 @@ fn tsconfig_paths_alias_resolves_through_the_map() {
         .1;
     let heater_dep = match &pump.inject_classes[0].deps[0] {
         Key::Class { module, .. } => module.abs.clone(),
-        Key::Set { .. } => panic!("expected Key::Class"),
+        Key::Set { .. } | Key::Token { .. } => panic!("expected Key::Class"),
     };
     assert!(heater_dep.ends_with("heater.ts"));
 }

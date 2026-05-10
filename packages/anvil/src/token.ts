@@ -1,24 +1,47 @@
 /**
- * `Token<T>` lets users bind non-class types (interfaces, primitives, configs)
- * by associating them with a unique runtime identity.
+ * `Token<T, Name>` is the type-annotation form for named binding keys.
  *
- * The codegen recognizes references to `Token<T>` instances in `@Provides`
- * return positions and `@Inject` parameter positions and uses them as the
- * binding's `Key`.
+ * The codegen (M14+) recognizes `Token<T, "name">` as a type annotation in
+ * `@Provides` return types and `@Inject` constructor parameters and uses the
+ * string literal `"name"` as the binding's `Key::Token`. No runtime instance
+ * is needed — the name is read purely from the AST.
  *
- * Note: full `Token<T>` support lands in v0.2 (M7). The class is exported in
- * v0.1 only so user code that anticipates the migration typechecks today.
+ * The optional second type parameter `Name` carries the string-literal key
+ * so that two parameters annotated `Token<Database, "primary">` and
+ * `Token<Database, "replica">` are structurally distinct types that TypeScript
+ * will not treat as interchangeable.
  *
  * @example
  * ```ts
- * import { Token } from "@msulak/anvil";
- * export interface Logger { log(msg: string): void; }
- * export const LOGGER = new Token<Logger>("LOGGER");
+ * // db-module.ts
+ * import { Module, Provides } from "@msulak/anvil";
+ * import type { Token } from "@msulak/anvil";
+ * import type { Database } from "./database";
+ *
+ * @Module
+ * export class DbModule {
+ *   @Provides
+ *   static primaryDb(): Token<Database, "primary-db"> {
+ *     return new Database(primaryUrl) as unknown as Token<Database, "primary-db">;
+ *   }
+ * }
+ *
+ * // app-component.ts
+ * import { Component, Inject } from "@msulak/anvil";
+ * import type { Token } from "@msulak/anvil";
+ * import type { Database } from "./database";
+ *
+ * @Inject
+ * export class UserRepository {
+ *   constructor(private db: Token<Database, "primary-db">) {}
+ * }
  * ```
  */
-export class Token<T> {
-  /** Phantom field that fixes the generic parameter and prevents structural collapse. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export class Token<T, Name extends string = string> {
+  /** Phantom fields that fix the generic parameters and prevent structural collapse. */
   declare private readonly _brand: T;
+  declare private readonly _name: Name;
 
   /**
    * @param description Human-readable label, used in diagnostic output. Not

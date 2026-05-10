@@ -475,7 +475,14 @@ fn rewrite_key(
     discovered: &mut Vec<PathBuf>,
 ) -> Result<(), SymbolError> {
     match key {
-        Key::Class { module, .. } => resolve_one(module, discovered),
+        Key::Class { module, type_args, .. } => {
+            resolve_one(module, discovered)?;
+            for arg in type_args.iter_mut() {
+                rewrite_key(arg, resolve_one, discovered)?;
+            }
+            Ok(())
+        }
+        Key::Token { .. } => Ok(()), // token names are stable string literals, no rewriting needed
         Key::Set { element } => rewrite_key(element, resolve_one, discovered),
     }
 }

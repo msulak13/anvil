@@ -89,10 +89,7 @@ mod tests {
     use anvil_core::validate::DiagnosticKind;
 
     fn k(name: &str) -> Key {
-        Key::Class {
-            module: ModulePath::from_abs(format!("/p/{name}.ts")),
-            name: name.to_owned(),
-        }
+        Key::class(ModulePath::from_abs(format!("/p/{name}.ts")), name)
     }
 
     #[test]

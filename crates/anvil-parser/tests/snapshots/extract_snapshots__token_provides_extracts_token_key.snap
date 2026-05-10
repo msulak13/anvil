@@ -3,7 +3,7 @@ source: crates/anvil-parser/tests/extract_snapshots.rs
 expression: parsed
 ---
 ParsedFile {
-    path: "coffee_module.ts",
+    path: "db-module.ts",
     modules: [
         ModuleDecl {
             class: ClassRef {
@@ -11,19 +11,12 @@ ParsedFile {
                     abs: "<self>",
                     original: None,
                 },
-                name: "CoffeeModule",
+                name: "DbModule",
             },
             provides: [
                 Binding {
-                    key: Class {
-                        module: ModulePath {
-                            abs: "./pump",
-                            original: Some(
-                                "./pump",
-                            ),
-                        },
-                        name: "Pump",
-                        type_args: [],
+                    key: Token {
+                        name: "primary-db",
                     },
                     provider: ProvidesMethod {
                         module: ClassRef {
@@ -31,26 +24,28 @@ ParsedFile {
                                 abs: "<self>",
                                 original: None,
                             },
-                            name: "CoffeeModule",
+                            name: "DbModule",
                         },
-                        method: "providePump",
+                        method: "primaryDb",
                         is_async: false,
                     },
                     scope: Unscoped,
                     deps: [],
                     source: SourceSpan {
-                        path: "coffee_module.ts",
-                        start: 163,
-                        end: 222,
+                        path: "db-module.ts",
+                        start: 214,
+                        end: 337,
                     },
                     role: None,
-                    token_inner_type: None,
+                    token_inner_type: Some(
+                        "Database",
+                    ),
                 },
             ],
             source: SourceSpan {
-                path: "coffee_module.ts",
-                start: 130,
-                end: 232,
+                path: "db-module.ts",
+                start: 185,
+                end: 347,
             },
         },
     ],

@@ -192,7 +192,20 @@ pub enum DiagnosticKind {
 #[must_use]
 pub fn key_display(key: &Key) -> String {
     match key {
-        Key::Class { module, name } => format!("{name}@{}", module.abs),
+        Key::Class {
+            module,
+            name,
+            type_args,
+        } if type_args.is_empty() => format!("{name}@{}", module.abs),
+        Key::Class {
+            module,
+            name,
+            type_args,
+        } => {
+            let args: Vec<String> = type_args.iter().map(key_display).collect();
+            format!("{name}<{}>@{}", args.join(", "), module.abs)
+        }
+        Key::Token { name } => format!("Token({name})"),
         Key::Set { element } => format!("Set<{}>", key_display(element)),
     }
 }
@@ -239,10 +252,7 @@ mod tests {
     use crate::ir::{Key, ModulePath};
 
     fn k(name: &str) -> Key {
-        Key::Class {
-            module: ModulePath::from_abs(format!("/proj/{name}.ts")),
-            name: name.to_owned(),
-        }
+        Key::class(ModulePath::from_abs(format!("/proj/{name}.ts")), name)
     }
 
     #[test]

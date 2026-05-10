@@ -23,6 +23,7 @@ ParsedFile {
                             ),
                         },
                         name: "Plugin",
+                        type_args: [],
                     },
                     provider: ProvidesMethod {
                         module: ClassRef {
@@ -43,6 +44,7 @@ ParsedFile {
                         end: 356,
                     },
                     role: IntoSet,
+                    token_inner_type: None,
                 },
                 Binding {
                     key: Class {
@@ -53,6 +55,7 @@ ParsedFile {
                             ),
                         },
                         name: "Plugin",
+                        type_args: [],
                     },
                     provider: ProvidesMethod {
                         module: ClassRef {
@@ -73,6 +76,7 @@ ParsedFile {
                         end: 444,
                     },
                     role: IntoSet,
+                    token_inner_type: None,
                 },
             ],
             source: SourceSpan {

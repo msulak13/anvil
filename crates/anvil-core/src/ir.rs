@@ -25,6 +25,20 @@ pub enum Key {
         module: ModulePath,
         /// The exported name as it appears at the declaration site.
         name: String,
+        /// Generic type arguments, if any. Empty for non-generic classes.
+        /// `Repository<User>` has `type_args: [Key::Class { name: "User", .. }]`.
+        type_args: Vec<Key>,
+    },
+    /// A named DI token — `Token<T, "name">` in user code (M14).
+    ///
+    /// Unlike [`Key::Class`], the identity is a string literal name rather than
+    /// a TypeScript class reference. This allows injecting multiple values of the
+    /// same concrete type under different token names (e.g. two different
+    /// `string` configs), or binding to an interface that has no runtime class.
+    Token {
+        /// The string literal used as the token name (second type arg of
+        /// `Token<T, "name">`).
+        name: String,
     },
     /// A `Set<T>` multibinding aggregate (M9). Multiple `@IntoSet`
     /// contributions whose return type is the element type collapse into a
@@ -33,6 +47,18 @@ pub enum Key {
         /// The element type being collected. Always a [`Key::Class`] in v0.1.
         element: Box<Key>,
     },
+}
+
+impl Key {
+    /// Convenience constructor for a non-generic class key (sets `type_args: vec![]`).
+    #[must_use]
+    pub fn class(module: ModulePath, name: impl Into<String>) -> Self {
+        Key::Class {
+            module,
+            name: name.into(),
+            type_args: vec![],
+        }
+    }
 }
 
 /// A module path. M1 stores the raw import specifier in `abs`; M2's
@@ -290,6 +316,11 @@ pub struct Binding {
     /// graph layer; [`MultibindRole::IntoSet`] on raw `@IntoSet`
     /// contributions emitted by the parser.
     pub role: MultibindRole,
+    /// For `Key::Token` bindings: the raw TypeScript type string of the
+    /// token's inner type (e.g. `"Database"` for `Token<Database, "primary-db">`).
+    /// Codegen uses this to emit correct type annotations and casts.
+    /// `None` for non-token bindings.
+    pub token_inner_type: Option<String>,
 }
 
 /// A `@Module` declaration: a class hosting `@Provides` factory methods.
@@ -409,18 +440,9 @@ mod tests {
 
     #[test]
     fn key_equality_uses_module_and_name() {
-        let a = Key::Class {
-            module: ModulePath::from_abs("/abs/heater.ts"),
-            name: "Heater".into(),
-        };
-        let b = Key::Class {
-            module: ModulePath::from_abs("/abs/heater.ts"),
-            name: "Heater".into(),
-        };
-        let c = Key::Class {
-            module: ModulePath::from_abs("/abs/other.ts"),
-            name: "Heater".into(),
-        };
+        let a = Key::class(ModulePath::from_abs("/abs/heater.ts"), "Heater");
+        let b = Key::class(ModulePath::from_abs("/abs/heater.ts"), "Heater");
+        let c = Key::class(ModulePath::from_abs("/abs/other.ts"), "Heater");
         assert_eq!(a, b);
         assert_ne!(a, c);
     }

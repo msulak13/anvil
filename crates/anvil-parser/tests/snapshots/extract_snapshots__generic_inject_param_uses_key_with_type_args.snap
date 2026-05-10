@@ -3,7 +3,7 @@ source: crates/anvil-parser/tests/extract_snapshots.rs
 expression: parsed
 ---
 ParsedFile {
-    path: "pump.ts",
+    path: "user-service.ts",
     modules: [],
     components: [],
     subcomponents: [],
@@ -14,7 +14,7 @@ ParsedFile {
                     abs: "<self>",
                     original: None,
                 },
-                name: "Pump",
+                name: "UserService",
                 type_args: [],
             },
             provider: InjectCtor {
@@ -23,26 +23,37 @@ ParsedFile {
                         abs: "<self>",
                         original: None,
                     },
-                    name: "Pump",
+                    name: "UserService",
                 },
             },
             scope: Unscoped,
             deps: [
                 Class {
                     module: ModulePath {
-                        abs: "./heater",
+                        abs: "./repository",
                         original: Some(
-                            "./heater",
+                            "./repository",
                         ),
                     },
-                    name: "Heater",
-                    type_args: [],
+                    name: "Repository",
+                    type_args: [
+                        Class {
+                            module: ModulePath {
+                                abs: "./user",
+                                original: Some(
+                                    "./user",
+                                ),
+                            },
+                            name: "User",
+                            type_args: [],
+                        },
+                    ],
                 },
             ],
             source: SourceSpan {
-                path: "pump.ts",
-                start: 149,
-                end: 187,
+                path: "user-service.ts",
+                start: 203,
+                end: 249,
             },
             role: None,
             token_inner_type: None,

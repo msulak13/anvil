@@ -25,6 +25,7 @@ ParsedFile {
                             original: None,
                         },
                         name: "RequestComponent",
+                        type_args: [],
                     },
                     source: SourceSpan {
                         path: "app.ts",
@@ -40,6 +41,7 @@ ParsedFile {
                                     original: None,
                                 },
                                 name: "HttpRequest",
+                                type_args: [],
                             },
                             source: SourceSpan {
                                 path: "app.ts",
@@ -55,6 +57,7 @@ ParsedFile {
                                     original: None,
                                 },
                                 name: "HttpResponse",
+                                type_args: [],
                             },
                             source: SourceSpan {
                                 path: "app.ts",
@@ -92,6 +95,7 @@ ParsedFile {
                             original: None,
                         },
                         name: "RequestHandler",
+                        type_args: [],
                     },
                     source: SourceSpan {
                         path: "app.ts",

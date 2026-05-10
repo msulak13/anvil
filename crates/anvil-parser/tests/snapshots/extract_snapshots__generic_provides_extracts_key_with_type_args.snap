@@ -3,7 +3,7 @@ source: crates/anvil-parser/tests/extract_snapshots.rs
 expression: parsed
 ---
 ParsedFile {
-    path: "database-module.ts",
+    path: "user-module.ts",
     modules: [
         ModuleDecl {
             class: ClassRef {
@@ -11,19 +11,30 @@ ParsedFile {
                     abs: "<self>",
                     original: None,
                 },
-                name: "DatabaseModule",
+                name: "UserModule",
             },
             provides: [
                 Binding {
                     key: Class {
                         module: ModulePath {
-                            abs: "./pool",
+                            abs: "./repository",
                             original: Some(
-                                "./pool",
+                                "./repository",
                             ),
                         },
-                        name: "Pool",
-                        type_args: [],
+                        name: "Repository",
+                        type_args: [
+                            Class {
+                                module: ModulePath {
+                                    abs: "./user",
+                                    original: Some(
+                                        "./user",
+                                    ),
+                                },
+                                name: "User",
+                                type_args: [],
+                            },
+                        ],
                     },
                     provider: ProvidesMethod {
                         module: ClassRef {
@@ -31,37 +42,26 @@ ParsedFile {
                                 abs: "<self>",
                                 original: None,
                             },
-                            name: "DatabaseModule",
+                            name: "UserModule",
                         },
-                        method: "pool",
-                        is_async: true,
+                        method: "users",
+                        is_async: false,
                     },
-                    scope: Singleton,
-                    deps: [
-                        Class {
-                            module: ModulePath {
-                                abs: "./config",
-                                original: Some(
-                                    "./config",
-                                ),
-                            },
-                            name: "Config",
-                            type_args: [],
-                        },
-                    ],
+                    scope: Unscoped,
+                    deps: [],
                     source: SourceSpan {
-                        path: "database-module.ts",
-                        start: 219,
-                        end: 364,
+                        path: "user-module.ts",
+                        start: 212,
+                        end: 323,
                     },
                     role: None,
                     token_inner_type: None,
                 },
             ],
             source: SourceSpan {
-                path: "database-module.ts",
-                start: 184,
-                end: 374,
+                path: "user-module.ts",
+                start: 181,
+                end: 333,
             },
         },
     ],

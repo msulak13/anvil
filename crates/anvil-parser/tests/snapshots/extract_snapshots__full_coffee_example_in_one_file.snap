@@ -21,6 +21,7 @@ ParsedFile {
                             original: None,
                         },
                         name: "Heater",
+                        type_args: [],
                     },
                     provider: ProvidesMethod {
                         module: ClassRef {
@@ -41,6 +42,7 @@ ParsedFile {
                         end: 429,
                     },
                     role: None,
+                    token_inner_type: None,
                 },
             ],
             source: SourceSpan {
@@ -78,6 +80,7 @@ ParsedFile {
                             original: None,
                         },
                         name: "Pump",
+                        type_args: [],
                     },
                     source: SourceSpan {
                         path: "coffee.ts",
@@ -103,6 +106,7 @@ ParsedFile {
                     original: None,
                 },
                 name: "Heater",
+                type_args: [],
             },
             provider: InjectCtor {
                 class: ClassRef {
@@ -121,6 +125,7 @@ ParsedFile {
                 end: 183,
             },
             role: None,
+            token_inner_type: None,
         },
         Binding {
             key: Class {
@@ -129,6 +134,7 @@ ParsedFile {
                     original: None,
                 },
                 name: "Pump",
+                type_args: [],
             },
             provider: InjectCtor {
                 class: ClassRef {
@@ -147,6 +153,7 @@ ParsedFile {
                         original: None,
                     },
                     name: "Heater",
+                    type_args: [],
                 },
             ],
             source: SourceSpan {
@@ -155,6 +162,7 @@ ParsedFile {
                 end: 289,
             },
             role: None,
+            token_inner_type: None,
         },
     ],
 }

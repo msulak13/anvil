@@ -401,3 +401,83 @@ fn subcomponent_with_modules_and_entry_points() {
     let parsed = parse_source(src, "app.ts").unwrap();
     assert_debug_snapshot!(parsed);
 }
+
+#[test]
+fn token_provides_extracts_token_key() {
+    // M14: @Provides whose return type is Token<T, "name"> lowers to
+    // Key::Token { name }. The inner type string is stored in
+    // token_inner_type on the Binding for codegen use.
+    let src = r#"
+        import { Module, Provides } from "@msulak/anvil";
+        import { Token } from "@msulak/anvil";
+        import { Database } from "./database";
+
+        @Module
+        export class DbModule {
+            @Provides
+            static primaryDb(): Token<Database, "primary-db"> {
+                return null as any;
+            }
+        }
+    "#;
+    let parsed = parse_source(src, "db-module.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}
+
+#[test]
+fn token_inject_param_uses_token_key() {
+    // M14: a constructor parameter typed Token<T, "name"> becomes a dep
+    // with Key::Token { name } so the dagger can wire it from the
+    // corresponding @Provides binding.
+    let src = r#"
+        import { Inject } from "@msulak/anvil";
+        import { Token } from "@msulak/anvil";
+        import { Database } from "./database";
+
+        @Inject
+        export class Service {
+            constructor(private db: Token<Database, "primary-db">) {}
+        }
+    "#;
+    let parsed = parse_source(src, "service.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}
+
+#[test]
+fn generic_provides_extracts_key_with_type_args() {
+    // M15: @Provides returning Repository<User> lowers to
+    // Key::Class { name: "Repository", type_args: [Key::Class { name: "User" }] }.
+    let src = r#"
+        import { Module, Provides } from "@msulak/anvil";
+        import { Repository } from "./repository";
+        import { User } from "./user";
+
+        @Module
+        export class UserModule {
+            @Provides
+            static users(): Repository<User> {
+                return new Repository();
+            }
+        }
+    "#;
+    let parsed = parse_source(src, "user-module.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}
+
+#[test]
+fn generic_inject_param_uses_key_with_type_args() {
+    // M15: a constructor parameter typed Repository<User> becomes a dep
+    // with Key::Class { name: "Repository", type_args: [User] }.
+    let src = r#"
+        import { Inject } from "@msulak/anvil";
+        import { Repository } from "./repository";
+        import { User } from "./user";
+
+        @Inject
+        export class UserService {
+            constructor(private repo: Repository<User>) {}
+        }
+    "#;
+    let parsed = parse_source(src, "user-service.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}

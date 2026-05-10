@@ -111,24 +111,47 @@ pub fn emit_component(
 fn key_module(key: &Key) -> &str {
     match key {
         Key::Class { module, .. } => &module.abs,
+        Key::Token { .. } => "<token>",
         Key::Set { element } => key_module(element),
     }
 }
 
 /// TypeScript type-string for a [`Key`]: `"Heater"` for [`Key::Class`] and
-/// `"Set<Heater>"` for [`Key::Set`]. Used in factory return-type annotations
-/// and entry-point return types.
+/// `"Set<Heater>"` for [`Key::Set`]. For `Key::Token`, returns `"unknown"` —
+/// callers that need the actual inner type should use `type_string_for_binding`.
 fn type_string_of(key: &Key) -> String {
     match key {
-        Key::Class { name, .. } => name.clone(),
+        Key::Class { name, type_args, .. } if type_args.is_empty() => name.clone(),
+        Key::Class { name, type_args, .. } => {
+            let args: Vec<String> = type_args.iter().map(type_string_of).collect();
+            format!("{}<{}>", name, args.join(", "))
+        }
+        Key::Token { .. } => "unknown".to_owned(),
         Key::Set { element } => format!("Set<{}>", type_string_of(element)),
     }
 }
 
+/// TypeScript type-string for a binding. For `Key::Token` bindings, uses
+/// `token_inner_type` if available; for all others delegates to `type_string_of`.
+fn type_string_for_binding(b: &Binding) -> String {
+    match &b.key {
+        Key::Token { .. } => b
+            .token_inner_type
+            .clone()
+            .unwrap_or_else(|| "unknown".to_owned()),
+        key => type_string_of(key),
+    }
+}
+
 /// `Heater` → `getHeater`. `Set<Plugin>` → `getSetOfPlugin`.
+/// `Token("primary-db")` → `getPrimaryDb`.
 fn factory_name_for(key: &Key) -> String {
     match key {
-        Key::Class { name, .. } => format!("get{name}"),
+        Key::Class { name, type_args, .. } if type_args.is_empty() => format!("get{name}"),
+        Key::Class { name, type_args, .. } => {
+            format!("get{}Of{}", name, type_args_label(type_args))
+        }
+        Key::Token { name } => format!("get{}", token_pascal_case(name)),
         Key::Set { element } => format!("getSetOf{}", element_label(element)),
     }
 }
@@ -136,23 +159,72 @@ fn factory_name_for(key: &Key) -> String {
 /// `Heater` → `_heater`. `Set<Plugin>` → `_setOfPlugin`.
 fn cache_field_for(key: &Key) -> String {
     match key {
-        Key::Class { name, .. } => cache_field_name(name),
+        Key::Class { name, type_args, .. } if type_args.is_empty() => cache_field_name(name),
+        Key::Class { name, type_args, .. } => {
+            format!("_{}Of{}", lower_first(name), type_args_label(type_args))
+        }
+        Key::Token { name } => format!("_{}", lower_first(&token_pascal_case(name))),
         Key::Set { element } => format!("_setOf{}", element_label(element)),
     }
 }
 
-/// Camel-cased label used inside `Set<T>`-derived identifiers.
-/// `Plugin` → `Plugin`; `Set<Plugin>` (nested) → `SetOfPlugin`.
+/// Camel-cased label used inside `Set<T>`-derived and `Repository<User>`-derived identifiers.
+/// `Plugin` → `Plugin`; `Set<Plugin>` (nested) → `SetOfPlugin`;
+/// `Token("primary-db")` → `PrimaryDb`.
 fn element_label(key: &Key) -> String {
     match key {
-        Key::Class { name, .. } => name.clone(),
+        Key::Class { name, type_args, .. } if type_args.is_empty() => name.clone(),
+        Key::Class { name, type_args, .. } => {
+            format!("{}Of{}", name, type_args_label(type_args))
+        }
+        Key::Token { name } => token_pascal_case(name),
         Key::Set { element } => format!("SetOf{}", element_label(element)),
+    }
+}
+
+/// Convert generic type args to a label suffix: `[User]` → `User`,
+/// `[User, Role]` → `UserAndRole`.
+fn type_args_label(args: &[Key]) -> String {
+    args.iter()
+        .map(element_label)
+        .collect::<Vec<_>>()
+        .join("And")
+}
+
+/// Convert a token name like `"primary-db"` to PascalCase `"PrimaryDb"`.
+fn token_pascal_case(name: &str) -> String {
+    name.split('-')
+        .map(|w| {
+            let mut chars = w.chars();
+            chars
+                .next()
+                .map(|f| {
+                    let upper: String = f.to_uppercase().collect();
+                    upper + chars.as_str()
+                })
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// Lowercase first character of a string.
+fn lower_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => {
+            let lower: String = first.to_lowercase().collect();
+            lower + chars.as_str()
+        }
+        None => String::new(),
     }
 }
 
 /// Stable comparison key for ties: `"Name@module"`.
 fn lex_key(k: &Key) -> String {
-    format!("{}@{}", type_string_of(k), key_module(k))
+    match k {
+        Key::Token { name } => format!("Token({name})@<token>"),
+        _ => format!("{}@{}", type_string_of(k), key_module(k)),
+    }
 }
 
 /// Deps-first topological order, with lexicographic tie-break, computed by
@@ -206,8 +278,10 @@ fn populate_imports(
         // outer key. The element class is reachable via the contributors'
         // module imports below (and as a Key::Class binding elsewhere if
         // any). For Key::Class we import the bound class itself.
+        // Key::Token has no class to import — the inner type is handled via
+        // token_inner_type and its deps.
         match &b.key {
-            Key::Class { module, name } => {
+            Key::Class { module, name, type_args } => {
                 add_classref_import(
                     imports,
                     out_dir,
@@ -216,12 +290,14 @@ fn populate_imports(
                         name: name.clone(),
                     },
                 );
+                // Also import type arg classes so generic annotations type-check.
+                import_key_args(imports, out_dir, type_args);
             }
             Key::Set { element } => {
                 // Make sure the element type is importable so the
                 // `Set<Element>` type annotation type-checks even when no
                 // Class binding for the element exists in this graph.
-                if let Key::Class { module, name } = element.as_ref() {
+                if let Key::Class { module, name, .. } = element.as_ref() {
                     add_classref_import(
                         imports,
                         out_dir,
@@ -231,6 +307,11 @@ fn populate_imports(
                         },
                     );
                 }
+            }
+            Key::Token { .. } => {
+                // Token bindings have no outer class to import.
+                // The inner type is surfaced through the TS cast; its import
+                // comes via the binding's deps (the actual implementation class).
             }
         }
         match &b.provider {
@@ -263,6 +344,26 @@ fn add_classref_import(imports: &mut ImportMap, out_dir: &Path, cref: &ClassRef)
         .entry(specifier)
         .or_default()
         .insert(cref.name.clone());
+}
+
+/// Recursively add import entries for generic type arguments.
+fn import_key_args(imports: &mut ImportMap, out_dir: &Path, args: &[Key]) {
+    for arg in args {
+        match arg {
+            Key::Class { module, name, type_args } => {
+                add_classref_import(
+                    imports,
+                    out_dir,
+                    &ClassRef {
+                        module: module.clone(),
+                        name: name.clone(),
+                    },
+                );
+                import_key_args(imports, out_dir, type_args);
+            }
+            Key::Token { .. } | Key::Set { .. } => {}
+        }
+    }
 }
 
 /// Decide what string to emit as the import specifier for `mp`.
@@ -458,7 +559,7 @@ fn emit_class_body(
     for k in topo {
         let b = &graph.bindings[k];
         if matches!(b.scope, Scope::Singleton) {
-            let type_string = type_string_of(k);
+            let type_string = type_string_for_binding(b);
             let field = cache_field_for(k);
             writeln!(s, "  private {field}: {type_string} | undefined;").expect("write to String");
         }
@@ -475,7 +576,7 @@ fn emit_class_body(
             .map(|d| dep_call(d, graph, parent_dagger))
             .collect::<Vec<_>>()
             .join(", ");
-        match &b.provider {
+        let raw_expr = match &b.provider {
             Provider::InjectCtor { class } => format!("new {}({})", class.name, dep_args),
             Provider::ProvidesMethod { module, method, .. } => {
                 format!("{}.{}({})", module.name, method, dep_args)
@@ -497,7 +598,16 @@ fn emit_class_body(
                 format!("new Set([{}])", parts.join(", "))
             }
             Provider::FactoryParam { name } => format!("this.{name}"),
+        };
+        // M14: Token bindings need a cast so the generated code is type-safe.
+        // The @Provides method returns the raw value (e.g. a string or Database
+        // instance); the dagger's getter returns the inner type T.
+        if let Key::Token { .. } = k {
+            if let Some(inner_type) = &b.token_inner_type {
+                return format!("{raw_expr} as unknown as {inner_type}");
+            }
         }
+        raw_expr
     };
 
     // M12: in async-resolving graphs, all Singleton values are eagerly
@@ -509,7 +619,7 @@ fn emit_class_body(
     // shape at validation time).
     for k in topo {
         let b = &graph.bindings[k];
-        let type_string = type_string_of(k);
+        let type_string = type_string_for_binding(b);
         let factory = factory_name_for(k);
         let return_stmt = if matches!(b.scope, Scope::Singleton) {
             if graph_is_async {
@@ -576,7 +686,16 @@ fn emit_class_body(
             // Skip — handled below as a subcomponent factory.
             continue;
         }
-        let type_string = type_string_of(&ep.key);
+        // For Token entry points, use the binding's inner type (the return type
+        // of the abstract method should be T, not Token<T, "name">).
+        let type_string = if let Some(b) = graph.bindings.get(&ep.key) {
+            type_string_for_binding(b)
+        } else if graph.inherited_keys.contains(&ep.key) {
+            // Inherited: fall back to type_string_of for display.
+            type_string_of(&ep.key)
+        } else {
+            type_string_of(&ep.key)
+        };
         let factory = factory_name_for(&ep.key);
         let body = if graph.inherited_keys.contains(&ep.key) {
             format!("this.parent.{factory}()")
@@ -721,19 +840,14 @@ mod tests {
 
     #[test]
     fn factory_name_prefixes_get() {
-        let key = Key::Class {
-            module: anvil_core::ir::ModulePath::from_abs("/p/Heater.ts"),
-            name: "Heater".to_owned(),
-        };
+        let key = Key::class(anvil_core::ir::ModulePath::from_abs("/p/Heater.ts"), "Heater");
         assert_eq!(factory_name_for(&key), "getHeater");
     }
 
     #[test]
     fn factory_name_for_set_uses_set_of_prefix() {
-        let element = Key::Class {
-            module: anvil_core::ir::ModulePath::from_abs("/p/Plugin.ts"),
-            name: "Plugin".to_owned(),
-        };
+        let element =
+            Key::class(anvil_core::ir::ModulePath::from_abs("/p/Plugin.ts"), "Plugin");
         let key = Key::Set {
             element: Box::new(element),
         };

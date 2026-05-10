@@ -184,7 +184,7 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
     let mut subcomponent_factories: Vec<SubcomponentFactory> = Vec::new();
     let mut child_inherited_union: HashSet<Key> = HashSet::new();
     for ep in &input.component.entry_points {
-        let sub_match = if let Key::Class { module, name } = &ep.key {
+        let sub_match = if let Key::Class { module, name, .. } = &ep.key {
             let cr = ClassRef {
                 module: module.clone(),
                 name: name.clone(),
@@ -243,7 +243,7 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         .entry_points
         .iter()
         .filter(|ep| {
-            if let Key::Class { module, name } = &ep.key {
+            if let Key::Class { module, name, .. } = &ep.key {
                 let cr = ClassRef {
                     module: module.clone(),
                     name: name.clone(),
@@ -266,7 +266,7 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         // Subcomponent factory entry points were already processed
         // above (their child graphs built and recorded). Skip those
         // here.
-        let is_sub = if let Key::Class { module, name } = &ep.key {
+        let is_sub = if let Key::Class { module, name, .. } = &ep.key {
             let cr = ClassRef {
                 module: module.clone(),
                 name: name.clone(),
@@ -377,6 +377,7 @@ fn build_child_graph(
                 deps: vec![],
                 source: fp.source.clone(),
                 role: MultibindRole::None,
+                token_inner_type: None,
             },
         );
     }
@@ -541,6 +542,7 @@ fn aggregate_bindings(
             deps,
             source: source.clone(),
             role: MultibindRole::None,
+            token_inner_type: None,
         };
         bindings.insert(set_key, synth);
     }
@@ -853,10 +855,7 @@ mod tests {
     };
 
     fn key(name: &str) -> Key {
-        Key::Class {
-            module: ModulePath::from_abs(format!("/p/{name}.ts")),
-            name: name.to_owned(),
-        }
+        Key::class(ModulePath::from_abs(format!("/p/{name}.ts")), name)
     }
 
     fn class_ref(name: &str) -> ClassRef {
@@ -880,6 +879,7 @@ mod tests {
             deps,
             source: span(name, 0),
             role: MultibindRole::None,
+            token_inner_type: None,
         }
     }
 
@@ -895,6 +895,7 @@ mod tests {
             deps,
             source: span(module_name, 100),
             role: MultibindRole::None,
+            token_inner_type: None,
         }
     }
 
@@ -1174,6 +1175,7 @@ mod tests {
                 deps: vec![request_key.clone(), response_key.clone()],
                 source: span("RequestModule", 100),
                 role: MultibindRole::None,
+                token_inner_type: None,
             }],
             source: span("RequestModule", 0),
         };
@@ -1195,10 +1197,7 @@ mod tests {
         let mut parent = empty_component("App", vec![], Scope::Unscoped);
         parent.entry_points.push(ep_with_factory_params(
             "requestComponent",
-            Key::Class {
-                module: ModulePath::from_abs("/p/RequestComponent.ts"),
-                name: "RequestComponent".into(),
-            },
+            Key::class(ModulePath::from_abs("/p/RequestComponent.ts"), "RequestComponent"),
             vec![
                 factory_param("req", request_key.clone()),
                 factory_param("res", response_key.clone()),
@@ -1266,10 +1265,7 @@ mod tests {
         let mut parent = empty_component("App", vec![], Scope::Unscoped);
         parent.entry_points.push(ep_with_factory_params(
             "req",
-            Key::Class {
-                module: ModulePath::from_abs("/p/Req.ts"),
-                name: "Req".into(),
-            },
+            Key::class(ModulePath::from_abs("/p/Req.ts"), "Req"),
             vec![
                 factory_param("a", request_key.clone()),
                 factory_param("b", request_key),
@@ -1302,10 +1298,7 @@ mod tests {
         let mut parent = empty_component("App", vec![], Scope::Singleton);
         parent.entry_points.push(ep_with_factory_params(
             "req",
-            Key::Class {
-                module: ModulePath::from_abs("/p/Req.ts"),
-                name: "Req".into(),
-            },
+            Key::class(ModulePath::from_abs("/p/Req.ts"), "Req"),
             vec![factory_param("ctx", key("Ctx"))],
         ));
         let (_g, ds) = build_and_validate(GraphInput {
@@ -1335,6 +1328,7 @@ mod tests {
             deps: vec![],
             source: span(module_name, 100),
             role: MultibindRole::None,
+            token_inner_type: None,
         }
     }
 

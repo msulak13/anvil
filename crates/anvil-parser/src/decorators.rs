@@ -16,7 +16,8 @@ use std::collections::HashSet;
 
 use oxc_ast::ast::{
     Argument, ClassElement, Declaration, Decorator, Expression, FormalParameter,
-    MethodDefinitionKind, ObjectPropertyKind, PropertyKey, Statement, TSType, TSTypeAnnotation,
+    MethodDefinitionKind, ObjectPropertyKind, PropertyKey, Statement, TSLiteral, TSType,
+    TSTypeAnnotation,
 };
 use oxc_span::Span;
 use anvil_core::ir::{
@@ -326,10 +327,7 @@ pub fn extract(
                 .map_or((class.span, &[][..]), |(span, params)| (span, params));
             let deps = params_to_keys(params, class_name, "constructor", imports, &local_set)?;
             out.inject_classes.push(Binding {
-                key: Key::Class {
-                    module: ModulePath::same_file(),
-                    name: class_name.to_owned(),
-                },
+                key: Key::class(ModulePath::same_file(), class_name),
                 provider: Provider::InjectCtor {
                     class: class_ref.clone(),
                 },
@@ -337,6 +335,7 @@ pub fn extract(
                 deps,
                 source: to_ir_span(file_path, binding_span),
                 role: MultibindRole::None,
+                token_inner_type: None,
             });
         }
     }
@@ -498,6 +497,14 @@ fn extract_provides_method(
         type_annotation_to_key(return_ann, &context, imports, local_classes)?
     };
 
+    // M14: extract the inner type string for Token<T, "name"> bindings so
+    // codegen can emit the correct TS type annotation and cast.
+    let token_inner_type = if matches!(key, Key::Token { .. }) {
+        extract_token_inner_type(return_ann)
+    } else {
+        None
+    };
+
     let deps = params_to_keys(
         &m.value.params.items,
         &module_class.name,
@@ -516,6 +523,7 @@ fn extract_provides_method(
         deps,
         source: to_ir_span(file_path, m.span),
         role,
+        token_inner_type,
     })
 }
 
@@ -619,6 +627,7 @@ fn extract_binds_method(
         deps: vec![target],
         source: to_ir_span(file_path, m.span),
         role: MultibindRole::None,
+        token_inner_type: None,
     })
 }
 
@@ -834,9 +843,9 @@ fn type_annotation_to_key(
         });
     };
     let name = id.name.as_str();
-    // M9: special-case `Set<T>` as the multibinding aggregate key. The element
-    // type is recursively parsed.
+
     if let Some(args) = tref.type_arguments.as_deref() {
+        // M9: special-case `Set<T>` as the multibinding aggregate key.
         if name == "Set" && args.params.len() == 1 {
             let inner = args.params.first().expect("len 1");
             let element = ts_type_to_key(inner, context, imports, local_classes, ann.span)?;
@@ -844,16 +853,52 @@ fn type_annotation_to_key(
                 element: Box::new(element),
             });
         }
-        return Err(ExtractError::UnsupportedType {
-            context: context.to_owned(),
-            span: ann.span,
-        });
+
+        // M14: `Token<T, "name">` → Key::Token { name }.
+        // Check Token BEFORE doing resolve_name_to_key to allow a user-defined class
+        // named "Token" that happens not to come from @msulak/anvil to pass through as
+        // a generic Key::Class. We only apply the Token logic when the specifier resolves
+        // to @msulak/anvil.
+        if name == "Token" && args.params.len() >= 2 {
+            // Confirm it's from @msulak/anvil by checking the import map.
+            let is_anvil_token = if let Some(ImportSource { specifier, .. }) = imports.get(name) {
+                specifier.contains("@msulak/anvil")
+            } else {
+                false
+            };
+            if is_anvil_token {
+                if let TSType::TSLiteralType(lit) = &args.params[1] {
+                    if let TSLiteral::StringLiteral(s) = &lit.literal {
+                        let token_name = s.value.as_str().to_owned();
+                        return Ok(Key::Token { name: token_name });
+                    }
+                }
+            }
+        }
+
+        // M15: generic class types → Key::Class with type_args.
+        let base_key = resolve_name_to_key(name, imports, local_classes);
+        let type_args: Option<Vec<Key>> = args
+            .params
+            .iter()
+            .map(|p| ts_type_to_key(p, context, imports, local_classes, ann.span).ok())
+            .collect();
+        if let (Some(type_args), Key::Class { name: cls_name, module, .. }) =
+            (type_args, base_key.clone())
+        {
+            return Ok(Key::Class {
+                name: cls_name,
+                module,
+                type_args,
+            });
+        }
+        return Ok(base_key);
     }
     Ok(resolve_name_to_key(name, imports, local_classes))
 }
 
-/// Lower a bare `TSType` (the element of `Set<T>`) into a [`Key`]. Mirrors
-/// [`type_annotation_to_key`] but operates on the inner type-parameter slot
+/// Lower a bare `TSType` (the element of `Set<T>` or a generic type arg) into a [`Key`].
+/// Mirrors [`type_annotation_to_key`] but operates on the inner type-parameter slot
 /// where there is no surrounding [`TSTypeAnnotation`].
 fn ts_type_to_key(
     ty: &TSType<'_>,
@@ -883,12 +928,92 @@ fn ts_type_to_key(
                 element: Box::new(element),
             });
         }
-        return Err(ExtractError::UnsupportedType {
-            context: context.to_owned(),
-            span: fallback_span,
-        });
+        // M14: Token<T, "name"> inside a type arg position.
+        if name == "Token" && args.params.len() >= 2 {
+            let is_anvil_token = if let Some(ImportSource { specifier, .. }) = imports.get(name) {
+                specifier.contains("@msulak/anvil")
+            } else {
+                false
+            };
+            if is_anvil_token {
+                if let TSType::TSLiteralType(lit) = &args.params[1] {
+                    if let TSLiteral::StringLiteral(s) = &lit.literal {
+                        let token_name = s.value.as_str().to_owned();
+                        return Ok(Key::Token { name: token_name });
+                    }
+                }
+            }
+        }
+        // M15: generic class type args.
+        let base_key = resolve_name_to_key(name, imports, local_classes);
+        let type_args: Option<Vec<Key>> = args
+            .params
+            .iter()
+            .map(|p| ts_type_to_key(p, context, imports, local_classes, fallback_span).ok())
+            .collect();
+        if let (Some(type_args), Key::Class { name: cls_name, module, .. }) =
+            (type_args, base_key.clone())
+        {
+            return Ok(Key::Class {
+                name: cls_name,
+                module,
+                type_args,
+            });
+        }
+        return Ok(base_key);
     }
     Ok(resolve_name_to_key(name, imports, local_classes))
+}
+
+/// Syntactically convert a `TSType` to its string representation (no type checker).
+/// Returns `None` for types that can't be represented as a simple string.
+fn ts_type_to_string(ty: &TSType<'_>) -> Option<String> {
+    match ty {
+        TSType::TSTypeReference(r) => {
+            let name = match &r.type_name {
+                oxc_ast::ast::TSTypeName::IdentifierReference(id) => {
+                    id.name.as_str().to_owned()
+                }
+                _ => return None,
+            };
+            if let Some(args) = r.type_arguments.as_deref() {
+                let arg_strs: Vec<String> = args
+                    .params
+                    .iter()
+                    .filter_map(|p| ts_type_to_string(p))
+                    .collect();
+                if arg_strs.len() == args.params.len() {
+                    return Some(format!("{}<{}>", name, arg_strs.join(", ")));
+                }
+            }
+            Some(name)
+        }
+        TSType::TSStringKeyword(_) => Some("string".into()),
+        TSType::TSNumberKeyword(_) => Some("number".into()),
+        TSType::TSBooleanKeyword(_) => Some("boolean".into()),
+        TSType::TSAnyKeyword(_) => Some("any".into()),
+        _ => None,
+    }
+}
+
+/// Extract the inner type string for a `Token<T, "name">` annotation.
+/// Returns `Some("T")` for `Token<Database, "primary-db">`, `None` otherwise.
+fn extract_token_inner_type(ann: &TSTypeAnnotation<'_>) -> Option<String> {
+    let TSType::TSTypeReference(r) = &ann.type_annotation else {
+        return None;
+    };
+    let name = match &r.type_name {
+        oxc_ast::ast::TSTypeName::IdentifierReference(id) => id.name.as_str(),
+        _ => return None,
+    };
+    if name != "Token" {
+        return None;
+    }
+    let args = r.type_arguments.as_deref()?;
+    if args.params.is_empty() {
+        return None;
+    }
+    ts_type_to_string(&args.params[0])
 }
 
 /// Look up a referenced identifier in the import map, falling back to the
@@ -904,20 +1029,14 @@ fn resolve_name_to_key(name: &str, imports: &ImportMap, local_classes: &HashSet<
         exported_name,
     }) = imports.get(name)
     {
-        return Key::Class {
-            module: ModulePath::from_specifier(specifier.clone()),
-            name: exported_name.clone(),
-        };
+        return Key::class(ModulePath::from_specifier(specifier.clone()), exported_name.clone());
     }
     // Both locally declared and unknown identifiers map to the SAME_FILE
     // sentinel; M2's resolver normalizes them to absolute paths and M3's
     // graph builder reports any truly dangling reference as a
     // `MissingBinding` diagnostic.
     let _ = local_classes;
-    Key::Class {
-        module: ModulePath::same_file(),
-        name: name.to_owned(),
-    }
+    Key::class(ModulePath::same_file(), name)
 }
 
 fn property_key_name<'a>(key: &'a PropertyKey<'a>) -> Option<&'a str> {
@@ -991,11 +1110,12 @@ fn parse_component_modules(
                 Key::Class {
                     module,
                     name: exported,
+                    ..
                 } => modules.push(ClassRef {
                     module,
                     name: exported,
                 }),
-                Key::Set { .. } => {
+                Key::Set { .. } | Key::Token { .. } => {
                     return Err(ExtractError::ComponentBadModules {
                         kind,
                         class: class_name.to_owned(),
