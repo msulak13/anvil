@@ -6,6 +6,7 @@
 
 use insta::assert_debug_snapshot;
 use anvil_parser::parse_source;
+use anvil_parser::{decorators::ExtractError, ParseError};
 
 #[test]
 fn module_with_provides() {
@@ -480,4 +481,29 @@ fn generic_inject_param_uses_key_with_type_args() {
     "#;
     let parsed = parse_source(src, "user-service.ts").unwrap();
     assert_debug_snapshot!(parsed);
+}
+
+#[test]
+fn token_non_literal_name_is_rejected() {
+    // Bug 1 fix: Token<T, MY_CONST> (non-literal second arg) must error rather than
+    // silently producing Key::Class { name: "Token", type_args: [...] }.
+    let src = r#"
+        import { Module, Provides } from "@msulak/anvil";
+        import type { Token } from "@msulak/anvil";
+        import { Database } from "./database";
+        const MY_TOKEN = "primary-db";
+
+        @Module
+        export class DbModule {
+            @Provides
+            static db(): Token<Database, typeof MY_TOKEN> {
+                return null as any;
+            }
+        }
+    "#;
+    let err = parse_source(src, "db-module.ts").unwrap_err();
+    assert!(
+        matches!(err, ParseError::Extract(ExtractError::TokenNonLiteralName { .. })),
+        "expected TokenNonLiteralName, got: {err:?}",
+    );
 }

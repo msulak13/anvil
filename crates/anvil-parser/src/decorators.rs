@@ -179,6 +179,22 @@ pub enum ExtractError {
         /// Source span of the offending constructor.
         span: Span,
     },
+    /// `Token<T, "name">` was written with a non-string-literal second type argument.
+    ///
+    /// The codegen requires a statically-known name (a string literal) to mint the
+    /// `Key::Token`. A const reference like `Token<Database, MY_TOKEN>` can't be
+    /// resolved without a type checker, so it's rejected here.
+    #[error(
+        "`Token<T, Name>` in '{context}' requires a string literal for Name, \
+         e.g. `Token<Database, \"primary-db\">`. Non-literal names (const references, \
+         computed types) are not supported."
+    )]
+    TokenNonLiteralName {
+        /// Where the annotation appeared.
+        context: String,
+        /// Source span.
+        span: Span,
+    },
     /// `@IntoSet` was placed on something other than a `@Provides` method
     /// (in v0.1, e.g. a `@Binds` method or a method with no provider decorator).
     #[error("@IntoSet on '{module}.{method}' is only supported on @Provides methods in v0.1")]
@@ -873,6 +889,12 @@ fn type_annotation_to_key(
                         return Ok(Key::Token { name: token_name });
                     }
                 }
+                // Second arg is present but not a string literal — reject rather than
+                // silently producing Key::Class { name: "Token", .. }.
+                return Err(ExtractError::TokenNonLiteralName {
+                    context: context.to_owned(),
+                    span: ann.span,
+                });
             }
         }
 
@@ -942,6 +964,10 @@ fn ts_type_to_key(
                         return Ok(Key::Token { name: token_name });
                     }
                 }
+                return Err(ExtractError::TokenNonLiteralName {
+                    context: context.to_owned(),
+                    span: fallback_span,
+                });
             }
         }
         // M15: generic class type args.
