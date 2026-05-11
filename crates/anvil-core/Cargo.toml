@@ -14,8 +14,7 @@ workspace = true
 petgraph.workspace = true
 miette.workspace = true
 thiserror.workspace = true
-serde = { workspace = true, optional = true }
+serde.workspace = true
 
 [features]
 default = []
-serde = ["dep:serde"]

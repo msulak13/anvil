@@ -29,6 +29,7 @@ fn for_each_key<'a>(parsed: &'a ParsedFile, mut f: impl FnMut(&'a ModulePath)) {
     fn visit_key<'a>(k: &'a Key, f: &mut impl FnMut(&'a ModulePath)) {
         match k {
             Key::Class { module, .. } => f(module),
+            Key::Token { .. } => {} // token names are string literals, no module path
             Key::Set { element } => visit_key(element, f),
         }
     }
@@ -152,15 +153,15 @@ fn relative_imports_are_resolved_to_absolute_paths() {
         .find(|(p, _)| p.ends_with("heater.ts"))
         .unwrap();
     let pump_dep = match &pump.inject_classes[0].deps[0] {
-        Key::Class { module, name } => {
+        Key::Class { module, name , ..} => {
             assert_eq!(name, "Heater");
             module.abs.clone()
         }
-        Key::Set { .. } => panic!("expected Key::Class"),
+        Key::Set { .. } | Key::Token { .. } => panic!("expected Key::Class"),
     };
     let heater_self = match &heater.1.inject_classes[0].key {
         Key::Class { module, .. } => module.abs.clone(),
-        Key::Set { .. } => panic!("expected Key::Class"),
+        Key::Set { .. } | Key::Token { .. } => panic!("expected Key::Class"),
     };
     assert_eq!(pump_dep, heater_self);
     assert!(Path::new(&pump_dep).ends_with("heater.ts"));
@@ -258,11 +259,11 @@ fn barrel_reexport_resolves_to_real_file() {
         .unwrap()
         .1;
     let dep = match &pump.inject_classes[0].deps[0] {
-        Key::Class { module, name } => {
+        Key::Class { module, name , ..} => {
             assert_eq!(name, "Heater");
             module.abs.clone()
         }
-        Key::Set { .. } => panic!("expected Key::Class"),
+        Key::Set { .. } | Key::Token { .. } => panic!("expected Key::Class"),
     };
     assert!(
         dep.ends_with("index.ts"),
@@ -315,7 +316,7 @@ fn node_modules_imports_resolve_but_are_not_walked() {
     assert_all_keys_absolute(pump);
     let dep = match &pump.inject_classes[0].deps[0] {
         Key::Class { module, .. } => (module.abs.clone(), module.original.clone()),
-        Key::Set { .. } => panic!("expected Key::Class"),
+        Key::Set { .. } | Key::Token { .. } => panic!("expected Key::Class"),
     };
     assert!(
         dep.0.contains("node_modules") && dep.0.contains("some-lib"),

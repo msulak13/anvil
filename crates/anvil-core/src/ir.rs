@@ -17,6 +17,7 @@
 /// not in the import map), the parser uses [`ModulePath::SAME_FILE`] as a
 /// sentinel; M2 resolves these against the file's actual path.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub enum Key {
     /// An imported (or locally declared) class, identified by its module
     /// and exported name.
@@ -76,6 +77,7 @@ impl Key {
 /// The struct is **not** a tuple anymore. Construction goes through the
 /// named-field syntax or the convenience constructors below.
 #[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct ModulePath {
     /// Absolute, canonical filesystem path (M2+) or the [`Self::SAME_FILE`]
     /// sentinel (M1, pre-resolution).
@@ -156,6 +158,7 @@ impl std::hash::Hash for ModulePath {
 /// parser converts `oxc_span::Span` into `SourceSpan` at extraction time
 /// (M1+); M3 validation propagates these into diagnostics.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct SourceSpan {
     /// Source file path. M2 onward this is absolute and canonical.
     pub path: String,
@@ -191,6 +194,7 @@ impl SourceSpan {
 
 /// The lifetime/scope of a [`Binding`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub enum Scope {
     /// A new instance per request.
     Unscoped,
@@ -200,6 +204,7 @@ pub enum Scope {
 
 /// A reference to a class declaration in source.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct ClassRef {
     /// Module specifier (M1) or absolute path (M2+) of the file containing
     /// the class.
@@ -210,6 +215,7 @@ pub struct ClassRef {
 
 /// How an instance for a [`Key`] is produced.
 #[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub enum Provider {
     /// Constructor injection on a class annotated with `@Inject`.
     InjectCtor {
@@ -272,6 +278,7 @@ pub enum Provider {
 
 /// One `@IntoSet @Provides` contribution to a [`Provider::SetMultibinding`].
 #[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct SetContributor {
     /// The owning `@Module` class (the contribution is always a `static`
     /// method on a `@Module` for v0.1).
@@ -290,6 +297,7 @@ pub struct SetContributor {
 /// every binding with a non-`None` role into a single synthesized binding
 /// (with provider [`Provider::SetMultibinding`]) whose own role is `None`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub enum MultibindRole {
     /// Regular (non-multibinding) binding.
     #[default]
@@ -300,6 +308,7 @@ pub enum MultibindRole {
 
 /// A single binding in the dependency graph.
 #[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Binding {
     /// The key this binding satisfies.
     pub key: Key,
@@ -325,6 +334,7 @@ pub struct Binding {
 
 /// A `@Module` declaration: a class hosting `@Provides` factory methods.
 #[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct ModuleDecl {
     /// The module class itself.
     pub class: ClassRef,
@@ -344,6 +354,7 @@ pub struct ModuleDecl {
 /// constructor. The graph layer materializes those as
 /// [`Provider::FactoryParam`] bindings inside the child's binding map.
 #[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct EntryPoint {
     /// The method name as written in the abstract component class.
     pub name: String,
@@ -367,6 +378,7 @@ pub struct EntryPoint {
 /// that as a constructor argument plus a private field on the child
 /// dagger.
 #[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct FactoryParam {
     /// The parameter identifier (used as the field name on the dagger).
     pub name: String,
@@ -378,6 +390,7 @@ pub struct FactoryParam {
 
 /// A `@Component` declaration: the root of an object graph.
 #[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct ComponentDecl {
     /// The abstract component class.
     pub class: ClassRef,
@@ -401,6 +414,7 @@ pub struct ComponentDecl {
 /// parent dagger is held as a constructor-injected back-reference so
 /// inherited bindings route through the parent's factories.
 #[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct SubcomponentDecl {
     /// The abstract subcomponent class.
     pub class: ClassRef,
@@ -418,7 +432,7 @@ pub struct SubcomponentDecl {
 ///
 /// Produced by `anvil-parser::parse_file`. Aggregated across files by the
 /// CLI before being handed to `anvil-core`'s graph builder.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ParsedFile {
     /// Source path of this file (informational; carried through to diagnostics).
     pub path: String,

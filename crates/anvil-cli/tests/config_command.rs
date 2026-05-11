@@ -131,3 +131,23 @@ fn discovers_anvil_config_from_cwd() {
         .success()
         .stdout(contains("ok"));
 }
+
+#[test]
+fn plugin_load_failure_surfaces_error() {
+    let tmp = TempDir::new().unwrap();
+    let root = write_project(&tmp, COFFEE_SRC);
+    write_anvil_stub(&root);
+    std::fs::write(
+        root.join("anvil.config.json"),
+        r#"{ "entries": ["src/*.ts"], "plugins": ["does-not-exist.wasm"] }"#,
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("anvil").unwrap();
+    cmd.current_dir(&root).arg("check");
+
+    let assert = cmd.assert();
+    assert
+        .failure()
+        .stderr(contains("Failed to initialize plugin does-not-exist.wasm"));
+}

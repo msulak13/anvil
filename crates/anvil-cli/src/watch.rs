@@ -32,6 +32,8 @@ pub(crate) struct Plan {
     pub entries: Vec<PathBuf>,
     /// Optional `tsconfig.json` for the resolver.
     pub tsconfig: Option<PathBuf>,
+    /// Optional plugins
+    pub plugins: Vec<String>,
     /// Directory the watcher recursively observes.
     pub watch_root: PathBuf,
 }
@@ -52,7 +54,7 @@ pub(crate) fn run(plan: &Plan) -> notify::Result<()> {
     eprintln!("anvil: watching {}", plan.watch_root.display());
     // Initial pass: build everything and learn the closures.
     for entry in &plan.entries {
-        match rebuild_one(entry, plan.tsconfig.clone()) {
+        match rebuild_one(entry, plan.tsconfig.clone(), &plan.plugins) {
             Ok(closure) => {
                 closures.insert(entry.clone(), closure);
             }
@@ -126,7 +128,7 @@ pub(crate) fn run(plan: &Plan) -> notify::Result<()> {
         }
 
         for entry in &to_rebuild {
-            match rebuild_one(entry, plan.tsconfig.clone()) {
+            match rebuild_one(entry, plan.tsconfig.clone(), &plan.plugins) {
                 Ok(new_closure) => {
                     closures.insert(entry.clone(), new_closure);
                 }
@@ -171,9 +173,9 @@ fn is_source_ts(p: &Path) -> bool {
 
 /// Re-run validate + emit for a single entry. Returns the entry's
 /// (recomputed) source-file closure on success.
-fn rebuild_one(entry: &Path, tsconfig: Option<PathBuf>) -> Result<HashSet<PathBuf>, String> {
+fn rebuild_one(entry: &Path, tsconfig: Option<PathBuf>, plugins: &[String]) -> Result<HashSet<PathBuf>, String> {
     let started = Instant::now();
-    let ir = load_project(entry, tsconfig).map_err(stringify_check_error)?;
+    let ir = load_project(entry, tsconfig, plugins).map_err(stringify_check_error)?;
 
     let mut all_diagnostics: Vec<Diagnostic> = Vec::new();
     for c in &ir.components {

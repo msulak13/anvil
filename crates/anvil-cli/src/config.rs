@@ -35,6 +35,8 @@ pub struct Config {
     /// relative to `root_dir` (or the config's directory when
     /// `root_dir` is unset).
     pub entries: Vec<String>,
+    /// Optional plugins to load (WASM or script).
+    pub plugins: Vec<String>,
     /// Optional `tsconfig.json` path used by the resolver to honor
     /// `paths` / `baseUrl`.
     pub tsconfig: Option<PathBuf>,
@@ -58,6 +60,7 @@ pub struct Config {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RawConfig {
     entries: Option<Vec<String>>,
+    plugins: Option<Vec<String>>,
     tsconfig: Option<String>,
     output_suffix: Option<String>,
     root_dir: Option<String>,
@@ -166,6 +169,7 @@ impl Config {
                 source.display()
             ));
         }
+        let plugins = raw.plugins.unwrap_or_default();
         let tsconfig = raw
             .tsconfig
             .map(|t| dir.join(t))
@@ -177,6 +181,7 @@ impl Config {
             .map_or_else(|| dir.clone(), |p| std::fs::canonicalize(&p).unwrap_or(p));
         Ok(Self {
             entries,
+            plugins,
             tsconfig,
             output_suffix,
             root_dir,
@@ -204,7 +209,7 @@ mod tests {
         write(&root.join("src/coffee.ts"), "// component");
         write(
             &root.join("anvil.config.json"),
-            r#"{ "entries": ["src/*.ts"], "rootDir": "." }"#,
+            r#"{ "entries": ["src/*.ts"], "rootDir": ".", "plugins": ["my-plugin.wasm"] }"#,
         );
 
         let cfg = Config::load(&root.join("anvil.config.json")).unwrap();
@@ -212,6 +217,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert!(entries[0].ends_with("coffee.ts"));
         assert_eq!(cfg.output_suffix, ".anvil.ts");
+        assert_eq!(cfg.plugins, vec!["my-plugin.wasm"]);
     }
 
     #[test]

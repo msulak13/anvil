@@ -21,6 +21,7 @@
 mod config;
 mod diagnostics;
 mod explain;
+mod plugin;
 mod watch;
 
 use std::path::{Path, PathBuf};
@@ -113,9 +114,10 @@ fn main() -> ExitCode {
         }
         Some(Command::Check(args)) => run_with_exit(|| {
             let entries = resolve_entries(&args.project)?;
+            let plugins = plugins_for(&args.project);
             let mut totals = (0usize, 0usize);
             for entry in &entries {
-                let summary = run_check(entry.as_path(), tsconfig_for(&args.project))?;
+                let summary = run_check(entry.as_path(), tsconfig_for(&args.project), &plugins)?;
                 totals.0 += summary.components;
                 totals.1 += summary.bindings;
             }
@@ -131,9 +133,10 @@ fn main() -> ExitCode {
         }),
         Some(Command::Build(args)) => run_with_exit(|| {
             let entries = resolve_entries(&args.project)?;
+            let plugins = plugins_for(&args.project);
             let mut total_components = 0usize;
             for entry in &entries {
-                let summary = run_build(entry.as_path(), tsconfig_for(&args.project))?;
+                let summary = run_build(entry.as_path(), tsconfig_for(&args.project), &plugins)?;
                 total_components += summary.components;
             }
             if entries.len() > 1 {
@@ -158,16 +161,19 @@ fn main() -> ExitCode {
                     )))
                 }
             };
-            let ir = load_project(entry.as_path(), tsconfig_for(&args.project))?;
+            let plugins = plugins_for(&args.project);
+            let ir = load_project(entry.as_path(), tsconfig_for(&args.project), &plugins)?;
             explain::run(&args.key, &ir)?;
             Ok(())
         }),
         Some(Command::Watch(args)) => run_with_exit(|| {
             let entries = resolve_entries(&args.project)?;
+            let plugins = plugins_for(&args.project);
             let watch_root = watch_root_for(&args.project, &entries)?;
             watch::run(&watch::Plan {
                 entries,
                 tsconfig: tsconfig_for(&args.project),
+                plugins,
                 watch_root,
             })
             .map_err(|e| CheckError::Other(anyhow::Error::from(e)))?;
@@ -281,19 +287,54 @@ pub(crate) struct ProjectIr {
     pub(crate) files: Vec<PathBuf>,
 }
 
+fn plugins_for(args: &ProjectArgs) -> Vec<String> {
+    if let Some(cfg_path) = &args.config {
+        if let Ok(cfg) = Config::load(cfg_path) {
+            return cfg.plugins;
+        }
+    }
+    if args.entry.is_none() {
+        if let Ok(cwd) = std::env::current_dir() {
+            if let Ok(Some(cfg)) = Config::discover(&cwd) {
+                return cfg.plugins;
+            }
+        }
+    }
+    Vec::new()
+}
+
 pub(crate) fn load_project(
     entry: &Path,
     tsconfig: Option<PathBuf>,
+    plugins: &[String],
 ) -> Result<ProjectIr, CheckError> {
     let resolver = ProjectResolver::new(tsconfig);
-    let project: ProjectGraph =
+    let mut project: ProjectGraph =
         ProjectGraph::build_from_entry(entry, &resolver).map_err(anyhow::Error::from)?;
+
+    // Load plugins
+    let mut loaded_plugins = Vec::new();
+    for p in plugins {
+        let runner = plugin::PluginRunner::load(p).map_err(anyhow::Error::from)?;
+        loaded_plugins.push(runner);
+    }
 
     let mut modules: Vec<ModuleDecl> = Vec::new();
     let mut components: Vec<ComponentDecl> = Vec::new();
     let mut subcomponents: Vec<SubcomponentDecl> = Vec::new();
     let mut inject_classes: Vec<Binding> = Vec::new();
-    for parsed in project.files.values() {
+
+    for parsed in project.files.values_mut() {
+        for plugin in &mut loaded_plugins {
+            match plugin.apply(parsed) {
+                Ok(new_bindings) => {
+                    parsed.inject_classes.extend(new_bindings);
+                }
+                Err(e) => {
+                    eprintln!("Plugin error: {e}");
+                }
+            }
+        }
         modules.extend(parsed.modules.iter().cloned());
         components.extend(parsed.components.iter().cloned());
         subcomponents.extend(parsed.subcomponents.iter().cloned());
@@ -309,8 +350,8 @@ pub(crate) fn load_project(
     })
 }
 
-fn run_check(entry: &Path, tsconfig: Option<PathBuf>) -> Result<CheckSummary, CheckError> {
-    let ir = load_project(entry, tsconfig)?;
+fn run_check(entry: &Path, tsconfig: Option<PathBuf>, plugins: &[String]) -> Result<CheckSummary, CheckError> {
+    let ir = load_project(entry, tsconfig, plugins)?;
 
     let mut all_diagnostics: Vec<Diagnostic> = Vec::new();
     let mut graphs: Vec<DependencyGraph> = Vec::new();
@@ -348,8 +389,8 @@ fn run_check(entry: &Path, tsconfig: Option<PathBuf>) -> Result<CheckSummary, Ch
 ///
 /// Output is co-located with the component's source: a component at
 /// `src/coffee/coffee-component.ts` becomes `src/coffee/coffee-component.anvil.ts`.
-fn run_build(entry: &Path, tsconfig: Option<PathBuf>) -> Result<BuildSummary, CheckError> {
-    let ir = load_project(entry, tsconfig)?;
+fn run_build(entry: &Path, tsconfig: Option<PathBuf>, plugins: &[String]) -> Result<BuildSummary, CheckError> {
+    let ir = load_project(entry, tsconfig, plugins)?;
 
     // Validate everything first; refuse to write any file if any component
     // produced diagnostics.
