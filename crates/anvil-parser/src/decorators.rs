@@ -929,6 +929,18 @@ fn ts_type_to_key(
     local_classes: &HashSet<&str>,
     fallback_span: Span,
 ) -> Result<Key> {
+    // Primitive keyword types are represented as synthetic `Key::Class` entries
+    // with a well-known sentinel module so they participate in type_args equality
+    // correctly: `Repository<string>` ≠ `Repository<number>`.
+    let primitive_name = match ty {
+        TSType::TSStringKeyword(_) => Some("string"),
+        TSType::TSNumberKeyword(_) => Some("number"),
+        TSType::TSBooleanKeyword(_) => Some("boolean"),
+        _ => None,
+    };
+    if let Some(prim) = primitive_name {
+        return Ok(Key::class(ModulePath::from_abs("<builtin>"), prim));
+    }
     let TSType::TSTypeReference(tref) = ty else {
         return Err(ExtractError::UnsupportedType {
             context: context.to_owned(),

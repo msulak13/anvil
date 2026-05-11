@@ -484,6 +484,33 @@ fn generic_inject_param_uses_key_with_type_args() {
 }
 
 #[test]
+fn generic_with_primitive_type_arg_produces_distinct_keys() {
+    // Bug 2 fix: Repository<string> and Repository<number> must produce
+    // *different* keys. Previously ts_type_to_key returned Err for keyword
+    // types, .ok() swallowed it, and both collapsed to Key::Class { type_args: [] }.
+    let src = r#"
+        import { Inject } from "@msulak/anvil";
+        import { Repository } from "./repository";
+
+        @Inject
+        export class DataService {
+            constructor(
+                private names: Repository<string>,
+                private counts: Repository<number>,
+            ) {}
+        }
+    "#;
+    let parsed = parse_source(src, "data-service.ts").unwrap();
+    // The two deps must have different keys.
+    let inject = parsed.inject_classes.first().unwrap();
+    assert_eq!(inject.deps.len(), 2);
+    assert_ne!(
+        inject.deps[0], inject.deps[1],
+        "Repository<string> and Repository<number> must be distinct keys",
+    );
+}
+
+#[test]
 fn token_non_literal_name_is_rejected() {
     // Bug 1 fix: Token<T, MY_CONST> (non-literal second arg) must error rather than
     // silently producing Key::Class { name: "Token", type_args: [...] }.
