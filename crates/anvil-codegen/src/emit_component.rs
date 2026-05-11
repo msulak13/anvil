@@ -121,8 +121,12 @@ fn key_module(key: &Key) -> &str {
 /// callers that need the actual inner type should use `type_string_for_binding`.
 fn type_string_of(key: &Key) -> String {
     match key {
-        Key::Class { name, type_args, .. } if type_args.is_empty() => name.clone(),
-        Key::Class { name, type_args, .. } => {
+        Key::Class {
+            name, type_args, ..
+        } if type_args.is_empty() => name.clone(),
+        Key::Class {
+            name, type_args, ..
+        } => {
             let args: Vec<String> = type_args.iter().map(type_string_of).collect();
             format!("{}<{}>", name, args.join(", "))
         }
@@ -147,8 +151,12 @@ fn type_string_for_binding(b: &Binding) -> String {
 /// `Token("primary-db")` → `getPrimaryDb`.
 fn factory_name_for(key: &Key) -> String {
     match key {
-        Key::Class { name, type_args, .. } if type_args.is_empty() => format!("get{name}"),
-        Key::Class { name, type_args, .. } => {
+        Key::Class {
+            name, type_args, ..
+        } if type_args.is_empty() => format!("get{name}"),
+        Key::Class {
+            name, type_args, ..
+        } => {
             format!("get{}Of{}", name, type_args_label(type_args))
         }
         Key::Token { name } => format!("get{}", token_pascal_case(name)),
@@ -159,8 +167,12 @@ fn factory_name_for(key: &Key) -> String {
 /// `Heater` → `_heater`. `Set<Plugin>` → `_setOfPlugin`.
 fn cache_field_for(key: &Key) -> String {
     match key {
-        Key::Class { name, type_args, .. } if type_args.is_empty() => cache_field_name(name),
-        Key::Class { name, type_args, .. } => {
+        Key::Class {
+            name, type_args, ..
+        } if type_args.is_empty() => cache_field_name(name),
+        Key::Class {
+            name, type_args, ..
+        } => {
             format!("_{}Of{}", lower_first(name), type_args_label(type_args))
         }
         Key::Token { name } => format!("_{}", lower_first(&token_pascal_case(name))),
@@ -173,8 +185,12 @@ fn cache_field_for(key: &Key) -> String {
 /// `Token("primary-db")` → `PrimaryDb`.
 fn element_label(key: &Key) -> String {
     match key {
-        Key::Class { name, type_args, .. } if type_args.is_empty() => name.clone(),
-        Key::Class { name, type_args, .. } => {
+        Key::Class {
+            name, type_args, ..
+        } if type_args.is_empty() => name.clone(),
+        Key::Class {
+            name, type_args, ..
+        } => {
             format!("{}Of{}", name, type_args_label(type_args))
         }
         Key::Token { name } => token_pascal_case(name),
@@ -191,7 +207,7 @@ fn type_args_label(args: &[Key]) -> String {
         .join("And")
 }
 
-/// Convert a token name like `"primary-db"` to PascalCase `"PrimaryDb"`.
+/// Convert a token name like `"primary-db"` to `PascalCase` `"PrimaryDb"`.
 fn token_pascal_case(name: &str) -> String {
     name.split('-')
         .map(|w| {
@@ -281,7 +297,11 @@ fn populate_imports(
         // Key::Token has no class to import — the inner type is handled via
         // token_inner_type and its deps.
         match &b.key {
-            Key::Class { module, name, type_args } => {
+            Key::Class {
+                module,
+                name,
+                type_args,
+            } => {
                 add_classref_import(
                     imports,
                     out_dir,
@@ -350,7 +370,11 @@ fn add_classref_import(imports: &mut ImportMap, out_dir: &Path, cref: &ClassRef)
 fn import_key_args(imports: &mut ImportMap, out_dir: &Path, args: &[Key]) {
     for arg in args {
         match arg {
-            Key::Class { module, name, type_args } => {
+            Key::Class {
+                module,
+                name,
+                type_args,
+            } => {
                 add_classref_import(
                     imports,
                     out_dir,
@@ -840,14 +864,19 @@ mod tests {
 
     #[test]
     fn factory_name_prefixes_get() {
-        let key = Key::class(anvil_core::ir::ModulePath::from_abs("/p/Heater.ts"), "Heater");
+        let key = Key::class(
+            anvil_core::ir::ModulePath::from_abs("/p/Heater.ts"),
+            "Heater",
+        );
         assert_eq!(factory_name_for(&key), "getHeater");
     }
 
     #[test]
     fn factory_name_for_set_uses_set_of_prefix() {
-        let element =
-            Key::class(anvil_core::ir::ModulePath::from_abs("/p/Plugin.ts"), "Plugin");
+        let element = Key::class(
+            anvil_core::ir::ModulePath::from_abs("/p/Plugin.ts"),
+            "Plugin",
+        );
         let key = Key::Set {
             element: Box::new(element),
         };

@@ -27,12 +27,12 @@ mod watch;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
 use anvil_codegen::emit_component;
 use anvil_core::graph::{build_and_validate, DependencyGraph, GraphInput};
 use anvil_core::ir::{Binding, ComponentDecl, ModuleDecl, SubcomponentDecl};
 use anvil_core::validate::Diagnostic;
 use anvil_parser::symbols::{ProjectGraph, ProjectResolver};
+use clap::{Parser, Subcommand};
 
 use crate::config::Config;
 
@@ -315,7 +315,7 @@ pub(crate) fn load_project(
     // Load plugins
     let mut loaded_plugins = Vec::new();
     for p in plugins {
-        let runner = plugin::PluginRunner::load(p).map_err(anyhow::Error::from)?;
+        let runner = plugin::PluginRunner::load(p)?;
         loaded_plugins.push(runner);
     }
 
@@ -350,7 +350,11 @@ pub(crate) fn load_project(
     })
 }
 
-fn run_check(entry: &Path, tsconfig: Option<PathBuf>, plugins: &[String]) -> Result<CheckSummary, CheckError> {
+fn run_check(
+    entry: &Path,
+    tsconfig: Option<PathBuf>,
+    plugins: &[String],
+) -> Result<CheckSummary, CheckError> {
     let ir = load_project(entry, tsconfig, plugins)?;
 
     let mut all_diagnostics: Vec<Diagnostic> = Vec::new();
@@ -389,7 +393,11 @@ fn run_check(entry: &Path, tsconfig: Option<PathBuf>, plugins: &[String]) -> Res
 ///
 /// Output is co-located with the component's source: a component at
 /// `src/coffee/coffee-component.ts` becomes `src/coffee/coffee-component.anvil.ts`.
-fn run_build(entry: &Path, tsconfig: Option<PathBuf>, plugins: &[String]) -> Result<BuildSummary, CheckError> {
+fn run_build(
+    entry: &Path,
+    tsconfig: Option<PathBuf>,
+    plugins: &[String],
+) -> Result<BuildSummary, CheckError> {
     let ir = load_project(entry, tsconfig, plugins)?;
 
     // Validate everything first; refuse to write any file if any component

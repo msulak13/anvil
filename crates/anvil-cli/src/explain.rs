@@ -65,8 +65,12 @@ fn collect_bindings(ir: &ProjectIr) -> HashMap<Key, Binding> {
 
 fn key_name_of(k: &Key) -> String {
     match k {
-        Key::Class { name, type_args, .. } if type_args.is_empty() => name.clone(),
-        Key::Class { name, type_args, .. } => {
+        Key::Class {
+            name, type_args, ..
+        } if type_args.is_empty() => name.clone(),
+        Key::Class {
+            name, type_args, ..
+        } => {
             let args: Vec<String> = type_args.iter().map(key_name_of).collect();
             format!("{}<{}>", name, args.join(", "))
         }

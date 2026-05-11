@@ -8,11 +8,11 @@
 
 use std::path::PathBuf;
 
-use tempfile::TempDir;
 use anvil_core::ir::{
     Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, ModulePath, MultibindRole,
     Provider, Scope, SourceSpan, SubcomponentDecl,
 };
+use tempfile::TempDir;
 
 use anvil_codegen::emit_component;
 
@@ -725,7 +725,9 @@ fn emit_token_binding_uses_inner_type_and_cast() {
     let comp_path: String = root.join("app-component.ts").to_string_lossy().into_owned();
     let mod_path: String = root.join("db-module.ts").to_string_lossy().into_owned();
 
-    let token_key = Key::Token { name: "primary-db".into() };
+    let token_key = Key::Token {
+        name: "primary-db".into(),
+    };
     let module = ModuleDecl {
         class: class_ref(&mod_path, "DbModule"),
         provides: vec![Binding {

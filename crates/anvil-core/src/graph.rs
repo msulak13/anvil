@@ -1197,7 +1197,10 @@ mod tests {
         let mut parent = empty_component("App", vec![], Scope::Unscoped);
         parent.entry_points.push(ep_with_factory_params(
             "requestComponent",
-            Key::class(ModulePath::from_abs("/p/RequestComponent.ts"), "RequestComponent"),
+            Key::class(
+                ModulePath::from_abs("/p/RequestComponent.ts"),
+                "RequestComponent",
+            ),
             vec![
                 factory_param("req", request_key.clone()),
                 factory_param("res", response_key.clone()),

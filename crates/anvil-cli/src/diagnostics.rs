@@ -13,9 +13,9 @@
 
 use std::fs;
 
-use miette::{LabeledSpan, MietteDiagnostic, NamedSource, Report, Severity};
 use anvil_core::ir::SourceSpan;
 use anvil_core::validate::{Diagnostic, Label};
+use miette::{LabeledSpan, MietteDiagnostic, NamedSource, Report, Severity};
 
 /// Convert a structured [`Diagnostic`] into a printable `miette::Report`.
 #[must_use]

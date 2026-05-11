@@ -34,11 +34,11 @@ pub mod symbols;
 
 use std::path::{Path, PathBuf};
 
+use anvil_core::ir::ParsedFile;
 use oxc_allocator::Allocator;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use thiserror::Error;
-use anvil_core::ir::ParsedFile;
 
 use crate::decorators::ExtractError;
 

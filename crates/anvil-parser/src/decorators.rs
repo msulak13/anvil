@@ -14,16 +14,16 @@
 
 use std::collections::HashSet;
 
+use anvil_core::ir::{
+    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, ModulePath, MultibindRole,
+    ParsedFile, Provider, Scope, SourceSpan, SubcomponentDecl,
+};
 use oxc_ast::ast::{
     Argument, ClassElement, Declaration, Decorator, Expression, FormalParameter,
     MethodDefinitionKind, ObjectPropertyKind, PropertyKey, Statement, TSLiteral, TSType,
     TSTypeAnnotation,
 };
 use oxc_span::Span;
-use anvil_core::ir::{
-    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, ModulePath, MultibindRole,
-    ParsedFile, Provider, Scope, SourceSpan, SubcomponentDecl,
-};
 
 use crate::imports::{ImportMap, ImportSource};
 
@@ -905,8 +905,14 @@ fn type_annotation_to_key(
             .iter()
             .map(|p| ts_type_to_key(p, context, imports, local_classes, ann.span).ok())
             .collect();
-        if let (Some(type_args), Key::Class { name: cls_name, module, .. }) =
-            (type_args, base_key.clone())
+        if let (
+            Some(type_args),
+            Key::Class {
+                name: cls_name,
+                module,
+                ..
+            },
+        ) = (type_args, base_key.clone())
         {
             return Ok(Key::Class {
                 name: cls_name,
@@ -989,8 +995,14 @@ fn ts_type_to_key(
             .iter()
             .map(|p| ts_type_to_key(p, context, imports, local_classes, fallback_span).ok())
             .collect();
-        if let (Some(type_args), Key::Class { name: cls_name, module, .. }) =
-            (type_args, base_key.clone())
+        if let (
+            Some(type_args),
+            Key::Class {
+                name: cls_name,
+                module,
+                ..
+            },
+        ) = (type_args, base_key.clone())
         {
             return Ok(Key::Class {
                 name: cls_name,
@@ -1009,9 +1021,7 @@ fn ts_type_to_string(ty: &TSType<'_>) -> Option<String> {
     match ty {
         TSType::TSTypeReference(r) => {
             let name = match &r.type_name {
-                oxc_ast::ast::TSTypeName::IdentifierReference(id) => {
-                    id.name.as_str().to_owned()
-                }
+                oxc_ast::ast::TSTypeName::IdentifierReference(id) => id.name.as_str().to_owned(),
                 _ => return None,
             };
             if let Some(args) = r.type_arguments.as_deref() {
@@ -1067,7 +1077,10 @@ fn resolve_name_to_key(name: &str, imports: &ImportMap, local_classes: &HashSet<
         exported_name,
     }) = imports.get(name)
     {
-        return Key::class(ModulePath::from_specifier(specifier.clone()), exported_name.clone());
+        return Key::class(
+            ModulePath::from_specifier(specifier.clone()),
+            exported_name.clone(),
+        );
     }
     // Both locally declared and unknown identifiers map to the SAME_FILE
     // sentinel; M2's resolver normalizes them to absolute paths and M3's

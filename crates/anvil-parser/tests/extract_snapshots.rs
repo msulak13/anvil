@@ -4,9 +4,9 @@
 //! snapshots the resulting [`anvil_core::ir::ParsedFile`] via `insta`. Update
 //! snapshots after intentional IR changes with `cargo insta review`.
 
-use insta::assert_debug_snapshot;
 use anvil_parser::parse_source;
 use anvil_parser::{decorators::ExtractError, ParseError};
+use insta::assert_debug_snapshot;
 
 #[test]
 fn module_with_provides() {
@@ -530,7 +530,10 @@ fn token_non_literal_name_is_rejected() {
     "#;
     let err = parse_source(src, "db-module.ts").unwrap_err();
     assert!(
-        matches!(err, ParseError::Extract(ExtractError::TokenNonLiteralName { .. })),
+        matches!(
+            err,
+            ParseError::Extract(ExtractError::TokenNonLiteralName { .. })
+        ),
         "expected TokenNonLiteralName, got: {err:?}",
     );
 }

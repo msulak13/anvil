@@ -7,9 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
-use tempfile::TempDir;
 use anvil_core::ir::{Key, ModulePath, ParsedFile};
 use anvil_parser::symbols::{ProjectGraph, ProjectResolver};
+use tempfile::TempDir;
 
 /// Materialize a multi-file project under `tmp` and return its root.
 fn write_project(tmp: &TempDir, files: &[(&str, &str)]) -> PathBuf {
@@ -153,7 +153,7 @@ fn relative_imports_are_resolved_to_absolute_paths() {
         .find(|(p, _)| p.ends_with("heater.ts"))
         .unwrap();
     let pump_dep = match &pump.inject_classes[0].deps[0] {
-        Key::Class { module, name , ..} => {
+        Key::Class { module, name, .. } => {
             assert_eq!(name, "Heater");
             module.abs.clone()
         }
@@ -259,7 +259,7 @@ fn barrel_reexport_resolves_to_real_file() {
         .unwrap()
         .1;
     let dep = match &pump.inject_classes[0].deps[0] {
-        Key::Class { module, name , ..} => {
+        Key::Class { module, name, .. } => {
             assert_eq!(name, "Heater");
             module.abs.clone()
         }

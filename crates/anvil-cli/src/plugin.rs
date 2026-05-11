@@ -1,7 +1,7 @@
-use std::path::Path;
 use anvil_core::ir::{Binding, ParsedFile};
-use extism::{Plugin, Manifest, Wasm, Error as ExtismError};
+use extism::{Error as ExtismError, Manifest, Plugin, Wasm};
 use serde::Serialize;
+use std::path::Path;
 
 pub struct PluginRunner {
     plugin: Plugin,
@@ -19,12 +19,17 @@ impl PluginRunner {
         let path = path.as_ref();
         let wasm = Wasm::file(path);
         let manifest = Manifest::new([wasm]);
-        let plugin = Plugin::new(&manifest, [], true)
-            .map_err(|e: ExtismError| anyhow::anyhow!("Failed to initialize plugin {}: {}", path.display(), e))?;
+        let plugin = Plugin::new(&manifest, [], true).map_err(|e: ExtismError| {
+            anyhow::anyhow!("Failed to initialize plugin {}: {}", path.display(), e)
+        })?;
 
         Ok(Self {
             plugin,
-            name: path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+            name: path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
         })
     }
 
@@ -33,16 +38,22 @@ impl PluginRunner {
             parsed_file: parsed,
         };
         let input_json = serde_json::to_vec(&input)?;
-        let output = self.plugin.call::<&[u8], Vec<u8>>("extract_bindings", &input_json);
+        let output = self
+            .plugin
+            .call::<&[u8], Vec<u8>>("extract_bindings", &input_json);
         match output {
             Ok(bytes) => {
                 let bindings: Vec<Binding> = serde_json::from_slice(&bytes)?;
                 Ok(bindings)
             }
             Err(e) => {
-                // If the function is not found, we can just skip it, 
+                // If the function is not found, we can just skip it,
                 // but let's assume valid plugins have `extract_bindings`.
-                Err(anyhow::anyhow!("Plugin {} failed during extract_bindings: {}", self.name, e))
+                Err(anyhow::anyhow!(
+                    "Plugin {} failed during extract_bindings: {}",
+                    self.name,
+                    e
+                ))
             }
         }
     }

@@ -22,8 +22,8 @@ mod emit_component;
 
 pub use emit_component::emit_component;
 
-use thiserror::Error;
 use anvil_core::validate::Diagnostic;
+use thiserror::Error;
 
 /// Banner prepended to every generated file. Kept stable so users can `grep` for it.
 ///

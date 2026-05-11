@@ -17,10 +17,10 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use anvil_codegen::emit_component;
 use anvil_core::graph::{build_and_validate, GraphInput};
 use anvil_core::validate::Diagnostic;
+use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::diagnostics;
 use crate::{load_project, ProjectIr};
@@ -173,7 +173,11 @@ fn is_source_ts(p: &Path) -> bool {
 
 /// Re-run validate + emit for a single entry. Returns the entry's
 /// (recomputed) source-file closure on success.
-fn rebuild_one(entry: &Path, tsconfig: Option<PathBuf>, plugins: &[String]) -> Result<HashSet<PathBuf>, String> {
+fn rebuild_one(
+    entry: &Path,
+    tsconfig: Option<PathBuf>,
+    plugins: &[String],
+) -> Result<HashSet<PathBuf>, String> {
     let started = Instant::now();
     let ir = load_project(entry, tsconfig, plugins).map_err(stringify_check_error)?;
 
