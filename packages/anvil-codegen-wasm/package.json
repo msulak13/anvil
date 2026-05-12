@@ -15,8 +15,8 @@
   },
   "files": ["dist", "lib", "src"],
   "scripts": {
-    "build:wasm": "wasm-pack build ../../crates/anvil-codegen-wasm --target nodejs --release --out-dir ../../packages/anvil-codegen-wasm/dist --out-name anvil_codegen_wasm",
-    "build": "pnpm build:wasm && tsc -p tsconfig.json",
+    "build:wasm": "wasm-pack build ../../crates/anvil-codegen-wasm --target nodejs --release --out-dir ../../packages/anvil-codegen-wasm/dist --out-name anvil_codegen_wasm && tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
