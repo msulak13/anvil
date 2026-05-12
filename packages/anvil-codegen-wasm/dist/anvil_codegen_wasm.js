@@ -1,4 +1,4 @@
-/* @ts-self-types="./tsdi_codegen_wasm.d.ts" */
+/* @ts-self-types="./anvil_codegen_wasm.d.ts" */
 
 /**
  * `wasm-bindgen` entry point. Accepts a JS object matching
@@ -206,7 +206,7 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./tsdi_codegen_wasm_bg.js": import0,
+        "./anvil_codegen_wasm_bg.js": import0,
     };
 }
 
@@ -398,7 +398,7 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
-const wasmPath = `${__dirname}/tsdi_codegen_wasm_bg.wasm`;
+const wasmPath = `${__dirname}/anvil_codegen_wasm_bg.wasm`;
 const wasmBytes = require('fs').readFileSync(wasmPath);
 const wasmModule = new WebAssembly.Module(wasmBytes);
 let wasmInstance = new WebAssembly.Instance(wasmModule, __wbg_get_imports());
