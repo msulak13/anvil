@@ -3,12 +3,12 @@
   "collaborators": [
     "typescript-di contributors"
   ],
-  "description": "WASM bindings for the tsdi codegen pipeline. Same parser + graph + emitter as the native CLI, in-process for any host that can run WebAssembly.",
+  "description": "WASM bindings for the anvil codegen pipeline. Same parser + graph + emitter as the native CLI, in-process for any host that can run WebAssembly.",
   "version": "0.0.1",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mike/typescript-di"
+    "url": "https://github.com/msulak13/tsdi"
   },
   "files": [
     "anvil_codegen_wasm_bg.wasm",
@@ -16,6 +16,6 @@
     "anvil_codegen_wasm.d.ts"
   ],
   "main": "anvil_codegen_wasm.js",
-  "homepage": "https://github.com/mike/typescript-di",
+  "homepage": "https://github.com/msulak13/tsdi",
   "types": "anvil_codegen_wasm.d.ts"
 }

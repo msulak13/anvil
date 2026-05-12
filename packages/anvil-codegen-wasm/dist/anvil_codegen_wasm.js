@@ -4,7 +4,7 @@
  * `wasm-bindgen` entry point. Accepts a JS object matching
  * [`CompileInput`], returns a JS object matching [`CompileOutput`].
  * Errors thrown into JS land map to the host's normal exception
- * handling — `tsdi-unplugin` translates these into bundler-side
+ * handling — `@msulak/anvil-unplugin` translates these into bundler-side
  * diagnostic surfaces.
  * @param {any} input_js
  * @returns {any}
@@ -206,7 +206,7 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./tsdi_codegen_wasm_bg.js": import0,
+        "./anvil_codegen_wasm_bg.js": import0,
     };
 }
 
