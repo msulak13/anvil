@@ -18,7 +18,7 @@
     "build:wasm": "wasm-pack build ../../crates/anvil-codegen-wasm --target nodejs --release --out-dir ../../packages/anvil-codegen-wasm/dist --out-name anvil_codegen_wasm",
     "build": "pnpm build:wasm && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm build && vitest run"
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
