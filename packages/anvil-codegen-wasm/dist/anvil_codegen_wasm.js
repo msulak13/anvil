@@ -206,7 +206,7 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./anvil_codegen_wasm_bg.js": import0,
+        "./tsdi_codegen_wasm_bg.js": import0,
     };
 }
 
