@@ -31,6 +31,7 @@ Briefly, what else did we look at, and why didn't we pick it?
 | 0002 | [Stage-3 decorators only](./0002-stage3-decorators-only.md)  | Accepted |
 | 0003 | [No TypeScript type checker](./0003-no-type-checker.md)      | Accepted |
 | 0004 | [Per-component output file](./0004-per-component-output-file.md) | Accepted |
+| 0005 | [NestJS-like controllers plugin](./0005-nestjs-controllers-plugin.md) | Proposed |
 
 ## When to write a new one
 
