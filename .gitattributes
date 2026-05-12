@@ -1,0 +1,8 @@
+# Force LF line endings on checkout for all text files so Windows
+# git autocrlf doesn't break fixture byte-comparison tests.
+* text=auto eol=lf
+
+# Treat binary files as binary (no eol conversion).
+*.wasm binary
+*.png  binary
+*.jpg  binary
