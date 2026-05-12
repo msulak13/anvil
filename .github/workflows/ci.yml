@@ -68,8 +68,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
 
-      - name: Build runtime package
-        run: pnpm --filter @msulak/anvil build
+      - name: Build packages
+        run: pnpm --filter "./packages/**" -r build
 
       - name: Typecheck
         run: pnpm -r typecheck
