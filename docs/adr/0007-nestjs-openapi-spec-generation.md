@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-05-12
-**Depends on:** ADR-0006 (`anvil-nestjs-codegen`, `Body<T>`, `Query<T>`, `Params<T>`, `Responds<T>`)
+**Depends on:** ADR-0006 (`anvil-bellows`, `Body<T>`, `Query<T>`, `Params<T>`, `Responds<T>`)
 
 ## Context
 
@@ -40,12 +40,12 @@ The zero-annotation surface covers all common CRUD routes. The annotation gap is
 
 ---
 
-## Decision: `anvil-nestjs-openapi`
+## Decision: `anvil-bellows-openapi`
 
-A standalone CLI tool, published as `@msulak/anvil-nestjs-openapi`, reads the same controller files as `anvil-nestjs-codegen` and emits an OpenAPI 3.1 document. It shares no runtime with `anvil-nestjs-codegen` and does not depend on `routes.module.ts` — it reads the original controller source directly.
+A standalone CLI tool, published as `@msulak/anvil-bellows-openapi`, reads the same controller files as `anvil-bellows` and emits an OpenAPI 3.1 document. It shares no runtime with `anvil-bellows` and does not depend on `routes.module.ts` — it reads the original controller source directly.
 
 ```
-anvil-nestjs-openapi --entry src/ --output openapi.yaml
+anvil-bellows-openapi --entry src/ --output openapi.yaml
 ```
 
 ### Schema conversion
@@ -54,7 +54,7 @@ The tool must convert runtime schema objects (Zod, Valibot, ArkType, etc.) to JS
 
 **Automatic Zod detection.** Zod schemas carry a `_def` property. The tool detects this structurally, imports `zod-to-json-schema` as an optional peer dependency, and converts automatically. No user configuration required for Zod projects.
 
-**`JsonSchema` interface (other libraries).** The `Validator<T>` interface in `@msulak/anvil-plugin-nestjs` is extended with an optional method:
+**`JsonSchema` interface (other libraries).** The `Validator<T>` interface in `@msulak/anvil-bellows` is extended with an optional method:
 
 ```typescript
 export interface Validator<T> {
@@ -66,7 +66,7 @@ export interface Validator<T> {
 Schema libraries that implement `jsonSchema()` are picked up automatically. For libraries that don't, users wrap the schema:
 
 ```typescript
-import { withJsonSchema } from '@msulak/anvil-plugin-nestjs';
+import { withJsonSchema } from '@msulak/anvil-bellows';
 import * as v from 'valibot';
 
 const GetByIdParamsSchema = withJsonSchema(
@@ -116,7 +116,7 @@ export class AdminController {
 `@Security` arguments are string literals — the tool processes them in static mode. The scheme names must match entries in the document-level `securitySchemes` block, which is configured via the tool's config file rather than per-controller (scheme definitions are global, not per-route):
 
 ```yaml
-# anvil-nestjs-openapi.config.yaml
+# anvil-bellows-openapi.config.yaml
 info:
   title: My API
   version: 1.0.0
@@ -175,22 +175,22 @@ The tool emits OpenAPI 3.1 YAML by default (more readable in diffs, universally 
 
 ### Build integration
 
-`anvil-nestjs-openapi` runs independently of `anvil-nestjs-codegen`. It does not need to run before or after `anvil build` — it reads source files directly and writes a static document. In CI the typical placement is after `tsc --noEmit` (so it runs on known-good source) and before publishing artifacts.
+`anvil-bellows-openapi` runs independently of `anvil-bellows`. It does not need to run before or after `anvil build` — it reads source files directly and writes a static document. In CI the typical placement is after `tsc --noEmit` (so it runs on known-good source) and before publishing artifacts.
 
 As a `postBuild` hook in `anvil-unplugin`:
 
 ```typescript
 // vite.config.ts
 import anvil from '@msulak/anvil-unplugin/vite';
-import { nestjsCodegen } from '@msulak/anvil-plugin-nestjs/codegen';
-import { nestjsOpenApi } from '@msulak/anvil-nestjs-openapi/unplugin';
+import { bellowsCodegen } from '@msulak/anvil-bellows/codegen';
+import { bellowsOpenApi } from '@msulak/anvil-bellows-openapi/unplugin';
 
 export default {
   plugins: [
     anvil({
       entry: 'src/app.ts',
-      preBuild:  [nestjsCodegen({ entry: 'src/' })],
-      postBuild: [nestjsOpenApi({ entry: 'src/', output: 'openapi.yaml' })],
+      preBuild:  [bellowsCodegen({ entry: 'src/' })],
+      postBuild: [bellowsOpenApi({ entry: 'src/', output: 'openapi.yaml' })],
     }),
   ],
 };
@@ -250,7 +250,7 @@ The zero-annotation baseline (just `@Controller`, `@Get`, schema-typed params, `
 - Controller methods remain focused on business logic. The OpenAPI metadata is either in the type signature (where it is enforced by the compiler) or in tightly scoped single-purpose decorators (`@Returns`, `@Security`, `@Deprecated`, `@Tag`).
 - Schema conversion is library-agnostic: Zod is supported automatically; other libraries implement `jsonSchema()` or use `withJsonSchema()`.
 - The spec is generated from source, not from the running application — it is always up to date with the code, not with whatever is deployed.
-- No dependency on `routes.module.ts` — the OpenAPI tool can run before, after, or independently of `anvil-nestjs-codegen`.
+- No dependency on `routes.module.ts` — the OpenAPI tool can run before, after, or independently of `anvil-bellows`.
 
 **Bad:**
 - Requires `--tsc` for schema resolution. Projects that avoid `--tsc` for build-time reasons get a spec with empty schemas unless all schemas implement `jsonSchema()` without compiler assistance.
@@ -261,6 +261,6 @@ The zero-annotation baseline (just `@Controller`, `@Get`, schema-typed params, `
 ## Alternatives considered
 
 - **Decorators for all fields (NestJS `@ApiProperty`, `@ApiOperation` style):** Fully explicit but verbose — every field that can be derived from the type signature must also be declared in a decorator. The derivation-first approach avoids redundancy; explicit decorators are reserved for the fields that genuinely cannot be derived.
-- **Runtime spec generation (express-openapi, tsoa):** Generates the spec by inspecting the running application or by running a separate compilation pass over annotated classes. These tools typically require their own decorator set (`@Route`, `@Body`, `@Response`) and cannot reuse the `Body<T>`/`Responds<T>` types from `anvil-nestjs-codegen`. Using them alongside this system would mean maintaining two parallel annotation sets.
-- **`openapi-typescript` / `typed-openapi` (schema-first):** Write the OpenAPI spec first and generate TypeScript types from it. This inverts the direction: types follow the spec rather than the spec following the types. Valid for greenfield API design but misaligned with the code-first approach of `anvil-nestjs-codegen`. Both directions can coexist in a monorepo (the generated spec could itself be fed into `openapi-typescript` for client generation).
-- **Embedding JSON Schema in the `Validator<T>` interface as a required field:** Making `jsonSchema()` mandatory would force every schema reference in every controller to implement the interface, even in projects that don't use OpenAPI generation. Optional `jsonSchema()` keeps the runtime package lean for projects that only use `anvil-nestjs-codegen`.
+- **Runtime spec generation (express-openapi, tsoa):** Generates the spec by inspecting the running application or by running a separate compilation pass over annotated classes. These tools typically require their own decorator set (`@Route`, `@Body`, `@Response`) and cannot reuse the `Body<T>`/`Responds<T>` types from `anvil-bellows`. Using them alongside this system would mean maintaining two parallel annotation sets.
+- **`openapi-typescript` / `typed-openapi` (schema-first):** Write the OpenAPI spec first and generate TypeScript types from it. This inverts the direction: types follow the spec rather than the spec following the types. Valid for greenfield API design but misaligned with the code-first approach of `anvil-bellows`. Both directions can coexist in a monorepo (the generated spec could itself be fed into `openapi-typescript` for client generation).
+- **Embedding JSON Schema in the `Validator<T>` interface as a required field:** Making `jsonSchema()` mandatory would force every schema reference in every controller to implement the interface, even in projects that don't use OpenAPI generation. Optional `jsonSchema()` keeps the runtime package lean for projects that only use `anvil-bellows`.

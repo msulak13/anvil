@@ -34,9 +34,9 @@ The existing `extract_bindings` plugin system (ADR-0003) is retained for other u
 
 ---
 
-## Decision: `anvil-nestjs-codegen`
+## Decision: `anvil-bellows`
 
-A standalone CLI tool, published as `@msulak/anvil-nestjs-codegen`, reads `@Controller`/`@Get`/`@Post`/`@Put`/`@Delete`/`@Patch` decorators from TypeScript source files and generates a `routes.module.ts` that anvil processes like any other user-written `@Module`.
+A standalone CLI tool, published as `@msulak/anvil-bellows`, reads `@Controller`/`@Get`/`@Post`/`@Put`/`@Delete`/`@Patch` decorators from TypeScript source files and generates a `routes.module.ts` that anvil processes like any other user-written `@Module`.
 
 ### Inputs and outputs
 
@@ -56,7 +56,7 @@ export abstract class AppComponent {
 }
 ```
 
-This is the only manual step. Every subsequent change to a controller's decorator arguments is picked up automatically on the next run of `anvil-nestjs-codegen`.
+This is the only manual step. Every subsequent change to a controller's decorator arguments is picked up automatically on the next run of `anvil-bellows`.
 
 ### Generated file shape
 
@@ -92,7 +92,7 @@ The tool generates:
 import { Module, Provides, IntoSet } from "@msulak/anvil";
 import { UserController } from "./user-controller";
 import { HealthController } from "./health-controller";
-import type { RouteDefinition } from "@msulak/anvil-plugin-nestjs";
+import type { RouteDefinition } from "@msulak/anvil-bellows";
 
 @Module
 export class RoutesModule {
@@ -127,7 +127,7 @@ export class RoutesModule {
 
 ### `RouteDefinition` type
 
-`RouteDefinition` is defined in `@msulak/anvil-plugin-nestjs` (the companion runtime package, separate from the codegen tool):
+`RouteDefinition` is defined in `@msulak/anvil-bellows` (the companion runtime package, separate from the codegen tool):
 
 ```typescript
 export interface RouteDefinition {
@@ -169,7 +169,7 @@ The tool parses decorator arguments with its own TypeScript AST pass. Arguments 
 ```
 Error: @Controller argument in user-controller.ts:4 is not a string literal.
   Found: BASE
-  anvil-nestjs-codegen cannot statically resolve identifier references.
+  anvil-bellows cannot statically resolve identifier references.
   Use a string literal: @Controller('/users')
 ```
 
@@ -183,7 +183,7 @@ const BASE = '/users';
 
 The `--tsc` flag requires a `tsconfig.json` (auto-discovered from the entry directory, or specified with `--tsconfig`). Arguments that remain unresolvable after type-checking (e.g., runtime-computed values) still emit a diagnostic and are skipped.
 
-This is the concrete advantage over plugin Approaches A and B: they run inside anvil's pipeline and cannot invoke a type checker; `anvil-nestjs-codegen` is its own process and can.
+This is the concrete advantage over plugin Approaches A and B: they run inside anvil's pipeline and cannot invoke a type checker; `anvil-bellows` is its own process and can.
 
 ---
 
@@ -196,28 +196,28 @@ The user chains the commands:
 ```json
 {
   "scripts": {
-    "build": "anvil-nestjs-codegen --entry src/ && anvil build --entry src/app.ts && tsc --noEmit"
+    "build": "anvil-bellows --entry src/ && anvil build --entry src/app.ts && tsc --noEmit"
   }
 }
 ```
 
-If `anvil-nestjs-codegen` is not run first, anvil will produce a `MissingBinding` diagnostic for `Set<RouteDefinition>` (because `RoutesModule` exists in `@Component.modules` but hasn't been generated yet). This diagnostic is actionable — it names the missing key — but the error message is less precise than a "you forgot to run codegen" prompt. The tool should include instructions in its own README for the correct invocation order.
+If `anvil-bellows` is not run first, anvil will produce a `MissingBinding` diagnostic for `Set<RouteDefinition>` (because `RoutesModule` exists in `@Component.modules` but hasn't been generated yet). This diagnostic is actionable — it names the missing key — but the error message is less precise than a "you forgot to run codegen" prompt. The tool should include instructions in its own README for the correct invocation order.
 
 ### With `anvil-unplugin` (`preBuild` hook)
 
-The `anvil-unplugin` package already owns build orchestration in bundler contexts. A `preBuild` hook API lets tools like `anvil-nestjs-codegen` run as a first-class step before `anvil build`, with ordering and re-run logic handled automatically:
+The `anvil-unplugin` package already owns build orchestration in bundler contexts. A `preBuild` hook API lets tools like `anvil-bellows` run as a first-class step before `anvil build`, with ordering and re-run logic handled automatically:
 
 ```typescript
 // vite.config.ts
 import anvil from '@msulak/anvil-unplugin/vite';
-import { nestjsCodegen } from '@msulak/anvil-plugin-nestjs/codegen';
+import { bellowsCodegen } from '@msulak/anvil-bellows/codegen';
 
 export default {
   plugins: [
     anvil({
       entry: 'src/app.ts',
       preBuild: [
-        nestjsCodegen({ entry: 'src/', tsconfig: 'tsconfig.json' }),
+        bellowsCodegen({ entry: 'src/', tsconfig: 'tsconfig.json' }),
       ],
     }),
   ],
@@ -227,7 +227,7 @@ export default {
 `anvil-unplugin` runs `preBuild` hooks in order before invoking `anvil build`, so ordering is enforced automatically. In watch mode, `anvil-unplugin` receives file-change events from the bundler's native watcher. It re-runs `preBuild` hooks when any `@Controller`-bearing file changes (based on the hook's declared `watchPatterns`), then triggers a normal anvil rebuild. This eliminates the two-watcher composition problem for bundler-based projects.
 
 ```typescript
-// The hook object returned by nestjsCodegen(...)
+// The hook object returned by bellowsCodegen(...)
 export interface PreBuildHook {
   name: string;
   watchPatterns: string[];   // e.g. ['src/**/*.ts']
@@ -242,7 +242,7 @@ For CI and bare `package.json` scripts, the user chains commands manually. The `
 
 `routes.module.ts` is both a codegen output and an input to the subsequent `anvil build` pass. This is the same status as hand-authored `@Module` files — anvil reads it and processes it normally. The file should be:
 
-- **Committed to the repository.** Committing it makes the build reproducible without running `anvil-nestjs-codegen` first, gives reviewers visibility into what routes exist, and keeps CI simple.
+- **Committed to the repository.** Committing it makes the build reproducible without running `anvil-bellows` first, gives reviewers visibility into what routes exist, and keeps CI simple.
 - **Marked generated at the top** (`// generated — do not edit`) to discourage manual edits that would be overwritten on the next run.
 - **Excluded from `tsc` compilation** if and only if the project uses `tsconfig.json` `exclude`. In most projects it is fine to compile: it is valid TypeScript and `tsc` typechecks it against the actual controller method signatures, catching parameter mismatches early.
 
@@ -274,7 +274,7 @@ Four parameter types are recognised. The first three carry a schema; the last tw
 
 `express.Request` and `express.Response` are not special cases — they are just two more types in the same dispatch table. A method that needs raw access to `req` or `res` (streaming, custom status codes, SSE) declares them as parameters alongside any schema-typed inputs.
 
-All five types are exported from `@msulak/anvil-plugin-nestjs`. The schema-bearing types are structurally defined against a `Validator<T>` interface so any schema library works:
+All five types are exported from `@msulak/anvil-bellows`. The schema-bearing types are structurally defined against a `Validator<T>` interface so any schema library works:
 
 ```typescript
 export interface Validator<T> {
@@ -313,7 +313,7 @@ TypeScript enforces that an `async` method must return `Promise<T>`. Users decla
 
 ```typescript
 // user-controller.ts
-import { Body, Params, Query, Responds } from '@msulak/anvil-plugin-nestjs';
+import { Body, Params, Query, Responds } from '@msulak/anvil-bellows';
 import { GetByIdParams, GetByIdQuery, GetByIdResponse, CreateUserBody } from './schemas';
 
 @Controller('/users')
@@ -367,7 +367,7 @@ handler: async (req, res) => {
 
 #### The contract the method signature encodes
 
-Because every input and the output carry explicit schema references, the method signature is a complete description of the HTTP contract: what the endpoint accepts, from where, and what it returns. This is the foundation for OpenAPI spec generation and end-to-end type-safe clients without any additional annotation layer. A future `anvil-nestjs-openapi` tool could derive a full OpenAPI document from `routes.module.ts` and the method signatures alone.
+Because every input and the output carry explicit schema references, the method signature is a complete description of the HTTP contract: what the endpoint accepts, from where, and what it returns. This is the foundation for OpenAPI spec generation and end-to-end type-safe clients without any additional annotation layer. A future `anvil-bellows-openapi` tool could derive a full OpenAPI document from `routes.module.ts` and the method signatures alone.
 
 ### Phase 1 (v0.1): `@Middleware` passthrough
 
@@ -401,7 +401,7 @@ Methods that use only `express.Request` / `express.Response` and no schema types
 
 ## Scope of the tool
 
-### What `anvil-nestjs-codegen` does
+### What `anvil-bellows` does
 
 - Reads `@Controller`, `@Get`, `@Post`, `@Put`, `@Delete`, `@Patch` from `.ts` files in the target directory.
 - Synthesizes a `@Module` with one `@IntoSet @Provides` static method per route handler.
@@ -415,7 +415,7 @@ Methods that use only `express.Request` / `express.Response` and no schema types
 - **Request-scoped injection.** Controllers that need per-request dependencies should use anvil's subcomponent pattern (M11). This is a v0.2+ feature.
 - **Guards and interceptors.** NestJS's `@UseGuards`, `@UseInterceptors`, etc., are not handled. Cross-cutting concerns are expressed as Express middleware passed to `@Middleware`.
 - **Module-scoped controller grouping.** All controllers contribute to a single `RoutesModule`. Splitting by subdirectory is a flag option for v0.2.
-- **OpenAPI spec generation.** The method signatures contain enough information to derive a full OpenAPI document, but that is a separate tool (`anvil-nestjs-openapi`) consuming `routes.module.ts` and the controller files. It is not part of `anvil-nestjs-codegen`.
+- **OpenAPI spec generation.** The method signatures contain enough information to derive a full OpenAPI document, but that is a separate tool (`anvil-bellows-openapi`) consuming `routes.module.ts` and the controller files. It is not part of `anvil-bellows`.
 
 ---
 
@@ -443,7 +443,7 @@ ADR-0005 should be read as background context for the decision. The plugin appro
 - The method signature is a complete HTTP contract: inputs with extraction sources and schemas, output with schema. This is sufficient for OpenAPI spec generation by a downstream tool without any additional annotations.
 
 **Bad:**
-- Bare `anvil build` scripts require the user to chain `anvil-nestjs-codegen` first. Forgetting produces a `MissingBinding` diagnostic rather than a "run codegen first" prompt. The README must make this clear.
+- Bare `anvil build` scripts require the user to chain `anvil-bellows` first. Forgetting produces a `MissingBinding` diagnostic rather than a "run codegen first" prompt. The README must make this clear.
 - `routes.module.ts` is a generated file that lives alongside user code. It requires discipline to avoid committing manual edits that will be overwritten. The `// generated — do not edit` banner and `.gitattributes` help but do not prevent accidents.
 - Per-request injection (request-scoped controller deps) requires the subcomponent pattern rather than a NestJS-style `REQUEST` scope token. Users with deep per-request DI trees will need to refactor beyond simple controller decoration.
 - All schema-typed parameter and return types require `--tsc` mode. Projects that avoid `--tsc` for build-time reasons must keep controllers in v0.1 form (`@Middleware` passthrough, raw `req`/`res`) and apply validation outside the generated adapter.
