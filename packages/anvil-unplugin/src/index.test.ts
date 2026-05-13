@@ -73,7 +73,7 @@ describe("anvil-unplugin", () => {
       expect(typeof plugin.buildStart).toBe("function");
       await plugin.buildStart!.call({});
       const generated = readFileSync(output, "utf8");
-      expect(generated).toContain("DaggerCoffeeShop");
+      expect(generated).toContain("AnvilCoffeeShop");
       expect(generated).toContain("export function createCoffeeShop");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -131,11 +131,11 @@ describe("anvil-unplugin", () => {
       }) as { name: string; buildStart?: () => Promise<void> };
       await plugin.buildStart!.call({});
       const generated = readFileSync(output, "utf8");
-      expect(generated).toContain("DaggerCoffeeShop");
+      expect(generated).toContain("AnvilCoffeeShop");
       expect(generated).toContain("export function createCoffeeShop");
       // The WASM build produces the same shape as the native one —
       // smoke-check by comparing the dagger class declaration line.
-      expect(generated).toMatch(/export class DaggerCoffeeShop extends CoffeeShop/);
+      expect(generated).toMatch(/export class AnvilCoffeeShop extends CoffeeShop/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
