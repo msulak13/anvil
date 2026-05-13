@@ -2,7 +2,7 @@
 // Source: ./coffee-component.ts
 import { CoffeeShop } from "./coffee-component";
 import { ElectricHeater } from "./electric-heater";
-import { Heater } from "./heater";
+import type { Heater } from "./heater";
 export class DaggerCoffeeShop extends CoffeeShop {
 	private getElectricHeater(): ElectricHeater {
 		return new ElectricHeater();

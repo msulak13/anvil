@@ -74,14 +74,16 @@ pub fn emit_component(
         .to_path_buf();
 
     let parent_topo = topo_order(&graph);
-    let mut imports: ImportMap = BTreeMap::new();
-    add_classref_import(&mut imports, &out_dir, &component.class);
+    let mut imports = Imports::default();
+    // The component class is used in `extends ComponentName` — a value position.
+    imports.add_value(&out_dir, &component.class);
     populate_imports(&mut imports, &out_dir, &graph, &parent_topo);
     // Imports for each child subcomponent's bindings + the subcomponent class itself.
     let mut child_topos: Vec<(usize, Vec<Key>)> =
         Vec::with_capacity(graph.subcomponent_factories.len());
     for (i, fact) in graph.subcomponent_factories.iter().enumerate() {
-        add_classref_import(&mut imports, &out_dir, &fact.subcomponent);
+        // Subcomponent class is used in `extends SubName` — a value position.
+        imports.add_value(&out_dir, &fact.subcomponent);
         let child_topo = topo_order(&fact.child_graph);
         populate_imports(&mut imports, &out_dir, &fact.child_graph, &child_topo);
         child_topos.push((i, child_topo));
@@ -276,41 +278,64 @@ fn dfs(k: &Key, graph: &DependencyGraph, visited: &mut HashSet<Key>, out: &mut V
     }
 }
 
-/// Map `specifier` (e.g. `"./heater"`) → set of names imported from it.
-type ImportMap = BTreeMap<String, BTreeSet<String>>;
+/// Tracks which imported names are used as runtime values vs. type annotations only.
+///
+/// Symbols used as values (e.g. `new X()`, `X.method()`, `extends X`) need a
+/// regular `import { X }`. Symbols used only in type positions (return types,
+/// field types, generic args) must use `import type { X }` when the consumer's
+/// `tsconfig.json` enables `verbatimModuleSyntax`.
+#[derive(Default)]
+struct Imports {
+    /// Names referenced at runtime (constructors, static method calls, extends).
+    value: BTreeMap<String, BTreeSet<String>>,
+    /// Names referenced only in type positions (annotations, generic args).
+    type_only: BTreeMap<String, BTreeSet<String>>,
+}
+
+impl Imports {
+    fn add_value(&mut self, out_dir: &Path, cref: &ClassRef) {
+        let spec = import_specifier_for(out_dir, &cref.module);
+        self.value.entry(spec).or_default().insert(cref.name.clone());
+    }
+
+    fn add_type(&mut self, out_dir: &Path, cref: &ClassRef) {
+        let spec = import_specifier_for(out_dir, &cref.module);
+        self.type_only
+            .entry(spec)
+            .or_default()
+            .insert(cref.name.clone());
+    }
+}
 
 /// Walk every binding in `topo` and add its produced type plus its
 /// provider's referenced class refs to `imports`. Used for both the
 /// parent component and each child subcomponent.
-fn populate_imports(
-    imports: &mut ImportMap,
-    out_dir: &Path,
-    graph: &DependencyGraph,
-    topo: &[Key],
-) {
+fn populate_imports(imports: &mut Imports, out_dir: &Path, graph: &DependencyGraph, topo: &[Key]) {
     for k in topo {
         let b = &graph.bindings[k];
         // The Set<T> type itself is a built-in — no import needed for the
         // outer key. The element class is reachable via the contributors'
         // module imports below (and as a Key::Class binding elsewhere if
-        // any). For Key::Class we import the bound class itself.
-        // Key::Token has no class to import — the inner type is handled via
-        // token_inner_type and its deps.
+        // any). For Key::Class we import the bound class name for its type
+        // annotation (return type, cache field). Key::Token has no class to
+        // import — the inner type is handled via token_inner_type and its deps.
         match &b.key {
             Key::Class {
                 module,
                 name,
                 type_args,
             } => {
-                add_classref_import(
-                    imports,
+                // The bound class appears in type positions (return type,
+                // cache-field type). It's a *value* import only when the
+                // provider constructs it directly via InjectCtor (handled
+                // below); for ProvidesMethod the class name is type-only.
+                imports.add_type(
                     out_dir,
                     &ClassRef {
                         module: module.clone(),
                         name: name.clone(),
                     },
                 );
-                // Also import type arg classes so generic annotations type-check.
                 import_key_args(imports, out_dir, type_args);
             }
             Key::Set { element } => {
@@ -318,8 +343,7 @@ fn populate_imports(
                 // `Set<Element>` type annotation type-checks even when no
                 // Class binding for the element exists in this graph.
                 if let Key::Class { module, name, .. } = element.as_ref() {
-                    add_classref_import(
-                        imports,
+                    imports.add_type(
                         out_dir,
                         &ClassRef {
                             module: module.clone(),
@@ -336,10 +360,12 @@ fn populate_imports(
         }
         match &b.provider {
             Provider::InjectCtor { class } => {
-                add_classref_import(imports, out_dir, class);
+                // `new ClassName(deps)` — the class is used as a value.
+                imports.add_value(out_dir, class);
             }
             Provider::ProvidesMethod { module, .. } => {
-                add_classref_import(imports, out_dir, module);
+                // `ModuleName.method(deps)` — the module class is used as a value.
+                imports.add_value(out_dir, module);
             }
             // `Binds` and `FactoryParam` need no extra import:
             // - `Binds`'s target class arrives via its own `deps` entry
@@ -351,23 +377,16 @@ fn populate_imports(
             Provider::Binds { .. } | Provider::FactoryParam { .. } => {}
             Provider::SetMultibinding { contributors } => {
                 for c in contributors {
-                    add_classref_import(imports, out_dir, &c.module);
+                    // `ContribModule.method(deps)` — value import.
+                    imports.add_value(out_dir, &c.module);
                 }
             }
         }
     }
 }
 
-fn add_classref_import(imports: &mut ImportMap, out_dir: &Path, cref: &ClassRef) {
-    let specifier = import_specifier_for(out_dir, &cref.module);
-    imports
-        .entry(specifier)
-        .or_default()
-        .insert(cref.name.clone());
-}
-
-/// Recursively add import entries for generic type arguments.
-fn import_key_args(imports: &mut ImportMap, out_dir: &Path, args: &[Key]) {
+/// Recursively add type-only import entries for generic type arguments.
+fn import_key_args(imports: &mut Imports, out_dir: &Path, args: &[Key]) {
     for arg in args {
         match arg {
             Key::Class {
@@ -375,8 +394,7 @@ fn import_key_args(imports: &mut ImportMap, out_dir: &Path, args: &[Key]) {
                 name,
                 type_args,
             } => {
-                add_classref_import(
-                    imports,
+                imports.add_type(
                     out_dir,
                     &ClassRef {
                         module: module.clone(),
@@ -419,19 +437,45 @@ fn build_ts_source(
     graph: &DependencyGraph,
     bindings_topo: &[Key],
     child_topos: &[(usize, Vec<Key>)],
-    imports: &ImportMap,
+    imports: &Imports,
 ) -> String {
     let mut s = String::new();
 
-    for (specifier, names) in imports {
-        let names_csv: Vec<&str> = names.iter().map(String::as_str).collect();
-        writeln!(
-            s,
-            "import {{ {} }} from \"{}\";",
-            names_csv.join(", "),
-            specifier
-        )
-        .expect("write to String");
+    // Collect all specifiers from both maps, keeping BTreeMap sort order.
+    let mut all_specs: BTreeSet<&str> = BTreeSet::new();
+    all_specs.extend(imports.value.keys().map(String::as_str));
+    all_specs.extend(imports.type_only.keys().map(String::as_str));
+
+    for spec in &all_specs {
+        let value_names = imports.value.get(*spec);
+        let type_names = imports.type_only.get(*spec);
+        match (value_names, type_names) {
+            (Some(vals), None) => {
+                let names: Vec<&str> = vals.iter().map(String::as_str).collect();
+                writeln!(s, "import {{ {} }} from \"{spec}\";", names.join(", "))
+                    .expect("write to String");
+            }
+            (None, Some(types)) => {
+                let names: Vec<&str> = types.iter().map(String::as_str).collect();
+                writeln!(s, "import type {{ {} }} from \"{spec}\";", names.join(", "))
+                    .expect("write to String");
+            }
+            (Some(vals), Some(types)) => {
+                // Mixed specifier: emit value names normally; emit type-only
+                // names with an inline `type` modifier so `verbatimModuleSyntax`
+                // is satisfied without splitting into two import statements.
+                let mut names: Vec<String> = vals.iter().cloned().collect();
+                for t in types {
+                    if !vals.contains(t) {
+                        names.push(format!("type {t}"));
+                    }
+                }
+                names.sort();
+                writeln!(s, "import {{ {} }} from \"{spec}\";", names.join(", "))
+                    .expect("write to String");
+            }
+            (None, None) => {}
+        }
     }
     s.push('\n');
 

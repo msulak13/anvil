@@ -1,0 +1,7 @@
+{
+  "info": { "title": "User API", "version": "1.0.0" },
+  "servers": ["https://api.example.com"],
+  "securitySchemes": {
+    "bearerAuth": { "type": "http", "scheme": "bearer" }
+  }
+}

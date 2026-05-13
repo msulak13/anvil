@@ -1,0 +1,33 @@
+[package]
+name = "anvil-bellows-openapi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OpenAPI 3.1 document generator for anvil-bellows NestJS-style controllers."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "anvil-bellows-openapi"
+path = "src/main.rs"
+
+[lib]
+name = "anvil_bellows_openapi"
+path = "src/lib.rs"
+
+[dependencies]
+anvil-bellows.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+assert_cmd.workspace = true
+predicates.workspace = true

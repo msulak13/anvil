@@ -2,9 +2,9 @@
 // Source: ./app-component.ts
 import { AppComponent } from "./app-component";
 import { Handler } from "./handler";
-import { HttpRequest, HttpResponse } from "./http";
+import type { HttpRequest, HttpResponse } from "./http";
 import { RequestComponent } from "./request-component";
-import { RequestContext } from "./request-context";
+import type { RequestContext } from "./request-context";
 import { RequestModule } from "./request-module";
 export class DaggerAppComponent extends AppComponent {
 	requestComponent(req: HttpRequest, res: HttpResponse): RequestComponent {

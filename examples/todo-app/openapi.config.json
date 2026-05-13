@@ -1,0 +1,4 @@
+{
+  "info": { "title": "Todo API", "version": "1.0.0" },
+  "servers": ["http://localhost:3001"]
+}

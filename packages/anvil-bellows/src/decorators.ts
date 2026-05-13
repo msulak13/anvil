@@ -86,7 +86,7 @@ export function Tag(
 
 export function Returns(
   _status: number,
-  _schema: unknown,
+  _schema?: unknown,
 ): <This, Args extends readonly unknown[], Return>(
   target: (this: This, ...args: Args) => Return,
   ctx: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,

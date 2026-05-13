@@ -2,7 +2,7 @@
 // Source: ./app-component.ts
 import { AppComponent } from "./app-component";
 import { ConsoleLogger } from "./console-logger";
-import { Logger } from "./logger";
+import type { Logger } from "./logger";
 import { UserRepository } from "./user-repository";
 import { UserService } from "./user-service";
 export class DaggerAppComponent extends AppComponent {

@@ -3,12 +3,14 @@
 //! Static mode only — accepts string literal decorator arguments. Non-literal
 //! arguments emit a [`ParseDiagnostic`] and skip the affected route.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
     Argument, BindingPattern, ClassElement, Declaration, Decorator, Expression, FormalParameter,
-    MethodDefinitionKind, PropertyKey, Statement, TSType, TSTypeQueryExprName, TSTypeName,
+    ImportDeclarationSpecifier, MethodDefinitionKind, PropertyKey, Statement, TSType,
+    TSTypeQueryExprName, TSTypeName,
 };
 use oxc_parser::Parser;
 use oxc_span::SourceType;
@@ -115,6 +117,15 @@ pub enum ReturnKind {
     },
 }
 
+/// An additional HTTP response declared via `@Returns(status, schema)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtraResponse {
+    /// HTTP status code.
+    pub status: u16,
+    /// Optional schema identifier (from the second argument).
+    pub schema: Option<SchemaRef>,
+}
+
 /// A single route extracted from a method decorator.
 #[derive(Debug, Clone)]
 pub struct Route {
@@ -128,6 +139,23 @@ pub struct Route {
     pub params: Vec<TypedParam>,
     /// Classification of the handler's return type.
     pub return_kind: ReturnKind,
+    /// True when `@Deprecated` is present on the method.
+    pub deprecated: bool,
+    /// Additional responses from `@Returns(status, schema)` decorators.
+    pub extra_responses: Vec<ExtraResponse>,
+}
+
+/// A single constructor parameter on a `@Controller` class.
+#[derive(Debug, Clone)]
+pub struct CtorParam {
+    /// The parameter's local name (e.g. `todoService`).
+    pub name: String,
+    /// The TypeScript type name (e.g. `TodoService`).
+    pub type_name: String,
+    /// Absolute path to the file that exports `type_name`, if it could be
+    /// resolved from a relative import in the controller file. `None` when the
+    /// dep comes from a package or when the import is unresolvable.
+    pub abs_source: Option<PathBuf>,
 }
 
 /// A controller class extracted from a source file.
@@ -135,8 +163,14 @@ pub struct Route {
 pub struct Controller {
     /// TypeScript class name.
     pub class_name: String,
+    /// Constructor parameters (the controller's DI dependencies).
+    pub ctor_params: Vec<CtorParam>,
     /// Routes declared on this controller.
     pub routes: Vec<Route>,
+    /// Tags from `@Tag("name")` class decorators.
+    pub tags: Vec<String>,
+    /// Security scheme names from `@Security("scheme")` class decorators.
+    pub security: Vec<String>,
 }
 
 /// A parsed controller file containing one or more `@Controller` classes.
@@ -235,6 +269,11 @@ fn parse_source(
         return (None, vec![]);
     }
 
+    // Build a map of local name → absolute source path for relative imports.
+    // Used to resolve constructor dep types to importable paths.
+    let file_dir = abs_path.parent().unwrap_or(Path::new("."));
+    let import_map = collect_import_map(&ret.program.body, file_dir);
+
     let mut controllers: Vec<Controller> = Vec::new();
     let mut diagnostics: Vec<ParseDiagnostic> = Vec::new();
 
@@ -259,13 +298,23 @@ fn parse_source(
             continue;
         };
 
+        let (tags, security) = extract_class_metadata(&class.decorators);
         let mut routes: Vec<Route> = Vec::new();
+        let mut ctor_params: Vec<CtorParam> = Vec::new();
 
         for element in &class.body.body {
             let ClassElement::MethodDefinition(m) = element else {
                 continue;
             };
             if m.kind == MethodDefinitionKind::Constructor {
+                // Extract the controller's DI dependencies from its ctor params.
+                ctor_params = m
+                    .value
+                    .params
+                    .items
+                    .iter()
+                    .filter_map(|p| extract_ctor_param(p, &import_map))
+                    .collect();
                 continue;
             }
 
@@ -288,6 +337,11 @@ fn parse_source(
                 m.value.r#async,
             );
 
+            // Scan all method decorators: find HTTP method + collect modifiers.
+            let mut route_opt: Option<Route> = None;
+            let mut deprecated = false;
+            let mut extra_responses: Vec<ExtraResponse> = Vec::new();
+
             for dec in &m.decorators {
                 if let Some(route) = try_extract_route(
                     dec,
@@ -298,14 +352,23 @@ fn parse_source(
                     file_path,
                     &mut diagnostics,
                 ) {
-                    routes.push(route);
-                    break;
+                    route_opt = Some(route);
+                } else if is_deprecated_decorator(dec) {
+                    deprecated = true;
+                } else if let Some(er) = try_extract_returns(dec) {
+                    extra_responses.push(er);
                 }
+            }
+
+            if let Some(mut route) = route_opt {
+                route.deprecated = deprecated;
+                route.extra_responses = extra_responses;
+                routes.push(route);
             }
         }
 
         if !routes.is_empty() {
-            controllers.push(Controller { class_name, routes });
+            controllers.push(Controller { class_name, ctor_params, routes, tags, security });
         }
     }
 
@@ -320,6 +383,74 @@ fn parse_source(
         }),
         diagnostics,
     )
+}
+
+/// Walk import declarations in `stmts` and build a map from local name to the
+/// absolute path of the source module (for relative specifiers only).
+fn collect_import_map(stmts: &[Statement<'_>], file_dir: &Path) -> HashMap<String, PathBuf> {
+    let mut map: HashMap<String, PathBuf> = HashMap::new();
+    for stmt in stmts {
+        let import = match stmt {
+            Statement::ImportDeclaration(i) => i,
+            _ => continue,
+        };
+        let raw_spec = import.source.value.as_str();
+        // Only resolve relative imports; skip package names.
+        if !raw_spec.starts_with("./") && !raw_spec.starts_with("../") {
+            continue;
+        }
+        // Strip .js / .ts extension for path resolution then add .ts.
+        let stem = raw_spec
+            .strip_suffix(".js")
+            .or_else(|| raw_spec.strip_suffix(".ts"))
+            .unwrap_or(raw_spec);
+        let abs = file_dir.join(format!("{stem}.ts"));
+        let Some(specifiers) = &import.specifiers else {
+            continue;
+        };
+        for spec in specifiers {
+            let local_name = match spec {
+                ImportDeclarationSpecifier::ImportSpecifier(s) => {
+                    s.local.name.as_str().to_owned()
+                }
+                ImportDeclarationSpecifier::ImportDefaultSpecifier(s) => {
+                    s.local.name.as_str().to_owned()
+                }
+                ImportDeclarationSpecifier::ImportNamespaceSpecifier(s) => {
+                    s.local.name.as_str().to_owned()
+                }
+            };
+            map.insert(local_name, abs.clone());
+        }
+    }
+    map
+}
+
+/// Extract a `CtorParam` from a formal parameter.
+///
+/// Only plain class-type params (bare `TSTypeReference` with a simple identifier)
+/// are recognized. Wrapper types like `Body<S>` and primitives are skipped.
+fn extract_ctor_param(
+    param: &FormalParameter<'_>,
+    import_map: &HashMap<String, PathBuf>,
+) -> Option<CtorParam> {
+    let name = match &param.pattern {
+        BindingPattern::BindingIdentifier(id) => id.name.as_str().to_owned(),
+        _ => return None,
+    };
+    let ann = param.type_annotation.as_ref()?;
+    let TSType::TSTypeReference(tref) = &ann.type_annotation else {
+        return None;
+    };
+    let type_name = ts_type_name_local(&tref.type_name);
+    // Skip known wrapper types — they're not injected class deps.
+    match type_name {
+        "Body" | "Query" | "Params" | "Responds" | "Request" | "Response" => return None,
+        _ => {}
+    }
+    let type_name = type_name.to_owned();
+    let abs_source = import_map.get(&type_name).cloned();
+    Some(CtorParam { name, type_name, abs_source })
 }
 
 /// Extract the path string from `@Controller(path)` in a class's decorator list.
@@ -366,7 +497,75 @@ fn try_extract_route<'a>(
         handler_name: handler_name.to_owned(),
         params: typed_params.to_vec(),
         return_kind,
+        deprecated: false,       // filled in by caller after scanning all decorators
+        extra_responses: vec![], // ditto
     })
+}
+
+/// Extract `@Tag("name")` and `@Security("scheme")` from class decorators.
+fn extract_class_metadata(decorators: &[Decorator<'_>]) -> (Vec<String>, Vec<String>) {
+    let mut tags = Vec::new();
+    let mut security = Vec::new();
+    for dec in decorators {
+        let Expression::CallExpression(call) = &dec.expression else {
+            continue;
+        };
+        let Some(name) = decorator_ident_name(&call.callee) else {
+            continue;
+        };
+        let Some(arg) = call.arguments.first() else {
+            continue;
+        };
+        match name.as_str() {
+            "Tag" => {
+                if let Argument::StringLiteral(lit) = arg {
+                    tags.push(lit.value.to_string());
+                }
+            }
+            "Security" => {
+                if let Argument::StringLiteral(lit) = arg {
+                    security.push(lit.value.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    (tags, security)
+}
+
+/// Return true when `@Deprecated` is present (with or without arguments).
+fn is_deprecated_decorator(dec: &Decorator<'_>) -> bool {
+    match &dec.expression {
+        Expression::CallExpression(call) => {
+            decorator_ident_name(&call.callee).as_deref() == Some("Deprecated")
+        }
+        Expression::Identifier(id) => id.name.as_str() == "Deprecated",
+        _ => false,
+    }
+}
+
+/// Try to extract an `ExtraResponse` from `@Returns(status, schema?)`.
+fn try_extract_returns(dec: &Decorator<'_>) -> Option<ExtraResponse> {
+    let Expression::CallExpression(call) = &dec.expression else {
+        return None;
+    };
+    if decorator_ident_name(&call.callee).as_deref() != Some("Returns") {
+        return None;
+    }
+    let status_arg = call.arguments.first()?;
+    let Argument::NumericLiteral(lit) = status_arg else {
+        return None;
+    };
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let status = lit.value as u16;
+    let schema = call.arguments.get(1).and_then(|a| {
+        if let Argument::Identifier(id) = a {
+            Some(SchemaRef { ident: id.name.to_string() })
+        } else {
+            None
+        }
+    });
+    Some(ExtraResponse { status, schema })
 }
 
 /// Classify a formal parameter by its type annotation.

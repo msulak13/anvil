@@ -117,6 +117,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "anvil-bellows-openapi"
+version = "0.0.1"
+dependencies = [
+ "anvil-bellows",
+ "anyhow",
+ "assert_cmd",
+ "clap",
+ "predicates",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "anvil-cli"
 version = "0.0.1"
 dependencies = [
