@@ -3,6 +3,7 @@
 import type { RouteDefinition } from "../../../../packages/anvil-bellows/dist/index.js";
 import { AppComponent } from "./app-component";
 import { RoutesModule } from "./routes.module.anvil";
+import { OpenApiModule } from "./schema-route.module.anvil";
 import type { TodoController } from "./todo-controller";
 import { TodoModule } from "./todo-module";
 import type { TodoService } from "./todo-service";
@@ -21,7 +22,8 @@ export class DaggerAppComponent extends AppComponent {
 			RoutesModule.todoControllerGetById(this.getTodoController()),
 			RoutesModule.todoControllerPostCreate(this.getTodoController()),
 			RoutesModule.todoControllerPutUpdate(this.getTodoController()),
-			RoutesModule.todoControllerDeleteRemove(this.getTodoController())
+			RoutesModule.todoControllerDeleteRemove(this.getTodoController()),
+			OpenApiModule.openapiGetSpec()
 		]);
 	}
 	routeDefinitions(): Set<RouteDefinition> {

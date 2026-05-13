@@ -1,14 +1,11 @@
 import express from "express";
-import { createAppComponent } from "./app-component.anvil.js";
+import { createSpecComponent } from "./spec-component.anvil.js";
 
 const app = express();
-const dagger = createAppComponent();
+const dagger = createSpecComponent();
 
 for (const route of dagger.routeDefinitions()) {
-  if (route.method === "GET" && route.path === "/openapi.json") {
-    app.get(route.path, route.handler);
-    break;
-  }
+  app.get(route.path, route.handler);
 }
 
 const port = 3002;

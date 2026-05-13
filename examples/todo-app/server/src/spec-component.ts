@@ -1,11 +1,9 @@
 import { Component, Singleton } from "@msulak/anvil";
 import type { RouteDefinition } from "@msulak/anvil-bellows";
-import { RoutesModule } from "./routes.module.anvil.js";
-import { TodoModule } from "./todo-module.js";
 import { OpenApiModule } from "./schema-route.module.anvil.js";
 
 @Singleton
-@Component({ modules: [TodoModule, RoutesModule, OpenApiModule] })
-export abstract class AppComponent {
+@Component({ modules: [OpenApiModule] })
+export abstract class SpecComponent {
   abstract routeDefinitions(): Set<RouteDefinition>;
 }
