@@ -144,7 +144,7 @@ describe("bellowsCodegen", () => {
   });
 
   it("watchPatterns covers .ts files under the entry directory", () => {
-    const entry = path.resolve("src");
+    const entry = path.resolve("src").replace(/\\/g, "/");
     const hook = bellowsCodegen({ entry: "src" });
     expect(hook.watchPatterns).toHaveLength(1);
     expect(hook.watchPatterns[0]).toContain(entry);
