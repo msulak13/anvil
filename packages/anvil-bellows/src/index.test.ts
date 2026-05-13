@@ -1,0 +1,133 @@
+import { describe, expect, it } from "vitest";
+import { z } from "zod";
+import type { Validator } from "./schema.js";
+import { withJsonSchema } from "./schema.js";
+import {
+  Controller,
+  Delete,
+  Deprecated,
+  Get,
+  Middleware,
+  Patch,
+  Post,
+  Put,
+  Returns,
+  Security,
+  Tag,
+} from "./decorators.js";
+
+// --- Validator<T> structural compatibility ---
+
+describe("Validator<T>", () => {
+  it("is satisfied structurally by a Zod schema", () => {
+    const schema = z.object({ id: z.string() });
+    // Type-level assertion: if this assignment compiles, Zod satisfies Validator<T>.
+    const _v: Validator<{ id: string }> = schema;
+    const result = schema.safeParse({ id: "abc" });
+    expect(result.success).toBe(true);
+  });
+});
+
+// --- withJsonSchema ---
+
+describe("withJsonSchema", () => {
+  const schema = z.object({ id: z.string() });
+  const jsonSchema = { type: "object" as const, properties: { id: { type: "string" as const } } };
+
+  it("delegates safeParse to the wrapped validator", () => {
+    const wrapped = withJsonSchema(schema, jsonSchema);
+    expect(wrapped.safeParse({ id: "hello" }).success).toBe(true);
+    expect(wrapped.safeParse({ id: 42 }).success).toBe(false);
+  });
+
+  it("returns the provided JSON schema from jsonSchema()", () => {
+    const wrapped = withJsonSchema(schema, jsonSchema);
+    expect(wrapped.jsonSchema()).toBe(jsonSchema);
+  });
+});
+
+// --- Decorator stubs are no-ops ---
+
+describe("decorator stubs", () => {
+  it("Controller returns the decorated class unchanged", () => {
+    class MyController {}
+    const ctx = {} as ClassDecoratorContext;
+    const result = Controller("/api")(MyController as abstract new () => object, ctx);
+    expect(result).toBe(MyController);
+  });
+
+  it("Get returns the decorated method unchanged", () => {
+    const fn = () => "hello";
+    const ctx = {} as ClassMethodDecoratorContext;
+    const result = Get("/test")(fn, ctx);
+    expect(result).toBe(fn);
+  });
+
+  it("Post returns the decorated method unchanged", () => {
+    const fn = () => {};
+    const result = Post("/test")(fn, {} as ClassMethodDecoratorContext);
+    expect(result).toBe(fn);
+  });
+
+  it("Put returns the decorated method unchanged", () => {
+    const fn = () => {};
+    const result = Put("/test")(fn, {} as ClassMethodDecoratorContext);
+    expect(result).toBe(fn);
+  });
+
+  it("Delete returns the decorated method unchanged", () => {
+    const fn = () => {};
+    const result = Delete("/test")(fn, {} as ClassMethodDecoratorContext);
+    expect(result).toBe(fn);
+  });
+
+  it("Patch returns the decorated method unchanged", () => {
+    const fn = () => {};
+    const result = Patch("/test")(fn, {} as ClassMethodDecoratorContext);
+    expect(result).toBe(fn);
+  });
+
+  it("Middleware returns the decorated class unchanged", () => {
+    class MyController {}
+    const ctx = {} as ClassDecoratorContext;
+    const result = (Middleware as (...fns: never[]) => (target: typeof MyController, ctx: ClassDecoratorContext) => typeof MyController)()(MyController, ctx);
+    expect(result).toBe(MyController);
+  });
+
+  it("Middleware returns the decorated method unchanged", () => {
+    const fn = () => {};
+    const ctx = {} as ClassMethodDecoratorContext;
+    const result = (Middleware as (...fns: never[]) => (target: typeof fn, ctx: ClassMethodDecoratorContext) => typeof fn)()(fn, ctx);
+    expect(result).toBe(fn);
+  });
+
+  it("Tag returns the decorated class unchanged", () => {
+    class MyController {}
+    const result = Tag("users")(MyController as abstract new () => object, {} as ClassDecoratorContext);
+    expect(result).toBe(MyController);
+  });
+
+  it("Returns returns the decorated method unchanged", () => {
+    const fn = () => {};
+    const result = Returns(201, {})(fn, {} as ClassMethodDecoratorContext);
+    expect(result).toBe(fn);
+  });
+
+  it("Security returns the decorated class unchanged", () => {
+    class MyController {}
+    const result = (Security as (scheme: string) => (target: typeof MyController, ctx: ClassDecoratorContext) => typeof MyController)("bearer")(MyController, {} as ClassDecoratorContext);
+    expect(result).toBe(MyController);
+  });
+
+  it("Security returns the decorated method unchanged", () => {
+    const fn = () => {};
+    const result = (Security as (scheme: string) => (target: typeof fn, ctx: ClassMethodDecoratorContext) => typeof fn)("bearer")(fn, {} as ClassMethodDecoratorContext);
+    expect(result).toBe(fn);
+  });
+
+  it("Deprecated returns the decorated method unchanged", () => {
+    const fn = () => {};
+    const result = Deprecated("use newHandler instead")(fn, {} as ClassMethodDecoratorContext);
+    expect(result).toBe(fn);
+  });
+});
