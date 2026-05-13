@@ -1,4 +1,4 @@
-import type { IRouter, Request, Response } from "express";
+import { Router, type Request, type Response } from "express";
 
 export interface RouteDefinition {
   method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
@@ -6,11 +6,9 @@ export interface RouteDefinition {
   handler: (req: Request, res: Response) => void | Promise<void>;
 }
 
-/** Register every route in `routes` on `router` (or an Express app). */
-export function applyRoutes(
-  router: IRouter,
-  routes: Iterable<RouteDefinition>,
-): void {
+/** Returns an Express Router with all routes from `routes` registered on it. */
+export function bellowsRoutes(routes: Iterable<RouteDefinition>): Router {
+  const router = Router();
   for (const route of routes) {
     switch (route.method) {
       case "GET":    router.get(route.path, route.handler);    break;
@@ -20,4 +18,5 @@ export function applyRoutes(
       case "PATCH":  router.patch(route.path, route.handler);  break;
     }
   }
+  return router;
 }

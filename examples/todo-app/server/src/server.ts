@@ -1,6 +1,6 @@
-import express, { type NextFunction, type Request, type Response, Router } from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
-import { applyRoutes } from "@msulak/anvil-bellows";
+import { bellowsRoutes } from "@msulak/anvil-bellows";
 import { createAppComponent } from "./app-component.anvil.js";
 import { NotFoundError } from "./todo-service.js";
 
@@ -9,9 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 const dagger = createAppComponent();
-const router = Router();
-applyRoutes(router, dagger.routeDefinitions());
-app.use(router);
+app.use(bellowsRoutes(dagger.routeDefinitions()));
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof NotFoundError) {
