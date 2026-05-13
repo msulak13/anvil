@@ -21,8 +21,14 @@ export interface PreBuildHook {
 export interface BellowsCodegenOptions {
   /** Directory to scan for `@Controller` files. Defaults to `"./src"`. */
   entry: string;
-  /** Output file path. Defaults to `<entry>/routes.module.ts`. */
+  /** Output path for the routes module. Defaults to `<entry>/routes.module.anvil.ts`. */
   output?: string;
+  /** Output path for the OpenAPI route module. Defaults to `<entry>/schema-route.module.anvil.ts`. */
+  openapiOutput?: string;
+  /** `info.title` in the generated OpenAPI spec. Defaults to `"API"`. */
+  openapiTitle?: string;
+  /** `info.version` in the generated OpenAPI spec. Defaults to `"0.0.1"`. */
+  openapiVersion?: string;
   /** Path to `tsconfig.json`. */
   tsconfig?: string;
   /** Enable type-checker mode (M3). */
@@ -30,7 +36,8 @@ export interface BellowsCodegenOptions {
 }
 
 /**
- * Create a `PreBuildHook` that runs `anvil-bellows` to generate `routes.module.ts`.
+ * Create a `PreBuildHook` that runs `anvil-bellows` to generate
+ * `routes.module.anvil.ts` and `schema-route.module.anvil.ts`.
  *
  * @example
  * ```ts
@@ -66,6 +73,15 @@ export function bellowsCodegen(options: BellowsCodegenOptions): PreBuildHook {
       const args: string[] = ["--entry", options.entry];
       if (options.output !== undefined) {
         args.push("--output", options.output);
+      }
+      if (options.openapiOutput !== undefined) {
+        args.push("--openapi-output", options.openapiOutput);
+      }
+      if (options.openapiTitle !== undefined) {
+        args.push("--openapi-title", options.openapiTitle);
+      }
+      if (options.openapiVersion !== undefined) {
+        args.push("--openapi-version", options.openapiVersion);
       }
       if (options.tsconfig !== undefined) {
         args.push("--tsconfig", options.tsconfig);

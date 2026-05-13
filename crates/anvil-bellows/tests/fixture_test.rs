@@ -70,7 +70,8 @@ fn write_stubs(root: &Path) {
         // Simple any-typed stubs — Stage-3 decorator shape.
         "export const Module = (..._: any[]): any => {};\n\
          export const Provides = (..._: any[]): any => {};\n\
-         export const IntoSet = (..._: any[]): any => {};\n",
+         export const IntoSet = (..._: any[]): any => {};\n\
+         export const Singleton = (..._: any[]): any => {};\n",
     )
     .unwrap();
 
@@ -105,6 +106,20 @@ fn write_stubs(root: &Path) {
          export const Returns = (..._: any[]): any => {};\n\
          export const Security = (..._: any[]): any => {};\n\
          export const Deprecated = (..._: any[]): any => {};\n",
+    )
+    .unwrap();
+
+    // zod-to-json-schema — provides zodToJsonSchema used by schema-route.module.anvil.ts
+    let zod_json_schema = root.join("node_modules/zod-to-json-schema");
+    std::fs::create_dir_all(&zod_json_schema).unwrap();
+    std::fs::write(
+        zod_json_schema.join("package.json"),
+        r#"{ "name": "zod-to-json-schema", "main": "index.ts", "types": "index.ts" }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        zod_json_schema.join("index.ts"),
+        "export function zodToJsonSchema(_schema: unknown, _options?: unknown): Record<string, unknown> { return {}; }\n",
     )
     .unwrap();
 

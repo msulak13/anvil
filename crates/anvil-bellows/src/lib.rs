@@ -11,7 +11,7 @@
 pub mod codegen;
 pub mod parser;
 
-pub use codegen::{emit_routes_module, EmitError};
+pub use codegen::{emit_openapi_module, emit_routes_module, EmitError};
 pub use parser::{
     parse_entry, Controller, ControllerFile, ExtraResponse, HttpMethod, ParamKind, ParseDiagnostic,
     ReturnKind, Route, SchemaRef, TypedParam,

@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "generate:routes": "cargo run -q -p anvil-bellows --manifest-path ../../Cargo.toml -- --entry server/src --output server/src/routes.module.ts",
+    "generate:routes": "cargo run -q -p anvil-bellows --manifest-path ../../Cargo.toml -- --entry server/src --openapi-title \"Todo API\"",
     "generate:anvil": "cargo run -q -p anvil-cli --manifest-path ../../Cargo.toml -- build --entry $PWD/server/src/app-component.ts",
     "generate:openapi": "cargo run -q -p anvil-bellows-openapi --manifest-path ../../Cargo.toml -- --entry server/src --output openapi.json --config openapi.config.json",
     "generate:client": "openapi-ts",
@@ -29,7 +29,8 @@
     "express": "^5.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "zod": "^3.23.0"
+    "zod": "^3.23.0",
+    "zod-to-json-schema": "^3.24.0"
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "^0.64.0",

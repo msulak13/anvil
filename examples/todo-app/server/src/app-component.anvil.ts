@@ -2,7 +2,7 @@
 // Source: ./app-component.ts
 import type { RouteDefinition } from "../../../../packages/anvil-bellows/dist/index.js";
 import { AppComponent } from "./app-component";
-import { RoutesModule } from "./routes.module";
+import { RoutesModule } from "./routes.module.anvil";
 import type { TodoController } from "./todo-controller";
 import { TodoModule } from "./todo-module";
 import type { TodoService } from "./todo-service";
