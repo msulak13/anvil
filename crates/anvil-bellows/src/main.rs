@@ -1,12 +1,12 @@
 //! `anvil-bellows` CLI — generate `routes.module.anvil.ts` and
 //! `schema-route.module.anvil.ts` from `@Controller` files.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
 
-/// Generate routes and OpenAPI modules from NestJS-style `@Controller` files.
+/// Generate routes and `OpenAPI` modules from NestJS-style `@Controller` files.
 #[derive(Debug, Parser)]
 #[command(name = "anvil-bellows", version, about, long_about = None)]
 struct Cli {
@@ -18,16 +18,16 @@ struct Cli {
     #[arg(long)]
     output: Option<PathBuf>,
 
-    /// Output path for the OpenAPI route module.
+    /// Output path for the `OpenAPI` route module.
     /// Defaults to `<entry>/schema-route.module.anvil.ts`.
     #[arg(long)]
     openapi_output: Option<PathBuf>,
 
-    /// `info.title` value in the generated OpenAPI spec.
+    /// `info.title` value in the generated `OpenAPI` spec.
     #[arg(long, default_value = "API")]
     openapi_title: String,
 
-    /// `info.version` value in the generated OpenAPI spec.
+    /// `info.version` value in the generated `OpenAPI` spec.
     #[arg(long, default_value = "0.0.1")]
     openapi_version: String,
 
@@ -144,14 +144,14 @@ fn main() -> ExitCode {
 /// Resolve an optional explicit path, or fall back to `<entry>/<default_name>`.
 /// Canonicalizes the parent directory so import specifiers computed against
 /// canonicalized source paths remain consistent.
-fn resolve_output(explicit: Option<PathBuf>, entry: &PathBuf, default_name: &str) -> PathBuf {
+fn resolve_output(explicit: Option<PathBuf>, entry: &Path, default_name: &str) -> PathBuf {
     let path = explicit.unwrap_or_else(|| entry.join(default_name));
-    let parent = path.parent().unwrap_or(entry.as_path());
+    let parent = path.parent().unwrap_or(entry);
     let canon_parent = std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
     canon_parent.join(path.file_name().unwrap_or_default())
 }
 
-fn write_file(path: &PathBuf, content: &str) -> Result<(), String> {
+fn write_file(path: &Path, content: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("cannot create directory '{}': {e}", parent.display()))?;

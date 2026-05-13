@@ -198,7 +198,7 @@ fn emit_controller_provider(s: &mut String, class_name: &str, ctor_params: &[Cto
 ///
 /// The generated module exports `OpenApiModule` — an `@Module` class with a single
 /// `@IntoSet @Provides` method that provides a `GET /openapi.json` route whose
-/// handler calls `buildSpec()`. `buildSpec()` constructs the full OpenAPI 3.1 spec
+/// handler calls `buildSpec()`. `buildSpec()` constructs the full `OpenAPI` 3.1 spec
 /// at runtime using `zodToJsonSchema` from the `zod-to-json-schema` package, giving
 /// real component schemas instead of empty stubs.
 pub fn emit_openapi_module(
@@ -230,9 +230,9 @@ pub fn emit_openapi_module(
     Ok(output)
 }
 
-/// Collect schema idents referenced via `$ref` in the OpenAPI spec — query params,
+/// Collect schema idents referenced via `$ref` in the `OpenAPI` spec — query params,
 /// request bodies, and responses. Does NOT include `Params` schemas (path params
-/// are always plain `type: "string"` in OpenAPI, not schema-typed).
+/// are always plain `type: "string"` in `OpenAPI`, not schema-typed).
 fn collect_openapi_schema_idents(route: &Route, out: &mut BTreeSet<String>) {
     for param in &route.params {
         match &param.kind {
@@ -339,9 +339,10 @@ fn build_openapi_ts(
     s
 }
 
+type PathMap<'a> = BTreeMap<String, BTreeMap<String, (&'a Controller, &'a Route, Vec<String>)>>;
+
 fn openapi_emit_paths_ts(s: &mut String, files: &[ControllerFile], indent: &str) {
-    let mut path_map: BTreeMap<String, BTreeMap<String, (&Controller, &Route, Vec<String>)>> =
-        BTreeMap::new();
+    let mut path_map: PathMap<'_> = BTreeMap::new();
     for file in files {
         for ctrl in &file.controllers {
             for route in &ctrl.routes {
@@ -415,11 +416,11 @@ fn openapi_emit_operation_ts(
         }
         for param in &route.params {
             if let ParamKind::Query(schema) = &param.kind {
-                let ident = &schema.ident;
+                let schema_id = &schema.ident;
                 let name = &param.name;
                 writeln!(
                     s,
-                    "{indent}    {{ in: \"query\", name: \"{name}\", required: false, schema: {{ \"$ref\": \"#/components/schemas/{ident}\" }} }},"
+                    "{indent}    {{ in: \"query\", name: \"{name}\", required: false, schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }},"
                 )
                 .unwrap();
             }
@@ -433,11 +434,11 @@ fn openapi_emit_operation_ts(
         .find(|p| matches!(p.kind, ParamKind::Body(_)))
     {
         if let ParamKind::Body(schema) = &body_param.kind {
-            let ident = &schema.ident;
+            let schema_id = &schema.ident;
             writeln!(s, "{indent}  requestBody: {{").unwrap();
             writeln!(
                 s,
-                "{indent}    content: {{ \"application/json\": {{ schema: {{ \"$ref\": \"#/components/schemas/{ident}\" }} }} }},"
+                "{indent}    content: {{ \"application/json\": {{ schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }} }},"
             )
             .unwrap();
             writeln!(s, "{indent}    required: true,").unwrap();
@@ -448,10 +449,10 @@ fn openapi_emit_operation_ts(
     writeln!(s, "{indent}  responses: {{").unwrap();
     match &route.return_kind {
         ReturnKind::Responds { schema, .. } => {
-            let ident = &schema.ident;
+            let schema_id = &schema.ident;
             writeln!(
                 s,
-                "{indent}    \"200\": {{ content: {{ \"application/json\": {{ schema: {{ \"$ref\": \"#/components/schemas/{ident}\" }} }} }}, description: \"Success\" }},"
+                "{indent}    \"200\": {{ content: {{ \"application/json\": {{ schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }} }}, description: \"Success\" }},"
             )
             .unwrap();
         }

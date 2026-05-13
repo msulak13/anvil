@@ -253,6 +253,7 @@ pub fn parse_entry(
 }
 
 /// Parse a single TypeScript source string.
+#[allow(clippy::too_many_lines)]
 fn parse_source(
     source: &str,
     file_path: &str,
@@ -387,9 +388,8 @@ fn parse_source(
 fn collect_import_map(stmts: &[Statement<'_>], file_dir: &Path) -> HashMap<String, PathBuf> {
     let mut map: HashMap<String, PathBuf> = HashMap::new();
     for stmt in stmts {
-        let import = match stmt {
-            Statement::ImportDeclaration(i) => i,
-            _ => continue,
+        let Statement::ImportDeclaration(import) = stmt else {
+            continue;
         };
         let raw_spec = import.source.value.as_str();
         // Only resolve relative imports; skip package names.
@@ -841,11 +841,11 @@ export class UserController {
     #[test]
     fn skips_non_controller_classes() {
         let (file, _) = parse(
-            r#"
+            r"
 export class NotAController {
   doThing() {}
 }
-"#,
+",
         );
         assert!(file.is_none());
     }
