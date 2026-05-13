@@ -88,6 +88,7 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 | M13 | WASM build: `tsdi-codegen-wasm` crate + npm package, `MapResolver`, `anvil-unplugin` wasm mode |
 | Bellows M1 | `packages/anvil-bellows`: runtime types, `Validator<T>` interface, wrapper types, `withJsonSchema`, `RouteDefinition`, Stage-3 decorator stubs (Controller, Get, Post, Put, Delete, Patch, Middleware, Tag, Returns, Security, Deprecated) |
 | Bellows M2 | `crates/anvil-bellows`: Rust crate + `anvil-bellows` binary — static Oxc parser for `@Controller`/`@Get`/etc., `routes.module.ts` emitter, `PreBuildHook` interface, `bellowsCodegen()` factory. `packages/anvil-bellows-cli` + platform stubs mirror the `anvil-cli` distribution model. |
+| Bellows M3 | Type-driven adapter generation in `crates/anvil-bellows`. Parser detects `Body<typeof S>`, `Query<typeof S>`, `Params<typeof S>`, `Request`, `Response`, `Responds<typeof S>`, `Promise<Responds<typeof S>>` from the Oxc AST. Codegen emits `safeParse` validation prologues; routes with any `Unknown` param fall back to v0.1 passthrough. Fixture `03_schema_params` with tsc validation. |
 
 ## Load-bearing implementation notes
 

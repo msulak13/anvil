@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    Argument, ClassElement, Declaration, Decorator, Expression, MethodDefinitionKind, PropertyKey,
-    Statement,
+    Argument, BindingPattern, ClassElement, Declaration, Decorator, Expression, FormalParameter,
+    MethodDefinitionKind, PropertyKey, Statement, TSType, TSTypeQueryExprName, TSTypeName,
 };
 use oxc_parser::Parser;
 use oxc_span::SourceType;
@@ -65,6 +65,56 @@ impl HttpMethod {
     }
 }
 
+/// A schema validator identifier (the `S` in `Body<typeof S>`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaRef {
+    /// The identifier used to call `.safeParse()` at runtime.
+    pub ident: String,
+}
+
+/// Classification of a handler parameter's type annotation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParamKind {
+    /// `Body<typeof S>` — validate `req.body` against schema `S`.
+    Body(SchemaRef),
+    /// `Query<typeof S>` — validate `req.query` against schema `S`.
+    Query(SchemaRef),
+    /// `Params<typeof S>` — validate `req.params` against schema `S`.
+    Params(SchemaRef),
+    /// `Request` or `express.Request` — inject the raw request object.
+    Request,
+    /// `Response` or `express.Response` — inject the raw response object.
+    Response,
+    /// Unrecognized annotation — triggers v0.1 passthrough for the whole route.
+    Unknown,
+}
+
+/// A named parameter extracted from a handler method signature.
+#[derive(Debug, Clone)]
+pub struct TypedParam {
+    /// The parameter's declared name in TypeScript.
+    pub name: String,
+    /// The resolved kind.
+    pub kind: ParamKind,
+}
+
+/// Classification of a handler method's return type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReturnKind {
+    /// `Responds<typeof S>` or `Promise<Responds<typeof S>>`.
+    Responds {
+        /// Schema used to validate the return value before calling `res.json()`.
+        schema: SchemaRef,
+        /// True when the method is `async` or returns `Promise<…>`.
+        is_async: bool,
+    },
+    /// `void`, `Promise<void>`, or no annotation — controller owns `res`.
+    Void {
+        /// True when the method is `async`.
+        is_async: bool,
+    },
+}
+
 /// A single route extracted from a method decorator.
 #[derive(Debug, Clone)]
 pub struct Route {
@@ -74,6 +124,10 @@ pub struct Route {
     pub path: String,
     /// The TypeScript method name on the controller class.
     pub handler_name: String,
+    /// Typed parameters of the handler (empty means v0.1 passthrough).
+    pub params: Vec<TypedParam>,
+    /// Classification of the handler's return type.
+    pub return_kind: ReturnKind,
 }
 
 /// A controller class extracted from a source file.
@@ -221,11 +275,26 @@ fn parse_source(
                 _ => continue,
             };
 
+            let typed_params: Vec<TypedParam> = m
+                .value
+                .params
+                .items
+                .iter()
+                .map(classify_param)
+                .collect();
+
+            let return_kind = classify_return(
+                m.value.return_type.as_ref().map(|a| &a.type_annotation),
+                m.value.r#async,
+            );
+
             for dec in &m.decorators {
                 if let Some(route) = try_extract_route(
                     dec,
                     &base_path,
                     &handler_name,
+                    &typed_params,
+                    return_kind.clone(),
                     file_path,
                     &mut diagnostics,
                 ) {
@@ -278,6 +347,8 @@ fn try_extract_route<'a>(
     dec: &'a Decorator<'a>,
     base_path: &str,
     handler_name: &str,
+    typed_params: &[TypedParam],
+    return_kind: ReturnKind,
     file_path: &str,
     diagnostics: &mut Vec<ParseDiagnostic>,
 ) -> Option<Route> {
@@ -293,7 +364,109 @@ fn try_extract_route<'a>(
         method,
         path: full_path,
         handler_name: handler_name.to_owned(),
+        params: typed_params.to_vec(),
+        return_kind,
     })
+}
+
+/// Classify a formal parameter by its type annotation.
+fn classify_param(param: &FormalParameter<'_>) -> TypedParam {
+    let name = match &param.pattern {
+        BindingPattern::BindingIdentifier(id) => id.name.as_str().to_owned(),
+        _ => "_".to_owned(),
+    };
+    let kind = param
+        .type_annotation
+        .as_ref()
+        .map_or(ParamKind::Unknown, |ann| classify_ts_type(&ann.type_annotation));
+    TypedParam { name, kind }
+}
+
+/// Classify a `TSType` into a `ParamKind`.
+fn classify_ts_type(ty: &TSType<'_>) -> ParamKind {
+    let TSType::TSTypeReference(tref) = ty else {
+        return ParamKind::Unknown;
+    };
+    let local_name = ts_type_name_local(&tref.type_name);
+    match local_name {
+        "Request" => return ParamKind::Request,
+        "Response" => return ParamKind::Response,
+        "Body" | "Query" | "Params" => {}
+        _ => return ParamKind::Unknown,
+    }
+    let Some(schema) = extract_typeof_schema_from_tref(tref) else {
+        return ParamKind::Unknown;
+    };
+    match local_name {
+        "Body" => ParamKind::Body(schema),
+        "Query" => ParamKind::Query(schema),
+        "Params" => ParamKind::Params(schema),
+        _ => unreachable!(),
+    }
+}
+
+/// Classify the return type annotation into a `ReturnKind`.
+fn classify_return(ty: Option<&TSType<'_>>, is_async: bool) -> ReturnKind {
+    let Some(ty) = ty else {
+        return ReturnKind::Void { is_async };
+    };
+    // Handle Promise<X> — unwrap to inner type.
+    let (inner, resolved_async) = if let TSType::TSTypeReference(tref) = ty {
+        if ts_type_name_local(&tref.type_name) == "Promise" {
+            let inner = tref
+                .type_arguments
+                .as_ref()
+                .and_then(|tp| tp.params.first());
+            (inner.map(|t| t as &TSType<'_>), true)
+        } else {
+            (Some(ty), is_async)
+        }
+    } else {
+        (Some(ty), is_async)
+    };
+
+    let Some(inner) = inner else {
+        return ReturnKind::Void { is_async: resolved_async };
+    };
+
+    // Check for Responds<typeof S>.
+    let TSType::TSTypeReference(tref) = inner else {
+        return ReturnKind::Void { is_async: resolved_async };
+    };
+    if ts_type_name_local(&tref.type_name) != "Responds" {
+        return ReturnKind::Void { is_async: resolved_async };
+    }
+    if let Some(schema) = extract_typeof_schema_from_tref(tref) {
+        ReturnKind::Responds { schema, is_async: resolved_async }
+    } else {
+        ReturnKind::Void { is_async: resolved_async }
+    }
+}
+
+/// Extract the schema identifier from `Wrapper<typeof S>` (e.g. `Body<typeof CreateUserBody>`).
+fn extract_typeof_schema_from_tref(
+    tref: &oxc_ast::ast::TSTypeReference<'_>,
+) -> Option<SchemaRef> {
+    let params = tref.type_arguments.as_ref()?;
+    let first = params.params.first()?;
+    let TSType::TSTypeQuery(query) = first else {
+        return None;
+    };
+    let ident = match &query.expr_name {
+        TSTypeQueryExprName::IdentifierReference(id) => id.name.as_str(),
+        _ => return None,
+    };
+    Some(SchemaRef { ident: ident.to_owned() })
+}
+
+/// Return the rightmost (local) name from a `TSTypeName`.
+/// `express.Request` → `"Request"`, `Request` → `"Request"`.
+fn ts_type_name_local<'a>(name: &'a TSTypeName<'a>) -> &'a str {
+    match name {
+        TSTypeName::IdentifierReference(id) => id.name.as_str(),
+        TSTypeName::QualifiedName(q) => q.right.name.as_str(),
+        TSTypeName::ThisExpression(_) => "",
+    }
 }
 
 /// Extract the string value from a call argument, or emit a diagnostic and return `None`.
@@ -472,5 +645,97 @@ export class NotAController {
         assert_eq!(join_paths("/users", "/"), "/users");
         assert_eq!(join_paths("", "/health"), "/health");
         assert_eq!(join_paths("/api/v1", "/users"), "/api/v1/users");
+    }
+
+    #[test]
+    fn classify_body_query_params() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Post } from "@msulak/anvil-bellows";
+import type { Body, Query, Params } from "@msulak/anvil-bellows";
+
+export const CreateBody = {};
+export const FilterQuery = {};
+export const UserParams = {};
+
+@Controller("/users")
+export class UserController {
+  @Post("/:id")
+  create(body: Body<typeof CreateBody>, query: Query<typeof FilterQuery>, params: Params<typeof UserParams>): void {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert_eq!(route.params.len(), 3);
+        assert_eq!(route.params[0].name, "body");
+        assert_eq!(route.params[0].kind, ParamKind::Body(SchemaRef { ident: "CreateBody".into() }));
+        assert_eq!(route.params[1].name, "query");
+        assert_eq!(route.params[1].kind, ParamKind::Query(SchemaRef { ident: "FilterQuery".into() }));
+        assert_eq!(route.params[2].name, "params");
+        assert_eq!(route.params[2].kind, ParamKind::Params(SchemaRef { ident: "UserParams".into() }));
+    }
+
+    #[test]
+    fn classify_request_response() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get } from "@msulak/anvil-bellows";
+
+@Controller("/")
+export class PingController {
+  @Get("/ping")
+  ping(req: Request, res: Response): void {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert_eq!(route.params[0].kind, ParamKind::Request);
+        assert_eq!(route.params[1].kind, ParamKind::Response);
+    }
+
+    #[test]
+    fn classify_responds_return_type() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get } from "@msulak/anvil-bellows";
+export const UserSchema = {};
+
+@Controller("/users")
+export class UserController {
+  @Get("/:id")
+  byId(req: Request): Responds<typeof UserSchema> { return {} as any; }
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert_eq!(
+            route.return_kind,
+            ReturnKind::Responds { schema: SchemaRef { ident: "UserSchema".into() }, is_async: false }
+        );
+    }
+
+    #[test]
+    fn classify_promise_responds_return_type() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get } from "@msulak/anvil-bellows";
+export const UserSchema = {};
+
+@Controller("/users")
+export class UserController {
+  @Get("/:id")
+  async byId(req: Request): Promise<Responds<typeof UserSchema>> { return {} as any; }
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert_eq!(
+            route.return_kind,
+            ReturnKind::Responds { schema: SchemaRef { ident: "UserSchema".into() }, is_async: true }
+        );
     }
 }

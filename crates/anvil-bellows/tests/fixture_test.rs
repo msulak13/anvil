@@ -84,11 +84,16 @@ fn write_stubs(root: &Path) {
     .unwrap();
     std::fs::write(
         bellows.join("index.ts"),
+        // handler uses `any` so generated safeParse/res.json calls type-check.
         "export interface RouteDefinition {\n\
            method: \"GET\" | \"POST\" | \"PUT\" | \"DELETE\" | \"PATCH\";\n\
            path: string;\n\
-           handler: (req: unknown, res: unknown) => void | Promise<void>;\n\
+           handler: (req: any, res: any) => void | Promise<void>;\n\
          }\n\
+         export type Body<S> = S extends { safeParse(x: unknown): { success: true; data: infer T } | any } ? T : never;\n\
+         export type Query<S> = Body<S>;\n\
+         export type Params<S> = Body<S>;\n\
+         export type Responds<S> = Body<S>;\n\
          export const Controller = (..._: any[]): any => {};\n\
          export const Get = (..._: any[]): any => {};\n\
          export const Post = (..._: any[]): any => {};\n\
@@ -257,4 +262,53 @@ fn fixture_02_non_literal_arg_snapshot() {
         let expected = std::fs::read_to_string(&expected_file).unwrap();
         assert_eq!(produced, expected, "run with BLESS=1 to refresh");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Fixture 03 — type-driven adapters: Body, Query, Params, Request, Response,
+//              Responds<T>
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixture_03_schema_params_snapshot() {
+    run_fixture("03_schema_params");
+}
+
+#[test]
+fn fixture_03_schema_params_tsc() {
+    let tsc = tsc_bin();
+    if !tsc.exists() {
+        eprintln!("skipping tsc check — tsc not found at {}", tsc.display());
+        return;
+    }
+
+    let (tmp, _) = run_fixture("03_schema_params");
+
+    Command::new(tsc)
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .current_dir(tmp.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn fixture_03_schema_params_no_typeof_in_output() {
+    let (_tmp, output_path) = run_fixture("03_schema_params");
+    let produced = std::fs::read_to_string(&output_path).unwrap();
+    assert!(
+        !produced.contains("typeof"),
+        "generated adapter must not contain `typeof` — schema refs should be value identifiers"
+    );
+}
+
+#[test]
+fn fixture_03_schema_params_safe_parse_calls() {
+    let (_tmp, output_path) = run_fixture("03_schema_params");
+    let produced = std::fs::read_to_string(&output_path).unwrap();
+    assert!(produced.contains("CreateOrderBody.safeParse(req.body)"));
+    assert!(produced.contains("OrderFilterQuery.safeParse(req.query)"));
+    assert!(produced.contains("OrderParams.safeParse(req.params)"));
+    assert!(produced.contains("OrderSchema.safeParse(_result)"));
+    assert!(produced.contains("res.json(_validated.data)"));
 }
