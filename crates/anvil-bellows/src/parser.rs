@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
     Argument, BindingPattern, ClassElement, Declaration, Decorator, Expression, FormalParameter,
-    ImportDeclarationSpecifier, MethodDefinitionKind, PropertyKey, Statement, TSType,
-    TSTypeQueryExprName, TSTypeName,
+    ImportDeclarationSpecifier, MethodDefinitionKind, PropertyKey, Statement, TSType, TSTypeName,
+    TSTypeQueryExprName,
 };
 use oxc_parser::Parser;
 use oxc_span::SourceType;
@@ -234,16 +234,12 @@ pub fn parse_entry(
             .to_string_lossy()
             .into_owned();
         // Skip generated files, declarations, and tests.
-        if name.ends_with(".d.ts")
-            || name.ends_with(".test.ts")
-            || name == "routes.module.ts"
-        {
+        if name.ends_with(".d.ts") || name.ends_with(".test.ts") || name == "routes.module.ts" {
             continue;
         }
 
         let source = std::fs::read_to_string(&path)?;
-        let (file_opt, mut diags) =
-            parse_source(&source, &path.display().to_string(), &path);
+        let (file_opt, mut diags) = parse_source(&source, &path.display().to_string(), &path);
         diagnostics.append(&mut diags);
         if let Some(f) = file_opt {
             files.push(f);
@@ -324,13 +320,8 @@ fn parse_source(
                 _ => continue,
             };
 
-            let typed_params: Vec<TypedParam> = m
-                .value
-                .params
-                .items
-                .iter()
-                .map(classify_param)
-                .collect();
+            let typed_params: Vec<TypedParam> =
+                m.value.params.items.iter().map(classify_param).collect();
 
             let return_kind = classify_return(
                 m.value.return_type.as_ref().map(|a| &a.type_annotation),
@@ -368,7 +359,13 @@ fn parse_source(
         }
 
         if !routes.is_empty() {
-            controllers.push(Controller { class_name, ctor_params, routes, tags, security });
+            controllers.push(Controller {
+                class_name,
+                ctor_params,
+                routes,
+                tags,
+                security,
+            });
         }
     }
 
@@ -410,9 +407,7 @@ fn collect_import_map(stmts: &[Statement<'_>], file_dir: &Path) -> HashMap<Strin
         };
         for spec in specifiers {
             let local_name = match spec {
-                ImportDeclarationSpecifier::ImportSpecifier(s) => {
-                    s.local.name.as_str().to_owned()
-                }
+                ImportDeclarationSpecifier::ImportSpecifier(s) => s.local.name.as_str().to_owned(),
                 ImportDeclarationSpecifier::ImportDefaultSpecifier(s) => {
                     s.local.name.as_str().to_owned()
                 }
@@ -450,7 +445,11 @@ fn extract_ctor_param(
     }
     let type_name = type_name.to_owned();
     let abs_source = import_map.get(&type_name).cloned();
-    Some(CtorParam { name, type_name, abs_source })
+    Some(CtorParam {
+        name,
+        type_name,
+        abs_source,
+    })
 }
 
 /// Extract the path string from `@Controller(path)` in a class's decorator list.
@@ -497,7 +496,7 @@ fn try_extract_route<'a>(
         handler_name: handler_name.to_owned(),
         params: typed_params.to_vec(),
         return_kind,
-        deprecated: false,       // filled in by caller after scanning all decorators
+        deprecated: false, // filled in by caller after scanning all decorators
         extra_responses: vec![], // ditto
     })
 }
@@ -560,7 +559,9 @@ fn try_extract_returns(dec: &Decorator<'_>) -> Option<ExtraResponse> {
     let status = lit.value as u16;
     let schema = call.arguments.get(1).and_then(|a| {
         if let Argument::Identifier(id) = a {
-            Some(SchemaRef { ident: id.name.to_string() })
+            Some(SchemaRef {
+                ident: id.name.to_string(),
+            })
         } else {
             None
         }
@@ -577,7 +578,9 @@ fn classify_param(param: &FormalParameter<'_>) -> TypedParam {
     let kind = param
         .type_annotation
         .as_ref()
-        .map_or(ParamKind::Unknown, |ann| classify_ts_type(&ann.type_annotation));
+        .map_or(ParamKind::Unknown, |ann| {
+            classify_ts_type(&ann.type_annotation)
+        });
     TypedParam { name, kind }
 }
 
@@ -625,27 +628,36 @@ fn classify_return(ty: Option<&TSType<'_>>, is_async: bool) -> ReturnKind {
     };
 
     let Some(inner) = inner else {
-        return ReturnKind::Void { is_async: resolved_async };
+        return ReturnKind::Void {
+            is_async: resolved_async,
+        };
     };
 
     // Check for Responds<typeof S>.
     let TSType::TSTypeReference(tref) = inner else {
-        return ReturnKind::Void { is_async: resolved_async };
+        return ReturnKind::Void {
+            is_async: resolved_async,
+        };
     };
     if ts_type_name_local(&tref.type_name) != "Responds" {
-        return ReturnKind::Void { is_async: resolved_async };
+        return ReturnKind::Void {
+            is_async: resolved_async,
+        };
     }
     if let Some(schema) = extract_typeof_schema_from_tref(tref) {
-        ReturnKind::Responds { schema, is_async: resolved_async }
+        ReturnKind::Responds {
+            schema,
+            is_async: resolved_async,
+        }
     } else {
-        ReturnKind::Void { is_async: resolved_async }
+        ReturnKind::Void {
+            is_async: resolved_async,
+        }
     }
 }
 
 /// Extract the schema identifier from `Wrapper<typeof S>` (e.g. `Body<typeof CreateUserBody>`).
-fn extract_typeof_schema_from_tref(
-    tref: &oxc_ast::ast::TSTypeReference<'_>,
-) -> Option<SchemaRef> {
+fn extract_typeof_schema_from_tref(tref: &oxc_ast::ast::TSTypeReference<'_>) -> Option<SchemaRef> {
     let params = tref.type_arguments.as_ref()?;
     let first = params.params.first()?;
     let TSType::TSTypeQuery(query) = first else {
@@ -655,7 +667,9 @@ fn extract_typeof_schema_from_tref(
         TSTypeQueryExprName::IdentifierReference(id) => id.name.as_str(),
         _ => return None,
     };
-    Some(SchemaRef { ident: ident.to_owned() })
+    Some(SchemaRef {
+        ident: ident.to_owned(),
+    })
 }
 
 /// Return the rightmost (local) name from a `TSTypeName`.
@@ -686,8 +700,7 @@ fn extract_string_arg<'a>(
                 file: file_path.to_owned(),
                 decorator: decorator.to_owned(),
                 found: describe_arg(other),
-                hint: "use a string literal, or re-run with --tsc to resolve constants"
-                    .to_owned(),
+                hint: "use a string literal, or re-run with --tsc to resolve constants".to_owned(),
             });
             None
         }
@@ -868,11 +881,26 @@ export class UserController {
         let route = &file.unwrap().controllers[0].routes[0];
         assert_eq!(route.params.len(), 3);
         assert_eq!(route.params[0].name, "body");
-        assert_eq!(route.params[0].kind, ParamKind::Body(SchemaRef { ident: "CreateBody".into() }));
+        assert_eq!(
+            route.params[0].kind,
+            ParamKind::Body(SchemaRef {
+                ident: "CreateBody".into()
+            })
+        );
         assert_eq!(route.params[1].name, "query");
-        assert_eq!(route.params[1].kind, ParamKind::Query(SchemaRef { ident: "FilterQuery".into() }));
+        assert_eq!(
+            route.params[1].kind,
+            ParamKind::Query(SchemaRef {
+                ident: "FilterQuery".into()
+            })
+        );
         assert_eq!(route.params[2].name, "params");
-        assert_eq!(route.params[2].kind, ParamKind::Params(SchemaRef { ident: "UserParams".into() }));
+        assert_eq!(
+            route.params[2].kind,
+            ParamKind::Params(SchemaRef {
+                ident: "UserParams".into()
+            })
+        );
     }
 
     #[test]
@@ -912,7 +940,12 @@ export class UserController {
         let route = &file.unwrap().controllers[0].routes[0];
         assert_eq!(
             route.return_kind,
-            ReturnKind::Responds { schema: SchemaRef { ident: "UserSchema".into() }, is_async: false }
+            ReturnKind::Responds {
+                schema: SchemaRef {
+                    ident: "UserSchema".into()
+                },
+                is_async: false
+            }
         );
     }
 
@@ -934,7 +967,12 @@ export class UserController {
         let route = &file.unwrap().controllers[0].routes[0];
         assert_eq!(
             route.return_kind,
-            ReturnKind::Responds { schema: SchemaRef { ident: "UserSchema".into() }, is_async: true }
+            ReturnKind::Responds {
+                schema: SchemaRef {
+                    ident: "UserSchema".into()
+                },
+                is_async: true
+            }
         );
     }
 }

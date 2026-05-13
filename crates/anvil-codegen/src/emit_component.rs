@@ -295,7 +295,10 @@ struct Imports {
 impl Imports {
     fn add_value(&mut self, out_dir: &Path, cref: &ClassRef) {
         let spec = import_specifier_for(out_dir, &cref.module);
-        self.value.entry(spec).or_default().insert(cref.name.clone());
+        self.value
+            .entry(spec)
+            .or_default()
+            .insert(cref.name.clone());
     }
 
     fn add_type(&mut self, out_dir: &Path, cref: &ClassRef) {
