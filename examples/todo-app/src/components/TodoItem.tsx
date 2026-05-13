@@ -4,10 +4,10 @@ import {
   todoControllerDeleteRemoveMutation,
   todoControllerPutUpdateMutation,
 } from "../api/@tanstack/react-query.gen.js";
-import type { Todo } from "../api/types.gen.js";
+import type { TodoSchema } from "../api/types.gen.js";
 
 interface Props {
-  todo: Todo;
+  todo: TodoSchema;
 }
 
 export function TodoItem({ todo }: Props) {

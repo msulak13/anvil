@@ -70,7 +70,7 @@ fn watch_regenerates_anvil_file_on_source_change() {
     // Wait for the initial emit.
     wait_until(Duration::from_secs(15), || out.is_file()).expect("initial emit");
     let v1 = std::fs::read_to_string(&out).unwrap();
-    assert!(v1.contains("DaggerCoffeeShop"));
+    assert!(v1.contains("AnvilCoffeeShop"));
 
     // Mutate the source: rename Heater's body so the new anvil.ts changes
     // mtime/content (we add a method that affects no IR but ensures the
@@ -91,7 +91,7 @@ fn watch_regenerates_anvil_file_on_source_change() {
 
     // The output file still exists and still contains the generated class.
     let v2 = std::fs::read_to_string(&out).unwrap();
-    assert!(v2.contains("DaggerCoffeeShop"));
+    assert!(v2.contains("AnvilCoffeeShop"));
 }
 
 fn wait_until(timeout: Duration, mut pred: impl FnMut() -> bool) -> Result<(), &'static str> {
