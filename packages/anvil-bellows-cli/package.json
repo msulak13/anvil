@@ -1,0 +1,40 @@
+{
+  "name": "@msulak/anvil-bellows-cli",
+  "version": "0.0.1",
+  "description": "Native binary launcher for the anvil-bellows codegen CLI. Resolves the right per-platform package at runtime; mirrors esbuild's distribution model.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "anvil-bellows": "./bin/anvil-bellows.js"
+  },
+  "files": ["bin", "dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "optionalDependencies": {
+    "@msulak/anvil-bellows-cli-darwin-arm64": "workspace:*",
+    "@msulak/anvil-bellows-cli-darwin-x64": "workspace:*",
+    "@msulak/anvil-bellows-cli-linux-arm64": "workspace:*",
+    "@msulak/anvil-bellows-cli-linux-x64": "workspace:*",
+    "@msulak/anvil-bellows-cli-win32-x64": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

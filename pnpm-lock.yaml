@@ -54,6 +54,9 @@ importers:
 
   packages/anvil-bellows:
     dependencies:
+      '@msulak/anvil-bellows-cli':
+        specifier: workspace:*
+        version: link:../anvil-bellows-cli
       express:
         specifier: '>=4'
         version: 4.22.1
@@ -73,6 +76,44 @@ importers:
       zod:
         specifier: ^3.23.0
         version: 3.25.76
+
+  packages/anvil-bellows-cli:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.17)
+    optionalDependencies:
+      '@msulak/anvil-bellows-cli-darwin-arm64':
+        specifier: workspace:*
+        version: link:../anvil-bellows-cli-darwin-arm64
+      '@msulak/anvil-bellows-cli-darwin-x64':
+        specifier: workspace:*
+        version: link:../anvil-bellows-cli-darwin-x64
+      '@msulak/anvil-bellows-cli-linux-arm64':
+        specifier: workspace:*
+        version: link:../anvil-bellows-cli-linux-arm64
+      '@msulak/anvil-bellows-cli-linux-x64':
+        specifier: workspace:*
+        version: link:../anvil-bellows-cli-linux-x64
+      '@msulak/anvil-bellows-cli-win32-x64':
+        specifier: workspace:*
+        version: link:../anvil-bellows-cli-win32-x64
+
+  packages/anvil-bellows-cli-darwin-arm64: {}
+
+  packages/anvil-bellows-cli-darwin-x64: {}
+
+  packages/anvil-bellows-cli-linux-arm64: {}
+
+  packages/anvil-bellows-cli-linux-x64: {}
+
+  packages/anvil-bellows-cli-win32-x64: {}
 
   packages/anvil-cli:
     devDependencies:

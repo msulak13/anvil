@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { Validator } from "./schema.js";
@@ -129,5 +130,41 @@ describe("decorator stubs", () => {
     const fn = () => {};
     const result = Deprecated("use newHandler instead")(fn, {} as ClassMethodDecoratorContext);
     expect(result).toBe(fn);
+  });
+});
+
+// --- bellowsCodegen PreBuildHook ---
+
+import { bellowsCodegen } from "./hook.js";
+
+describe("bellowsCodegen", () => {
+  it("returns a hook with the correct name", () => {
+    const hook = bellowsCodegen({ entry: "src" });
+    expect(hook.name).toBe("anvil-bellows-codegen");
+  });
+
+  it("watchPatterns covers .ts files under the entry directory", () => {
+    const entry = path.resolve("src");
+    const hook = bellowsCodegen({ entry: "src" });
+    expect(hook.watchPatterns).toHaveLength(1);
+    expect(hook.watchPatterns[0]).toContain(entry);
+    expect(hook.watchPatterns[0]).toContain("**/*.ts");
+  });
+
+  it("shouldRerun returns true for changed .ts files under entry", () => {
+    const hook = bellowsCodegen({ entry: "src" });
+    const entryAbs = path.resolve("src");
+    expect(hook.shouldRerun([`${entryAbs}/user-controller.ts`])).toBe(true);
+  });
+
+  it("shouldRerun returns false for .d.ts files", () => {
+    const hook = bellowsCodegen({ entry: "src" });
+    const entryAbs = path.resolve("src");
+    expect(hook.shouldRerun([`${entryAbs}/user-controller.d.ts`])).toBe(false);
+  });
+
+  it("shouldRerun returns false for files outside the entry directory", () => {
+    const hook = bellowsCodegen({ entry: "src" });
+    expect(hook.shouldRerun(["/other/dir/something.ts"])).toBe(false);
   });
 });

@@ -23,6 +23,9 @@
     "test": "vitest run",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@msulak/anvil-bellows-cli": "workspace:*"
+  },
   "peerDependencies": {
     "express": ">=4"
   },

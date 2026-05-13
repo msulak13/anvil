@@ -1,0 +1,17 @@
+{
+  "name": "@msulak/anvil-bellows-cli-darwin-x64",
+  "version": "0.0.1",
+  "description": "Prebuilt anvil-bellows CLI binary for darwin-x64. Resolved by `@msulak/anvil-bellows-cli` at runtime.",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "main": "index.js",
+  "files": [
+    "bin/anvil-bellows",
+    "index.js"
+  ],
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

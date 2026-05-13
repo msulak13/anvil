@@ -6,6 +6,7 @@ members = [
     "crates/anvil-codegen",
     "crates/anvil-cli",
     "crates/anvil-codegen-wasm",
+    "crates/anvil-bellows",
 ]
 
 [workspace.package]

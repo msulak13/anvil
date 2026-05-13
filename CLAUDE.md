@@ -18,6 +18,7 @@ The Rust toolchain (`tsdi-*` crates) does all codegen. npm packages (`anvil-*`) 
 | `tsdi-parser` | Read TS files via Oxc, extract decorators, build IR | Owns import-map resolution and `Key` minting. |
 | `tsdi-codegen` | Walk validated IR, emit `*.anvil.ts` via TS-string → `oxc_parser` → `oxc_codegen` | Parser validates; codegen canonicalizes formatting. |
 | `tsdi-cli` | `anvil` binary; orchestrates parse → validate → emit; renders diagnostics via `miette` | Watch mode uses `notify` (M5+). |
+| `anvil-bellows` | Parse `@Controller` files (Oxc), emit `routes.module.ts`; `anvil-bellows` binary | Static mode only; M3 adds `--tsc`. |
 
 If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop and reconsider.
 
@@ -63,7 +64,9 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 | `packages/anvil-cli` | `@msulak/anvil-cli` | Launcher shim. Resolves the native binary via `optionalDependencies` or the `TSDI_CLI_BIN` env var. |
 | `packages/anvil-cli-<platform>-<arch>` | `@msulak/anvil-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Only win32-x64 committed; others filled by `release-cli.yml`. |
 | `packages/anvil-codegen-wasm` | `@msulak/anvil-codegen-wasm` | WASM build of `crates/tsdi-codegen-wasm`. `wasm-opt = false` — oxc emits `memory.copy` that bundled wasm-opt rejects. 1.4 MB unoptimized is fine. |
-| `packages/anvil-bellows` | `@msulak/anvil-bellows` | Runtime types + decorator stubs for NestJS-style controller codegen (`Validator<T>`, `Body<S>`, `Query<S>`, `Params<S>`, `Responds<S>`, `withJsonSchema`, `RouteDefinition`, + 11 Stage-3 decorator stubs). Bellows M1. |
+| `packages/anvil-bellows` | `@msulak/anvil-bellows` | Runtime types + decorator stubs for NestJS-style controller codegen (`Validator<T>`, `Body<S>`, `Query<S>`, `Params<S>`, `Responds<S>`, `withJsonSchema`, `RouteDefinition`, + 11 Stage-3 decorator stubs). Also exports `PreBuildHook` + `bellowsCodegen()`. Bellows M1+M2. |
+| `packages/anvil-bellows-cli` | `@msulak/anvil-bellows-cli` | Launcher shim for the `anvil-bellows` native binary. Mirrors `anvil-cli`. Env var: `ANVIL_BELLOWS_CLI_BIN`. |
+| `packages/anvil-bellows-cli-<platform>-<arch>` | `@msulak/anvil-bellows-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Filled by CI release workflow. |
 
 ## Milestone log
 
@@ -84,6 +87,7 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 | M12 | Async `@Provides`: `Promise<T>` return, `_resolve` phase, async `create()` |
 | M13 | WASM build: `tsdi-codegen-wasm` crate + npm package, `MapResolver`, `anvil-unplugin` wasm mode |
 | Bellows M1 | `packages/anvil-bellows`: runtime types, `Validator<T>` interface, wrapper types, `withJsonSchema`, `RouteDefinition`, Stage-3 decorator stubs (Controller, Get, Post, Put, Delete, Patch, Middleware, Tag, Returns, Security, Deprecated) |
+| Bellows M2 | `crates/anvil-bellows`: Rust crate + `anvil-bellows` binary — static Oxc parser for `@Controller`/`@Get`/etc., `routes.module.ts` emitter, `PreBuildHook` interface, `bellowsCodegen()` factory. `packages/anvil-bellows-cli` + platform stubs mirror the `anvil-cli` distribution model. |
 
 ## Load-bearing implementation notes
 
