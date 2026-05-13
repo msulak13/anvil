@@ -39,6 +39,40 @@ import { compile as wasmCompile } from "@msulak/anvil-codegen-wasm";
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * A hook that runs before `anvil build` in the plugin lifecycle.
+ *
+ * Implement this to perform custom codegen (e.g. `bellowsCodegen()`) before
+ * the main anvil compilation step. Returned by factory functions such as
+ * `bellowsCodegen` in `@msulak/anvil-bellows`.
+ */
+export interface PreBuildHook {
+  /** Stable identifier, shown in diagnostics. */
+  name: string;
+  /** Glob patterns whose changes should trigger a re-run in watch mode. */
+  watchPatterns: string[];
+  /** Return `true` if the hook should re-run given the set of changed files. */
+  shouldRerun(changedFiles: string[]): boolean;
+  /** Execute the hook; throw to signal failure. */
+  run(): Promise<void>;
+}
+
+/**
+ * A hook that runs after `anvil build` in the plugin lifecycle.
+ * Same shape as `PreBuildHook`; separated by name so callers can keep
+ * their intent explicit in the plugin options.
+ */
+export interface PostBuildHook {
+  /** Stable identifier, shown in diagnostics. */
+  name: string;
+  /** Glob patterns whose changes should trigger a re-run in watch mode. */
+  watchPatterns: string[];
+  /** Return `true` if the hook should re-run given the set of changed files. */
+  shouldRerun(changedFiles: string[]): boolean;
+  /** Execute the hook; throw to signal failure. */
+  run(): Promise<void>;
+}
+
 /** Plugin options. Every field is optional; sensible defaults match the CLI. */
 export interface AnvilPluginOptions {
   /**
@@ -105,6 +139,28 @@ export interface AnvilPluginOptions {
    * than the entry's own subtree.
    */
   rootDir?: string;
+  /**
+   * Hooks that run **before** `anvil build` on every `buildStart`.
+   *
+   * In watch mode a hook re-runs when `hook.shouldRerun(changedFiles)`
+   * returns `true`. If any pre-build hook re-runs, `anvil build` and
+   * all post-build hooks are also re-run.
+   *
+   * Hooks run in array order; the first failure aborts the build.
+   */
+  preBuild?: PreBuildHook[];
+  /**
+   * Hooks that run **after** `anvil build` on every `buildStart`.
+   *
+   * In watch mode a post-build hook re-runs when any pre-build hook
+   * re-ran (because the build output may have changed), or when
+   * `hook.shouldRerun(changedFiles)` returns `true` and no pre-build
+   * hook ran.
+   *
+   * Hooks run in array order; the first failure aborts the post-build
+   * phase.
+   */
+  postBuild?: PostBuildHook[];
 }
 
 /**
@@ -122,9 +178,9 @@ export const anvilUnplugin: UnpluginInstance<AnvilPluginOptions | undefined, fal
     const resolvedCli = rawOptions?.cli ?? resolveBinaryPath();
     const mode: "native" | "wasm" = rawOptions?.mode ?? "native";
     const options: Required<
-      Omit<AnvilPluginOptions, "entries" | "tsconfig" | "cli" | "rootDir">
+      Omit<AnvilPluginOptions, "entries" | "tsconfig" | "cli" | "rootDir" | "preBuild" | "postBuild">
     > &
-      Pick<AnvilPluginOptions, "entries" | "tsconfig" | "rootDir"> & {
+      Pick<AnvilPluginOptions, "entries" | "tsconfig" | "rootDir" | "preBuild" | "postBuild"> & {
         cli: string | null;
       } = {
       cli: resolvedCli,
@@ -134,10 +190,14 @@ export const anvilUnplugin: UnpluginInstance<AnvilPluginOptions | undefined, fal
       entries: rawOptions?.entries,
       tsconfig: rawOptions?.tsconfig,
       rootDir: rawOptions?.rootDir,
+      preBuild: rawOptions?.preBuild,
+      postBuild: rawOptions?.postBuild,
     };
 
     let pending: NodeJS.Timeout | undefined;
     let inFlight: Promise<void> | undefined;
+    // Files that changed during the current debounce window.
+    let pendingChanges: Set<string> = new Set();
 
     async function runCodegenOnce(): Promise<void> {
       // Coalesce concurrent invocations: the second caller awaits the
@@ -160,15 +220,47 @@ export const anvilUnplugin: UnpluginInstance<AnvilPluginOptions | undefined, fal
       return inFlight;
     }
 
-    function scheduleRebuild(): void {
+    // Run hooks triggered by a set of changed files.
+    // Pre-build hooks run first; if any ran, anvil build + all post-build
+    // hooks follow. If none ran, only the post-build hooks that opt-in run.
+    async function runHooksForChanges(changedFiles: string[]): Promise<void> {
+      const preBuildHooks = options.preBuild ?? [];
+      const postBuildHooks = options.postBuild ?? [];
+
+      const preBuildToRun = preBuildHooks.filter((h) =>
+        h.shouldRerun(changedFiles),
+      );
+
+      for (const hook of preBuildToRun) {
+        await hook.run();
+      }
+
+      if (preBuildToRun.length > 0) {
+        await runCodegenOnce();
+        for (const hook of postBuildHooks) {
+          await hook.run();
+        }
+      } else {
+        for (const hook of postBuildHooks.filter((h) =>
+          h.shouldRerun(changedFiles),
+        )) {
+          await hook.run();
+        }
+      }
+    }
+
+    function scheduleRebuild(changedFile: string): void {
+      pendingChanges.add(changedFile);
       if (pending !== undefined) {
         clearTimeout(pending);
       }
       pending = setTimeout(() => {
         pending = undefined;
-        // Errors in watch mode are reported by `anvil build` itself
-        // (writing to stderr); we don't crash the dev server.
-        void runCodegenOnce().catch(() => {});
+        const files = [...pendingChanges];
+        pendingChanges = new Set();
+        // Errors in watch mode are reported to stderr; we don't crash
+        // the dev server.
+        void runHooksForChanges(files).catch(() => {});
       }, options.debounceMs);
     }
 
@@ -177,9 +269,15 @@ export const anvilUnplugin: UnpluginInstance<AnvilPluginOptions | undefined, fal
       // unplugin's universal hooks. Each bundler maps these onto its
       // own lifecycle (Vite's `buildStart`, Webpack's tap, etc.).
       async buildStart() {
-        // Bundler may abort early if codegen fails — the bundler's
-        // own error-reporting plumbing surfaces the diagnostic.
+        // Execution order: preBuild hooks → anvil build → postBuild hooks.
+        // Fail fast on the first error so the bundler surfaces the diagnostic.
+        for (const hook of options.preBuild ?? []) {
+          await hook.run();
+        }
         await runCodegenOnce();
+        for (const hook of options.postBuild ?? []) {
+          await hook.run();
+        }
       },
       watchChange(id: string) {
         // Skip our own output so we don't infinite-loop.
@@ -189,7 +287,7 @@ export const anvilUnplugin: UnpluginInstance<AnvilPluginOptions | undefined, fal
         if (!id.endsWith(".ts") && !id.endsWith(".tsx")) {
           return;
         }
-        scheduleRebuild();
+        scheduleRebuild(id);
       },
     };
   });

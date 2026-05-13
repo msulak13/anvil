@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { anvilUnplugin } from "./index.js";
+import { anvilUnplugin, type PreBuildHook, type PostBuildHook } from "./index.js";
 
 // Find the workspace's `anvil` binary so the unplugin's `cli` option
 // can shell out to it. In the monorepo we point straight at the
@@ -150,5 +150,198 @@ describe("anvil-unplugin", () => {
     expect(typeof anvilUnplugin.rspack).toBe("function");
     expect(typeof anvilUnplugin.esbuild).toBe("function");
   });
+
+  // ---------------------------------------------------------------------------
+  // M4 — preBuild / postBuild hook API
+  // ---------------------------------------------------------------------------
+
+  function makeHook(
+    name: string,
+    onRun: () => void,
+    shouldRerun: (files: string[]) => boolean = () => false,
+  ): PreBuildHook & PostBuildHook {
+    return {
+      name,
+      watchPatterns: [],
+      shouldRerun,
+      async run() {
+        onRun();
+      },
+    };
+  }
+
+  it("runs preBuild hooks before anvil build in buildStart", async () => {
+    const { dir, entry, output } = makeFixture();
+    try {
+      const order: string[] = [];
+      const hook = makeHook("pre", () => order.push("pre"));
+
+      const plugin = anvilUnplugin.rollup({
+        cli: anvilBin,
+        entries: [entry],
+        preBuild: [hook],
+      }) as { buildStart?: () => Promise<void> };
+
+      await plugin.buildStart!.call({});
+
+      // preBuild ran, and the anvil build also ran (output file exists).
+      expect(order).toEqual(["pre"]);
+      expect(existsSync(output)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("runs postBuild hooks after anvil build in buildStart", async () => {
+    const { dir, entry, output } = makeFixture();
+    try {
+      const order: string[] = [];
+      const post = makeHook("post", () => order.push("post"));
+
+      const plugin = anvilUnplugin.rollup({
+        cli: anvilBin,
+        entries: [entry],
+        postBuild: [post],
+      }) as { buildStart?: () => Promise<void> };
+
+      await plugin.buildStart!.call({});
+
+      // postBuild ran after anvil build produced the output file.
+      expect(existsSync(output)).toBe(true);
+      expect(order).toEqual(["post"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("runs preBuild → anvil build → postBuild in order in buildStart", async () => {
+    const { dir, entry } = makeFixture();
+    try {
+      const order: string[] = [];
+      const pre = makeHook("pre", () => order.push("pre"));
+      const post = makeHook("post", () => order.push("post"));
+
+      const plugin = anvilUnplugin.rollup({
+        cli: anvilBin,
+        entries: [entry],
+        preBuild: [pre],
+        postBuild: [post],
+      }) as { buildStart?: () => Promise<void> };
+
+      await plugin.buildStart!.call({});
+
+      expect(order).toEqual(["pre", "post"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("re-runs preBuild hook in watch mode when shouldRerun returns true", async () => {
+    const { dir, entry } = makeFixture();
+    try {
+      let runCount = 0;
+      const hook = makeHook(
+        "pre",
+        () => { runCount++; },
+        (files) => files.some((f) => f.startsWith(dir)),
+      );
+
+      const plugin = anvilUnplugin.rollup({
+        cli: anvilBin,
+        entries: [entry],
+        preBuild: [hook],
+        debounceMs: 30,
+      }) as { watchChange?: (id: string, change: unknown) => void };
+
+      plugin.watchChange!(path.join(dir, "heater.ts"), {});
+      await new Promise<void>((resolve) => setTimeout(resolve, 120));
+
+      expect(runCount).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("does not re-run preBuild hook in watch mode when shouldRerun returns false", async () => {
+    const { dir, entry } = makeFixture();
+    try {
+      let runCount = 0;
+      // shouldRerun always returns false.
+      const hook = makeHook("pre", () => { runCount++; }, () => false);
+
+      const plugin = anvilUnplugin.rollup({
+        cli: anvilBin,
+        entries: [entry],
+        preBuild: [hook],
+        debounceMs: 30,
+      }) as { watchChange?: (id: string, change: unknown) => void };
+
+      plugin.watchChange!(path.join(dir, "heater.ts"), {});
+      await new Promise<void>((resolve) => setTimeout(resolve, 120));
+
+      expect(runCount).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("runs postBuild hooks when preBuild hook re-runs in watch mode", async () => {
+    const { dir, entry } = makeFixture();
+    try {
+      let postRunCount = 0;
+      const pre = makeHook(
+        "pre",
+        () => {},
+        (files) => files.some((f) => f.startsWith(dir)),
+      );
+      const post = makeHook("post", () => { postRunCount++; });
+
+      const plugin = anvilUnplugin.rollup({
+        cli: anvilBin,
+        entries: [entry],
+        preBuild: [pre],
+        postBuild: [post],
+        debounceMs: 30,
+      }) as { watchChange?: (id: string, change: unknown) => void };
+
+      plugin.watchChange!(path.join(dir, "heater.ts"), {});
+      await new Promise<void>((resolve) => setTimeout(resolve, 120));
+
+      // postBuild ran because preBuild ran.
+      expect(postRunCount).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("runs only opted-in postBuild hooks when no preBuild hook re-runs", async () => {
+    const { dir, entry } = makeFixture();
+    try {
+      let postACount = 0;
+      let postBCount = 0;
+      // postA opts in, postB does not.
+      const postA = makeHook(
+        "postA",
+        () => { postACount++; },
+        (files) => files.some((f) => f.startsWith(dir)),
+      );
+      const postB = makeHook("postB", () => { postBCount++; }, () => false);
+
+      const plugin = anvilUnplugin.rollup({
+        cli: anvilBin,
+        entries: [entry],
+        postBuild: [postA, postB],
+        debounceMs: 30,
+      }) as { watchChange?: (id: string, change: unknown) => void };
+
+      plugin.watchChange!(path.join(dir, "heater.ts"), {});
+      await new Promise<void>((resolve) => setTimeout(resolve, 120));
+
+      expect(postACount).toBe(1);
+      expect(postBCount).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 
 });
