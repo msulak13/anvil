@@ -483,7 +483,7 @@ fn build_ts_source(
     s.push('\n');
 
     let comp_name = &component.class.name;
-    let dagger_name = format!("Dagger{comp_name}");
+    let dagger_name = format!("Anvil{comp_name}");
 
     // Set of entry-point method names that are subcomponent factories;
     // these need a different emission shape than regular entry points.
@@ -553,7 +553,7 @@ fn build_ts_source(
     for (factory_idx, child_topo) in child_topos {
         let fact = &graph.subcomponent_factories[*factory_idx];
         let sub_name = &fact.subcomponent.name;
-        let sub_dagger = format!("Dagger{sub_name}");
+        let sub_dagger = format!("Anvil{sub_name}");
         let child_is_async = fact.child_graph.is_async();
         s.push('\n');
         writeln!(s, "export class {sub_dagger} extends {sub_name} {{").expect("write to String");
@@ -786,7 +786,7 @@ fn emit_class_body(
     // `async create(...)` instead of constructing directly.
     for fact in subcomponent_factories {
         let sub_name = &fact.subcomponent.name;
-        let sub_dagger = format!("Dagger{sub_name}");
+        let sub_dagger = format!("Anvil{sub_name}");
         let params_sig = fact
             .factory_params
             .iter()

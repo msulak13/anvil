@@ -2,14 +2,14 @@
 // Source: ./app-component.ts
 import { AppComponent } from "./app-component";
 import { ConsoleLogger } from "./console-logger";
-import { Logger } from "./logger";
+import type { Logger } from "./logger";
 import { RequestComponent } from "./request-component";
-import { RequestContext } from "./request-context";
+import type { RequestContext } from "./request-context";
 import { RequestModule } from "./request-module";
 import { UserController } from "./user-controller";
 import { UserRepository } from "./user-repository";
-import { Request, Response } from "express";
-export class DaggerAppComponent extends AppComponent {
+import type { Request, Response } from "express";
+export class AnvilAppComponent extends AppComponent {
 	private _consoleLogger: ConsoleLogger | undefined;
 	private _userRepository: UserRepository | undefined;
 	private getConsoleLogger(): ConsoleLogger {
@@ -25,17 +25,17 @@ export class DaggerAppComponent extends AppComponent {
 		return this.getLogger();
 	}
 	requestComponent(req: Request, res: Response): RequestComponent {
-		return new DaggerRequestComponent(this, req, res);
+		return new AnvilRequestComponent(this, req, res);
 	}
 	static create(): AppComponent {
-		return new DaggerAppComponent();
+		return new AnvilAppComponent();
 	}
 }
 export function createAppComponent(): AppComponent {
-	return DaggerAppComponent.create();
+	return AnvilAppComponent.create();
 }
-export class DaggerRequestComponent extends RequestComponent {
-	constructor(private parent: DaggerAppComponent, private req: Request, private res: Response) {
+export class AnvilRequestComponent extends RequestComponent {
+	constructor(private parent: AnvilAppComponent, private req: Request, private res: Response) {
 		super();
 	}
 	private getRequest(): Request {

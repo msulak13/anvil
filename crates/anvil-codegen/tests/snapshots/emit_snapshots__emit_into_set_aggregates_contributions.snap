@@ -7,7 +7,7 @@ expression: out
 import { App } from "./app-component";
 import type { Plugin } from "./plugin";
 import { PluginsModule } from "./plugins-module";
-export class DaggerApp extends App {
+export class AnvilApp extends App {
 	private getSetOfPlugin(): Set<Plugin> {
 		return new Set([PluginsModule.auth(), PluginsModule.logging()]);
 	}
@@ -15,9 +15,9 @@ export class DaggerApp extends App {
 		return this.getSetOfPlugin();
 	}
 	static create(): App {
-		return new DaggerApp();
+		return new AnvilApp();
 	}
 }
 export function createApp(): App {
-	return DaggerApp.create();
+	return AnvilApp.create();
 }

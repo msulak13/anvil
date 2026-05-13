@@ -8,19 +8,19 @@ import { App } from "./app-component";
 import type { Handler, HttpRequest, HttpResponse } from "./http";
 import { RequestComponent } from "./request-component";
 import { RequestModule } from "./request-module";
-export class DaggerApp extends App {
+export class AnvilApp extends App {
 	requestComponent(req: HttpRequest, res: HttpResponse): RequestComponent {
-		return new DaggerRequestComponent(this, req, res);
+		return new AnvilRequestComponent(this, req, res);
 	}
 	static create(): App {
-		return new DaggerApp();
+		return new AnvilApp();
 	}
 }
 export function createApp(): App {
-	return DaggerApp.create();
+	return AnvilApp.create();
 }
-export class DaggerRequestComponent extends RequestComponent {
-	constructor(private parent: DaggerApp, private req: HttpRequest, private res: HttpResponse) {
+export class AnvilRequestComponent extends RequestComponent {
+	constructor(private parent: AnvilApp, private req: HttpRequest, private res: HttpResponse) {
 		super();
 	}
 	private getHttpRequest(): HttpRequest {

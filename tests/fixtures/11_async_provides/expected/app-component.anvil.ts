@@ -6,7 +6,7 @@ import { ConfigModule } from "./config-module";
 import type { Database } from "./database";
 import { DatabaseModule } from "./database-module";
 import { UserService } from "./user-service";
-export class DaggerAppComponent extends AppComponent {
+export class AnvilAppComponent extends AppComponent {
 	private _config: Config | undefined;
 	private _database: Database | undefined;
 	private getConfig(): Config {
@@ -18,7 +18,7 @@ export class DaggerAppComponent extends AppComponent {
 	private getUserService(): UserService {
 		return new UserService(this.getDatabase());
 	}
-	static async _resolve(d: DaggerAppComponent): Promise<void> {
+	static async _resolve(d: AnvilAppComponent): Promise<void> {
 		d._config = await ConfigModule.loadConfig();
 		d._database = await DatabaseModule.openDatabase(d.getConfig());
 	}
@@ -32,11 +32,11 @@ export class DaggerAppComponent extends AppComponent {
 		return this.getUserService();
 	}
 	static async create(): Promise<AppComponent> {
-		const d = new DaggerAppComponent();
-		await DaggerAppComponent._resolve(d);
+		const d = new AnvilAppComponent();
+		await AnvilAppComponent._resolve(d);
 		return d;
 	}
 }
 export async function createAppComponent(): Promise<AppComponent> {
-	return DaggerAppComponent.create();
+	return AnvilAppComponent.create();
 }

@@ -4,7 +4,7 @@ import { CoffeeShop } from "./coffee-component";
 import { ElectricHeater } from "./electric-heater";
 import type { Heater } from "./heater";
 import { Pump } from "./pump";
-export class DaggerCoffeeShop extends CoffeeShop {
+export class AnvilCoffeeShop extends CoffeeShop {
 	private getElectricHeater(): ElectricHeater {
 		return new ElectricHeater();
 	}
@@ -21,9 +21,9 @@ export class DaggerCoffeeShop extends CoffeeShop {
 		return this.getPump();
 	}
 	static create(): CoffeeShop {
-		return new DaggerCoffeeShop();
+		return new AnvilCoffeeShop();
 	}
 }
 export function createCoffeeShop(): CoffeeShop {
-	return DaggerCoffeeShop.create();
+	return AnvilCoffeeShop.create();
 }

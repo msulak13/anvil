@@ -4,7 +4,7 @@ import { AppComponent } from "./app-component";
 import { Heater } from "./heater";
 import { RequestComponent } from "./request-component";
 import { RequestHandler } from "./request-handler";
-export class DaggerAppComponent extends AppComponent {
+export class AnvilAppComponent extends AppComponent {
 	private _heater: Heater | undefined;
 	getHeater(): Heater {
 		return this._heater ??= new Heater();
@@ -13,17 +13,17 @@ export class DaggerAppComponent extends AppComponent {
 		return this.getHeater();
 	}
 	requestComponent(): RequestComponent {
-		return new DaggerRequestComponent(this);
+		return new AnvilRequestComponent(this);
 	}
 	static create(): AppComponent {
-		return new DaggerAppComponent();
+		return new AnvilAppComponent();
 	}
 }
 export function createAppComponent(): AppComponent {
-	return DaggerAppComponent.create();
+	return AnvilAppComponent.create();
 }
-export class DaggerRequestComponent extends RequestComponent {
-	constructor(private parent: DaggerAppComponent) {
+export class AnvilRequestComponent extends RequestComponent {
+	constructor(private parent: AnvilAppComponent) {
 		super();
 	}
 	private getRequestHandler(): RequestHandler {

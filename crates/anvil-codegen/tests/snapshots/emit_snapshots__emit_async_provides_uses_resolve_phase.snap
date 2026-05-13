@@ -8,7 +8,7 @@ import { App } from "./app-component";
 import type { Db } from "./db";
 import { DatabaseModule } from "./db-module";
 import type { Pool } from "./pool";
-export class DaggerApp extends App {
+export class AnvilApp extends App {
 	private _pool: Pool | undefined;
 	private getPool(): Pool {
 		return this._pool!;
@@ -16,7 +16,7 @@ export class DaggerApp extends App {
 	private getDb(): Db {
 		return DatabaseModule.db(this.getPool());
 	}
-	static async _resolve(d: DaggerApp): Promise<void> {
+	static async _resolve(d: AnvilApp): Promise<void> {
 		d._pool = await DatabaseModule.pool();
 	}
 	pool(): Pool {
@@ -26,11 +26,11 @@ export class DaggerApp extends App {
 		return this.getDb();
 	}
 	static async create(): Promise<App> {
-		const d = new DaggerApp();
-		await DaggerApp._resolve(d);
+		const d = new AnvilApp();
+		await AnvilApp._resolve(d);
 		return d;
 	}
 }
 export async function createApp(): Promise<App> {
-	return DaggerApp.create();
+	return AnvilApp.create();
 }

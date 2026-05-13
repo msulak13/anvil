@@ -411,7 +411,7 @@ mod tests {
         assert_eq!(out.emitted_files.len(), 1);
         let dagger = &out.emitted_files[0];
         assert!(dagger.path.ends_with("app-component.anvil.ts"));
-        assert!(dagger.contents.contains("DaggerApp"));
+        assert!(dagger.contents.contains("AnvilApp"));
         assert!(dagger.contents.contains("createApp"));
         assert!(dagger.contents.contains("0.0.1-wasm"));
     }

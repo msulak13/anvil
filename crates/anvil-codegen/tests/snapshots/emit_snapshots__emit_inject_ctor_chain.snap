@@ -7,7 +7,7 @@ expression: out
 import { Heater } from "./heater";
 import { Pump } from "./pump";
 import { Shop } from "./shop-component";
-export class DaggerShop extends Shop {
+export class AnvilShop extends Shop {
 	private getHeater(): Heater {
 		return new Heater();
 	}
@@ -18,9 +18,9 @@ export class DaggerShop extends Shop {
 		return this.getPump();
 	}
 	static create(): Shop {
-		return new DaggerShop();
+		return new AnvilShop();
 	}
 }
 export function createShop(): Shop {
-	return DaggerShop.create();
+	return AnvilShop.create();
 }

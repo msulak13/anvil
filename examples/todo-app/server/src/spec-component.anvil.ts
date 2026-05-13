@@ -3,7 +3,7 @@
 import type { RouteDefinition } from "../../../../packages/anvil-bellows/dist/index.js";
 import { OpenApiModule } from "./schema-route.module.anvil";
 import { SpecComponent } from "./spec-component";
-export class DaggerSpecComponent extends SpecComponent {
+export class AnvilSpecComponent extends SpecComponent {
 	private getSetOfRouteDefinition(): Set<RouteDefinition> {
 		return new Set([OpenApiModule.openapiGetSpec()]);
 	}
@@ -11,9 +11,9 @@ export class DaggerSpecComponent extends SpecComponent {
 		return this.getSetOfRouteDefinition();
 	}
 	static create(): SpecComponent {
-		return new DaggerSpecComponent();
+		return new AnvilSpecComponent();
 	}
 }
 export function createSpecComponent(): SpecComponent {
-	return DaggerSpecComponent.create();
+	return AnvilSpecComponent.create();
 }

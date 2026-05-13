@@ -8,7 +8,7 @@ import { App } from "./app-component";
 import type { Repository } from "./repository";
 import type { User } from "./user";
 import { UserModule } from "./user-module";
-export class DaggerApp extends App {
+export class AnvilApp extends App {
 	private getRepositoryOfUser(): Repository<User> {
 		return UserModule.users();
 	}
@@ -16,9 +16,9 @@ export class DaggerApp extends App {
 		return this.getRepositoryOfUser();
 	}
 	static create(): App {
-		return new DaggerApp();
+		return new AnvilApp();
 	}
 }
 export function createApp(): App {
-	return DaggerApp.create();
+	return AnvilApp.create();
 }

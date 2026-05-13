@@ -3,7 +3,7 @@
 import { AppComponent } from "./app-component";
 import type { Plugin } from "./plugin";
 import { PluginsModule } from "./plugins-module";
-export class DaggerAppComponent extends AppComponent {
+export class AnvilAppComponent extends AppComponent {
 	private getSetOfPlugin(): Set<Plugin> {
 		return new Set([PluginsModule.auth(), PluginsModule.logging()]);
 	}
@@ -11,9 +11,9 @@ export class DaggerAppComponent extends AppComponent {
 		return this.getSetOfPlugin();
 	}
 	static create(): AppComponent {
-		return new DaggerAppComponent();
+		return new AnvilAppComponent();
 	}
 }
 export function createAppComponent(): AppComponent {
-	return DaggerAppComponent.create();
+	return AnvilAppComponent.create();
 }

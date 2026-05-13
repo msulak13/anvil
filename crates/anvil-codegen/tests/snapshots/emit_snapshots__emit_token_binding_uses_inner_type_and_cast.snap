@@ -6,7 +6,7 @@ expression: out
 // Source: ./app-component.ts
 import { App } from "./app-component";
 import { DbModule } from "./db-module";
-export class DaggerApp extends App {
+export class AnvilApp extends App {
 	private _primaryDb: Database | undefined;
 	private getPrimaryDb(): Database {
 		return this._primaryDb ??= (DbModule.primaryDb() as unknown) as Database;
@@ -15,9 +15,9 @@ export class DaggerApp extends App {
 		return this.getPrimaryDb();
 	}
 	static create(): App {
-		return new DaggerApp();
+		return new AnvilApp();
 	}
 }
 export function createApp(): App {
-	return DaggerApp.create();
+	return AnvilApp.create();
 }

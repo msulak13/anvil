@@ -7,7 +7,7 @@ import { OpenApiModule } from "./schema-route.module.anvil";
 import type { TodoController } from "./todo-controller";
 import { TodoModule } from "./todo-module";
 import type { TodoService } from "./todo-service";
-export class DaggerAppComponent extends AppComponent {
+export class AnvilAppComponent extends AppComponent {
 	private _todoService: TodoService | undefined;
 	private _todoController: TodoController | undefined;
 	private getTodoService(): TodoService {
@@ -30,9 +30,9 @@ export class DaggerAppComponent extends AppComponent {
 		return this.getSetOfRouteDefinition();
 	}
 	static create(): AppComponent {
-		return new DaggerAppComponent();
+		return new AnvilAppComponent();
 	}
 }
 export function createAppComponent(): AppComponent {
-	return DaggerAppComponent.create();
+	return AnvilAppComponent.create();
 }

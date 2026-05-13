@@ -9,7 +9,7 @@ import type { RouteRegistrar } from "./route-registrar";
 import { UserController } from "./user-controller";
 import { UserRepository } from "./user-repository";
 import { UserService } from "./user-service";
-export class DaggerAppComponent extends AppComponent {
+export class AnvilAppComponent extends AppComponent {
 	private _consoleLogger: ConsoleLogger | undefined;
 	private _healthController: HealthController | undefined;
 	private _userRepository: UserRepository | undefined;
@@ -42,9 +42,9 @@ export class DaggerAppComponent extends AppComponent {
 		return this.getSetOfRouteRegistrar();
 	}
 	static create(): AppComponent {
-		return new DaggerAppComponent();
+		return new AnvilAppComponent();
 	}
 }
 export function createAppComponent(): AppComponent {
-	return DaggerAppComponent.create();
+	return AnvilAppComponent.create();
 }
