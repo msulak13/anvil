@@ -1,168 +1,173 @@
 {
-  "openapi": "3.1.0",
+  "components": {
+    "schemas": {
+      "CreateTodoBody": {},
+      "TodoListSchema": {},
+      "TodoQuery": {},
+      "TodoSchema": {},
+      "UpdateTodoBody": {}
+    }
+  },
   "info": {
     "title": "Todo API",
     "version": "1.0.0"
   },
-  "servers": [
-    { "url": "http://localhost:3001" }
-  ],
+  "openapi": "3.1.0",
   "paths": {
     "/todos": {
       "get": {
         "operationId": "todoControllerGetList",
-        "tags": ["todos"],
         "parameters": [
           {
-            "name": "completed",
             "in": "query",
+            "name": "query",
             "required": false,
-            "schema": { "type": "string", "enum": ["true", "false"] }
+            "schema": {
+              "$ref": "#/components/schemas/TodoQuery"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/TodoList" }
+                "schema": {
+                  "$ref": "#/components/schemas/TodoListSchema"
+                }
               }
-            }
+            },
+            "description": "Success"
           }
-        }
+        },
+        "tags": [
+          "todos"
+        ]
       },
       "post": {
         "operationId": "todoControllerPostCreate",
-        "tags": ["todos"],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/CreateTodoInput" }
+              "schema": {
+                "$ref": "#/components/schemas/CreateTodoBody"
+              }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
-            "description": "Created",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Todo" }
+                "schema": {
+                  "$ref": "#/components/schemas/TodoSchema"
+                }
               }
-            }
+            },
+            "description": "Success"
           }
-        }
+        },
+        "tags": [
+          "todos"
+        ]
       }
     },
     "/todos/{id}": {
-      "get": {
-        "operationId": "todoControllerGetById",
-        "tags": ["todos"],
+      "delete": {
+        "operationId": "todoControllerDeleteRemove",
         "parameters": [
           {
-            "name": "id",
             "in": "path",
+            "name": "id",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Success"
+          },
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "todos"
+        ]
+      },
+      "get": {
+        "operationId": "todoControllerGetById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Todo" }
+                "schema": {
+                  "$ref": "#/components/schemas/TodoSchema"
+                }
               }
-            }
-          },
-          "404": { "description": "Not Found" }
-        }
+            },
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "todos"
+        ]
       },
       "put": {
         "operationId": "todoControllerPutUpdate",
-        "tags": ["todos"],
         "parameters": [
           {
-            "name": "id",
             "in": "path",
+            "name": "id",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/UpdateTodoInput" }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Todo" }
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTodoBody"
               }
             }
           },
-          "404": { "description": "Not Found" }
-        }
-      },
-      "delete": {
-        "operationId": "todoControllerDeleteRemove",
-        "tags": ["todos"],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string" }
-          }
-        ],
+          "required": true
+        },
         "responses": {
-          "204": { "description": "No Content" },
-          "404": { "description": "Not Found" }
-        }
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoSchema"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "todos"
+        ]
       }
     }
   },
-  "components": {
-    "schemas": {
-      "Todo": {
-        "type": "object",
-        "required": ["id", "title", "completed", "createdAt"],
-        "properties": {
-          "id": { "type": "string" },
-          "title": { "type": "string" },
-          "completed": { "type": "boolean" },
-          "createdAt": { "type": "string", "format": "date-time" }
-        }
-      },
-      "TodoList": {
-        "type": "object",
-        "required": ["items"],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": { "$ref": "#/components/schemas/Todo" }
-          }
-        }
-      },
-      "CreateTodoInput": {
-        "type": "object",
-        "required": ["title"],
-        "properties": {
-          "title": { "type": "string", "minLength": 1 }
-        }
-      },
-      "UpdateTodoInput": {
-        "type": "object",
-        "properties": {
-          "title": { "type": "string", "minLength": 1 },
-          "completed": { "type": "boolean" }
-        }
-      }
+  "servers": [
+    {
+      "url": "http://localhost:3001"
     }
-  }
+  ]
 }

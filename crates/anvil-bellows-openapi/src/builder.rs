@@ -1,6 +1,6 @@
 //! Build an `OpenAPI` 3.1 document from parsed controller metadata.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anvil_bellows::{ControllerFile, Controller, HttpMethod, ParamKind, ReturnKind};
 use serde_json::{json, Value};
@@ -18,12 +18,17 @@ pub struct BuildDiagnostic {
 ///
 /// Unknown `@Security` schemes (not present in `config.security_schemes`) emit
 /// a [`BuildDiagnostic`]; the scheme is still included in the output.
+///
+/// Every `Body<S>`, `Query<S>`, and `Responds<S>` schema identifier is
+/// collected and emitted as a named stub under `components/schemas`, with
+/// `$ref` pointers wired into the appropriate request/response locations.
 pub fn build_openapi(
     files: &[ControllerFile],
     config: &OpenApiConfig,
     diagnostics: &mut Vec<BuildDiagnostic>,
 ) -> Value {
     let mut paths: BTreeMap<String, BTreeMap<String, Value>> = BTreeMap::new();
+    let mut schemas: BTreeSet<String> = BTreeSet::new();
 
     for file in files {
         for ctrl in &file.controllers {
@@ -31,13 +36,15 @@ pub fn build_openapi(
                 let (openapi_path, path_param_names) =
                     express_to_openapi_path(&route.path);
                 let method_key = http_method_key(&route.method);
-                let op = build_operation(ctrl, route, &path_param_names, config, diagnostics);
+                let op = build_operation(
+                    ctrl, route, &path_param_names, config, diagnostics, &mut schemas,
+                );
                 paths.entry(openapi_path).or_default().insert(method_key, op);
             }
         }
     }
 
-    assemble_doc(paths, config)
+    assemble_doc(paths, config, schemas)
 }
 
 fn build_operation(
@@ -46,6 +53,7 @@ fn build_operation(
     path_param_names: &[String],
     config: &OpenApiConfig,
     diagnostics: &mut Vec<BuildDiagnostic>,
+    schemas: &mut BTreeSet<String>,
 ) -> Value {
     let op_id = operation_id(&ctrl.class_name, &route.method, &route.handler_name);
 
@@ -55,12 +63,14 @@ fn build_operation(
         ctrl.tags.iter().map(|t| json!(t)).collect()
     };
 
-    let parameters = build_parameters(path_param_names, &route.params);
-    let request_body = build_request_body(&route.params);
-    let responses = build_responses(route);
+    let parameters = build_parameters(path_param_names, &route.params, schemas);
+    let request_body = build_request_body(&route.params, schemas);
+    let responses = build_responses(route, schemas);
     let security = build_security(&ctrl.security, config, diagnostics);
 
-    let mut op = serde_json::Map::new();
+    // Use BTreeMap so operation keys are alphabetically sorted regardless of
+    // whether the serde_json `preserve_order` feature is active in this build.
+    let mut op: BTreeMap<String, Value> = BTreeMap::new();
     op.insert("operationId".into(), json!(op_id));
     op.insert("tags".into(), json!(tags));
     if route.deprecated {
@@ -76,51 +86,83 @@ fn build_operation(
     if let Some(sec) = security {
         op.insert("security".into(), json!(sec));
     }
-    Value::Object(op)
+    json!(op)
+}
+
+fn schema_ref(ident: &str) -> Value {
+    json!({ "$ref": format!("#/components/schemas/{ident}") })
 }
 
 fn build_parameters(
     path_param_names: &[String],
     params: &[anvil_bellows::TypedParam],
+    schemas: &mut BTreeSet<String>,
 ) -> Vec<Value> {
+    // Path params are always plain strings — no Zod schema covers them individually.
     let mut parameters: Vec<Value> = path_param_names
         .iter()
-        .map(|pname| json!({ "name": pname, "in": "path", "required": true, "schema": {} }))
+        .map(|pname| {
+            // BTreeMap keeps "in", "name", "required", "schema" in alphabetical order.
+            let mut p: BTreeMap<String, Value> = BTreeMap::new();
+            p.insert("in".into(), json!("path"));
+            p.insert("name".into(), json!(pname));
+            p.insert("required".into(), json!(true));
+            p.insert("schema".into(), json!({ "type": "string" }));
+            json!(p)
+        })
         .collect();
 
     for param in params {
-        if matches!(param.kind, ParamKind::Query(_)) {
-            parameters.push(json!({
-                "name": param.name,
-                "in": "query",
-                "required": false,
-                "schema": {}
-            }));
+        if let ParamKind::Query(s) = &param.kind {
+            schemas.insert(s.ident.clone());
+            let mut p: BTreeMap<String, Value> = BTreeMap::new();
+            p.insert("in".into(), json!("query"));
+            p.insert("name".into(), json!(param.name));
+            p.insert("required".into(), json!(false));
+            p.insert("schema".into(), schema_ref(&s.ident));
+            parameters.push(json!(p));
         }
     }
     parameters
 }
 
-fn build_request_body(params: &[anvil_bellows::TypedParam]) -> Option<Value> {
+fn build_request_body(
+    params: &[anvil_bellows::TypedParam],
+    schemas: &mut BTreeSet<String>,
+) -> Option<Value> {
     params.iter().find_map(|p| {
-        if matches!(p.kind, ParamKind::Body(_)) {
-            Some(json!({
-                "required": true,
-                "content": { "application/json": { "schema": {} } }
-            }))
+        if let ParamKind::Body(s) = &p.kind {
+            schemas.insert(s.ident.clone());
+            let mut rb: BTreeMap<String, Value> = BTreeMap::new();
+            rb.insert(
+                "content".into(),
+                json!({ "application/json": { "schema": schema_ref(&s.ident) } }),
+            );
+            rb.insert("required".into(), json!(true));
+            Some(json!(rb))
         } else {
             None
         }
     })
 }
 
-fn build_responses(route: &anvil_bellows::Route) -> BTreeMap<String, Value> {
+fn build_responses(
+    route: &anvil_bellows::Route,
+    schemas: &mut BTreeSet<String>,
+) -> BTreeMap<String, Value> {
     let mut responses: BTreeMap<String, Value> = BTreeMap::new();
     let success = match &route.return_kind {
-        ReturnKind::Responds { .. } => json!({
-            "description": "Success",
-            "content": { "application/json": { "schema": {} } }
-        }),
+        ReturnKind::Responds { schema, .. } => {
+            schemas.insert(schema.ident.clone());
+            // BTreeMap keeps "content" before "description" (alphabetical).
+            let mut r: BTreeMap<String, Value> = BTreeMap::new();
+            r.insert(
+                "content".into(),
+                json!({ "application/json": { "schema": schema_ref(&schema.ident) } }),
+            );
+            r.insert("description".into(), json!("Success"));
+            json!(r)
+        }
         ReturnKind::Void { .. } => json!({ "description": "Success" }),
     };
     responses.insert("200".to_owned(), success);
@@ -161,8 +203,11 @@ fn build_security(
 fn assemble_doc(
     paths: BTreeMap<String, BTreeMap<String, Value>>,
     config: &OpenApiConfig,
+    schemas: BTreeSet<String>,
 ) -> Value {
-    let mut doc = serde_json::Map::new();
+    // Use BTreeMap for the top-level document so keys are alphabetically
+    // sorted regardless of insertion order — this keeps golden files stable.
+    let mut doc: BTreeMap<String, Value> = BTreeMap::new();
     doc.insert("openapi".into(), json!("3.1.0"));
     doc.insert("info".into(), json!({ "title": config.info.title, "version": config.info.version }));
 
@@ -177,25 +222,37 @@ fn assemble_doc(
         .collect();
     doc.insert("paths".into(), Value::Object(paths_val));
 
+    // Accumulate both schemas and security schemes under `components`.
+    let schemas_map: BTreeMap<String, Value> = schemas
+        .into_iter()
+        .map(|ident| (ident, json!({})))
+        .collect();
+
     let security_schemes_val: BTreeMap<String, Value> = config
         .security_schemes
         .iter()
         .map(|(name, scheme)| {
-            let mut obj = serde_json::Map::new();
+            let mut obj: BTreeMap<String, Value> = BTreeMap::new();
             obj.insert("type".into(), json!(scheme.r#type));
             if let Some(s) = &scheme.scheme { obj.insert("scheme".into(), json!(s)); }
             if let Some(n) = &scheme.name { obj.insert("name".into(), json!(n)); }
             if let Some(r#in) = &scheme.r#in { obj.insert("in".into(), json!(r#in)); }
-            (name.clone(), Value::Object(obj))
+            (name.clone(), json!(obj))
         })
         .collect();
 
-    if !security_schemes_val.is_empty() {
-        let schemes_map: serde_json::Map<String, Value> = security_schemes_val.into_iter().collect();
-        doc.insert("components".into(), json!({ "securitySchemes": Value::Object(schemes_map) }));
+    if !schemas_map.is_empty() || !security_schemes_val.is_empty() {
+        let mut components: BTreeMap<String, Value> = BTreeMap::new();
+        if !schemas_map.is_empty() {
+            components.insert("schemas".into(), json!(schemas_map));
+        }
+        if !security_schemes_val.is_empty() {
+            components.insert("securitySchemes".into(), json!(security_schemes_val));
+        }
+        doc.insert("components".into(), json!(components));
     }
 
-    Value::Object(doc)
+    json!(doc)
 }
 
 /// Convert an Express-style path (`/users/:id`) to `OpenAPI` format (`/users/{id}`)

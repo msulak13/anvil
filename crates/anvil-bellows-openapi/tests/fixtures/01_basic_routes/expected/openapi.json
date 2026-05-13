@@ -1,88 +1,103 @@
 {
-  "openapi": "3.1.0",
+  "components": {
+    "schemas": {
+      "CreateUserBody": {},
+      "UserQuery": {},
+      "UserSchema": {}
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
   "info": {
     "title": "User API",
     "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "https://api.example.com"
-    }
-  ],
+  "openapi": "3.1.0",
   "paths": {
     "/users": {
       "get": {
         "operationId": "userControllerGetList",
-        "tags": [
-          "users"
-        ],
         "parameters": [
           {
-            "name": "query",
             "in": "query",
+            "name": "query",
             "required": false,
-            "schema": {}
+            "schema": {
+              "$ref": "#/components/schemas/UserQuery"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UserSchema"
+                }
               }
-            }
+            },
+            "description": "Success"
           }
         },
         "security": [
           {
             "bearerAuth": []
           }
+        ],
+        "tags": [
+          "users"
         ]
       },
       "post": {
         "operationId": "userControllerPostCreate",
-        "tags": [
-          "users"
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserBody"
+              }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
-            "description": "Success",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UserSchema"
+                }
               }
-            }
+            },
+            "description": "Success"
           }
         },
         "security": [
           {
             "bearerAuth": []
           }
+        ],
+        "tags": [
+          "users"
         ]
       }
     },
     "/users/{id}": {
       "delete": {
-        "operationId": "userControllerDeleteRemove",
-        "tags": [
-          "users"
-        ],
         "deprecated": true,
+        "operationId": "userControllerDeleteRemove",
         "parameters": [
           {
-            "name": "id",
             "in": "path",
+            "name": "id",
             "required": true,
-            "schema": {}
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -97,45 +112,49 @@
           {
             "bearerAuth": []
           }
+        ],
+        "tags": [
+          "users"
         ]
       },
       "get": {
         "operationId": "userControllerGetById",
-        "tags": [
-          "users"
-        ],
         "parameters": [
           {
-            "name": "id",
             "in": "path",
+            "name": "id",
             "required": true,
-            "schema": {}
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UserSchema"
+                }
               }
-            }
+            },
+            "description": "Success"
           }
         },
         "security": [
           {
             "bearerAuth": []
           }
+        ],
+        "tags": [
+          "users"
         ]
       }
     }
   },
-  "components": {
-    "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer"
-      }
+  "servers": [
+    {
+      "url": "https://api.example.com"
     }
-  }
+  ]
 }
