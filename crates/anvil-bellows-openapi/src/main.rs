@@ -99,7 +99,10 @@ fn main() {
     };
 
     if let Err(e) = std::fs::write(&output, &serialized) {
-        eprintln!("anvil-bellows-openapi: failed to write {}: {e}", output.display());
+        eprintln!(
+            "anvil-bellows-openapi: failed to write {}: {e}",
+            output.display()
+        );
         process::exit(1);
     }
 

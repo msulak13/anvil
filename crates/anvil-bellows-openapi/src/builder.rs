@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anvil_bellows::{ControllerFile, Controller, HttpMethod, ParamKind, ReturnKind};
+use anvil_bellows::{Controller, ControllerFile, HttpMethod, ParamKind, ReturnKind};
 use serde_json::{json, Value};
 
 use crate::config::OpenApiConfig;
@@ -33,13 +33,20 @@ pub fn build_openapi(
     for file in files {
         for ctrl in &file.controllers {
             for route in &ctrl.routes {
-                let (openapi_path, path_param_names) =
-                    express_to_openapi_path(&route.path);
+                let (openapi_path, path_param_names) = express_to_openapi_path(&route.path);
                 let method_key = http_method_key(&route.method);
                 let op = build_operation(
-                    ctrl, route, &path_param_names, config, diagnostics, &mut schemas,
+                    ctrl,
+                    route,
+                    &path_param_names,
+                    config,
+                    diagnostics,
+                    &mut schemas,
                 );
-                paths.entry(openapi_path).or_default().insert(method_key, op);
+                paths
+                    .entry(openapi_path)
+                    .or_default()
+                    .insert(method_key, op);
             }
         }
     }
@@ -209,10 +216,17 @@ fn assemble_doc(
     // sorted regardless of insertion order — this keeps golden files stable.
     let mut doc: BTreeMap<String, Value> = BTreeMap::new();
     doc.insert("openapi".into(), json!("3.1.0"));
-    doc.insert("info".into(), json!({ "title": config.info.title, "version": config.info.version }));
+    doc.insert(
+        "info".into(),
+        json!({ "title": config.info.title, "version": config.info.version }),
+    );
 
     if !config.servers.is_empty() {
-        let servers: Vec<Value> = config.servers.iter().map(|url| json!({ "url": url })).collect();
+        let servers: Vec<Value> = config
+            .servers
+            .iter()
+            .map(|url| json!({ "url": url }))
+            .collect();
         doc.insert("servers".into(), json!(servers));
     }
 
@@ -234,9 +248,15 @@ fn assemble_doc(
         .map(|(name, scheme)| {
             let mut obj: BTreeMap<String, Value> = BTreeMap::new();
             obj.insert("type".into(), json!(scheme.r#type));
-            if let Some(s) = &scheme.scheme { obj.insert("scheme".into(), json!(s)); }
-            if let Some(n) = &scheme.name { obj.insert("name".into(), json!(n)); }
-            if let Some(r#in) = &scheme.r#in { obj.insert("in".into(), json!(r#in)); }
+            if let Some(s) = &scheme.scheme {
+                obj.insert("scheme".into(), json!(s));
+            }
+            if let Some(n) = &scheme.name {
+                obj.insert("name".into(), json!(n));
+            }
+            if let Some(r#in) = &scheme.r#in {
+                obj.insert("in".into(), json!(r#in));
+            }
             (name.clone(), json!(obj))
         })
         .collect();

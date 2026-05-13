@@ -60,16 +60,8 @@ fn main() -> ExitCode {
         }
     };
 
-    let output = resolve_output(
-        cli.output,
-        &entry,
-        "routes.module.anvil.ts",
-    );
-    let openapi_output = resolve_output(
-        cli.openapi_output,
-        &entry,
-        "schema-route.module.anvil.ts",
-    );
+    let output = resolve_output(cli.output, &entry, "routes.module.anvil.ts");
+    let openapi_output = resolve_output(cli.openapi_output, &entry, "schema-route.module.anvil.ts");
 
     let (files, diagnostics) = match anvil_bellows::parse_entry(&entry) {
         Ok(r) => r,
@@ -164,6 +156,5 @@ fn write_file(path: &PathBuf, content: &str) -> Result<(), String> {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("cannot create directory '{}': {e}", parent.display()))?;
     }
-    std::fs::write(path, content)
-        .map_err(|e| format!("cannot write '{}': {e}", path.display()))
+    std::fs::write(path, content).map_err(|e| format!("cannot write '{}': {e}", path.display()))
 }

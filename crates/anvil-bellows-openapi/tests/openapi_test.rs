@@ -44,8 +44,10 @@ fn run_fixture(name: &str, extra_args: &[&str]) -> FixtureRun {
     let config_path = input_dst.join("openapi.config.json");
 
     let mut cmd = Command::cargo_bin("anvil-bellows-openapi").unwrap();
-    cmd.arg("--entry").arg(&input_dst)
-        .arg("--output").arg(&output_path);
+    cmd.arg("--entry")
+        .arg(&input_dst)
+        .arg("--output")
+        .arg(&output_path);
     if config_path.exists() {
         cmd.arg("--config").arg(&config_path);
     }
@@ -59,15 +61,23 @@ fn run_fixture(name: &str, extra_args: &[&str]) -> FixtureRun {
 }
 
 fn bless_or_assert(fixture_name: &str, file_name: &str, actual: &str) {
-    let expected_path = fixtures_dir().join(fixture_name).join("expected").join(file_name);
+    let expected_path = fixtures_dir()
+        .join(fixture_name)
+        .join("expected")
+        .join(file_name);
     if std::env::var("BLESS").is_ok() {
         std::fs::create_dir_all(expected_path.parent().unwrap()).unwrap();
         std::fs::write(&expected_path, actual).unwrap();
     } else {
-        let expected = std::fs::read_to_string(&expected_path)
-            .unwrap_or_else(|_| panic!("expected file not found: {}; run with BLESS=1", expected_path.display()));
+        let expected = std::fs::read_to_string(&expected_path).unwrap_or_else(|_| {
+            panic!(
+                "expected file not found: {}; run with BLESS=1",
+                expected_path.display()
+            )
+        });
         assert_eq!(
-            actual, expected.as_str(),
+            actual,
+            expected.as_str(),
             "OpenAPI output mismatch for {fixture_name}/{file_name}; run with BLESS=1 to update"
         );
     }
@@ -80,7 +90,10 @@ fn fixture_01_basic_routes_snapshot() {
     let doc: serde_json::Value = serde_json::from_str(&run.output).expect("valid JSON");
     assert_eq!(doc["openapi"], "3.1.0");
     assert!(doc["paths"]["/users"].is_object(), "missing /users path");
-    assert!(doc["paths"]["/users/{id}"].is_object(), "missing /users/{{id}} path");
+    assert!(
+        doc["paths"]["/users/{id}"].is_object(),
+        "missing /users/{{id}} path"
+    );
     bless_or_assert("01_basic_routes", "openapi.json", &run.output);
 }
 
@@ -99,9 +112,15 @@ fn fixture_01_basic_routes_deprecated_route() {
     let run = run_fixture("01_basic_routes", &[]);
     let doc: serde_json::Value = serde_json::from_str(&run.output).unwrap();
     let delete_op = &doc["paths"]["/users/{id}"]["delete"];
-    assert_eq!(delete_op["deprecated"], true, "DELETE /:id should be deprecated");
+    assert_eq!(
+        delete_op["deprecated"], true,
+        "DELETE /:id should be deprecated"
+    );
     // @Returns(204) should add a 204 response.
-    assert!(delete_op["responses"]["204"].is_object(), "expected 204 response");
+    assert!(
+        delete_op["responses"]["204"].is_object(),
+        "expected 204 response"
+    );
 }
 
 #[test]
@@ -115,13 +134,21 @@ fn fixture_01_basic_routes_yaml_format() {
 
     Command::cargo_bin("anvil-bellows-openapi")
         .unwrap()
-        .arg("--entry").arg(&input_dst)
-        .arg("--output").arg(&output_path)
-        .arg("--format").arg("yaml")
-        .arg("--config").arg(&config_path)
-        .assert().success();
+        .arg("--entry")
+        .arg(&input_dst)
+        .arg("--output")
+        .arg(&output_path)
+        .arg("--format")
+        .arg("yaml")
+        .arg("--config")
+        .arg(&config_path)
+        .assert()
+        .success();
 
     let yaml = std::fs::read_to_string(&output_path).unwrap();
-    assert!(yaml.contains("openapi: 3.1.0"), "YAML should contain openapi version");
+    assert!(
+        yaml.contains("openapi: 3.1.0"),
+        "YAML should contain openapi version"
+    );
     assert!(yaml.contains("/users"), "YAML should contain /users path");
 }
