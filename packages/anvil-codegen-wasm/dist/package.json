@@ -1,5 +1,6 @@
 {
-  "name": "@msulak/anvil-codegen-wasm",
+  "name": "anvil-codegen-wasm",
+  "type": "module",
   "collaborators": [
     "typescript-di contributors"
   ],
@@ -8,14 +9,19 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/msulak13/tsdi"
+    "url": "https://github.com/mike/typescript-di"
   },
   "files": [
     "anvil_codegen_wasm_bg.wasm",
     "anvil_codegen_wasm.js",
+    "anvil_codegen_wasm_bg.js",
     "anvil_codegen_wasm.d.ts"
   ],
   "main": "anvil_codegen_wasm.js",
-  "homepage": "https://github.com/msulak13/tsdi",
-  "types": "anvil_codegen_wasm.d.ts"
+  "homepage": "https://github.com/mike/typescript-di",
+  "types": "anvil_codegen_wasm.d.ts",
+  "sideEffects": [
+    "./anvil_codegen_wasm.js",
+    "./snippets/*"
+  ]
 }

@@ -1,5 +1,5 @@
 /**
- * `@msulak/anvil-codegen-wasm` — runs the entire tsdi codegen pipeline in
+ * `@msulak/anvil-codegen-wasm` — runs the entire anvil codegen pipeline in
  * pure WebAssembly. No native binary, no platform-specific package,
  * no `spawnSync` cost in the bundler hot path.
  *
@@ -31,7 +31,7 @@
  * ```
  */
 // The wasm-pack output is CommonJS-ish — it uses synchronous
-// `require("./tsdi_codegen_wasm_bg.wasm")` to load the blob. We
+// `require("./anvil_codegen_wasm_bg.wasm")` to load the blob. We
 // re-export it under a typed surface so consumers don't see the
 // wasm-bindgen `any` types directly.
 import { compile as wasmCompile } from "../dist/anvil_codegen_wasm.js";
