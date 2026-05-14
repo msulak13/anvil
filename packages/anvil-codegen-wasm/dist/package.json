@@ -1,6 +1,5 @@
 {
   "name": "anvil-codegen-wasm",
-  "type": "module",
   "collaborators": [
     "typescript-di contributors"
   ],
@@ -14,14 +13,9 @@
   "files": [
     "anvil_codegen_wasm_bg.wasm",
     "anvil_codegen_wasm.js",
-    "anvil_codegen_wasm_bg.js",
     "anvil_codegen_wasm.d.ts"
   ],
   "main": "anvil_codegen_wasm.js",
   "homepage": "https://github.com/mike/typescript-di",
-  "types": "anvil_codegen_wasm.d.ts",
-  "sideEffects": [
-    "./anvil_codegen_wasm.js",
-    "./snippets/*"
-  ]
+  "types": "anvil_codegen_wasm.d.ts"
 }
