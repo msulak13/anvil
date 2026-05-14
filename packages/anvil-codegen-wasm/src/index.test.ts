@@ -12,20 +12,20 @@ const ANVIL_STUB = [
   "export const IntoSet: any;",
 ].join("\n");
 
-describe("@msulak/anvil-codegen-wasm", () => {
+describe("@anvil-di/anvil-codegen-wasm", () => {
   it("compiles a simple project end-to-end (parser → graph → emit)", () => {
     const result = compile({
       entryPath: "/proj/src/app-component.ts",
       version: "0.0.1-wasm-test",
       files: {
-        "/proj/node_modules/@msulak/anvil/index.d.ts": ANVIL_STUB,
+        "/proj/node_modules/@anvil-di/anvil/index.d.ts": ANVIL_STUB,
         "/proj/src/heater.ts": `
-          import { Inject, Singleton } from "@msulak/anvil";
+          import { Inject, Singleton } from "@anvil-di/anvil";
           @Inject @Singleton
           export class Heater { constructor() {} on(): void {} }
         `,
         "/proj/src/pump.ts": `
-          import { Inject } from "@msulak/anvil";
+          import { Inject } from "@anvil-di/anvil";
           import { Heater } from "./heater";
           @Inject
           export class Pump {
@@ -34,7 +34,7 @@ describe("@msulak/anvil-codegen-wasm", () => {
           }
         `,
         "/proj/src/app-component.ts": `
-          import { Component, Singleton } from "@msulak/anvil";
+          import { Component, Singleton } from "@anvil-di/anvil";
           import { Pump } from "./pump";
           import { Heater } from "./heater";
           @Singleton
@@ -63,17 +63,17 @@ describe("@msulak/anvil-codegen-wasm", () => {
       entryPath: "/proj/src/app-component.ts",
       version: "0.0.1",
       files: {
-        "/proj/node_modules/@msulak/anvil/index.d.ts": ANVIL_STUB,
+        "/proj/node_modules/@anvil-di/anvil/index.d.ts": ANVIL_STUB,
         // Heater has no @Inject — Pump's dep is unresolvable.
         "/proj/src/heater.ts": "export class Heater {}",
         "/proj/src/pump.ts": `
-          import { Inject } from "@msulak/anvil";
+          import { Inject } from "@anvil-di/anvil";
           import { Heater } from "./heater";
           @Inject
           export class Pump { constructor(private h: Heater) {} }
         `,
         "/proj/src/app-component.ts": `
-          import { Component } from "@msulak/anvil";
+          import { Component } from "@anvil-di/anvil";
           import { Pump } from "./pump";
           @Component({ modules: [] })
           export abstract class App { abstract pump(): Pump; }
@@ -97,9 +97,9 @@ describe("@msulak/anvil-codegen-wasm", () => {
       entryPath: "/proj/app.ts",
       version: "1.0.0",
       files: {
-        "/proj/node_modules/@msulak/anvil/index.d.ts": ANVIL_STUB,
+        "/proj/node_modules/@anvil-di/anvil/index.d.ts": ANVIL_STUB,
         "/proj/app.ts": `
-          import { Component, Inject } from "@msulak/anvil";
+          import { Component, Inject } from "@anvil-di/anvil";
           @Inject
           export class Repo { constructor() {} }
           @Component({ modules: [] })

@@ -1,5 +1,5 @@
-import { Component, Singleton } from "@msulak/anvil";
-import type { RouteDefinition } from "@msulak/anvil-bellows";
+import { Component, Singleton } from "@anvil-di/anvil";
+import type { RouteDefinition } from "@anvil-di/anvil-bellows";
 import { RoutesModule } from "./routes.module.anvil.js";
 import { TodoModule } from "./todo-module.js";
 import { OpenApiModule } from "./schema-route.module.anvil.js";

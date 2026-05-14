@@ -1,4 +1,4 @@
-import { Controller, Get } from "@msulak/anvil-bellows";
+import { Controller, Get } from "@anvil-di/anvil-bellows";
 
 @Controller("/health")
 export class HealthController {

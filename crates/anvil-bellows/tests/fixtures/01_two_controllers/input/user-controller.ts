@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Post } from "@msulak/anvil-bellows";
+import { Controller, Delete, Get, Post } from "@anvil-di/anvil-bellows";
 
 @Controller("/users")
 export class UserController {

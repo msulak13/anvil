@@ -46,13 +46,13 @@ fn copy_dir_recursive(src: &Path, dst: &Path) {
 }
 
 /// Write the same `anvil` runtime stub the unit tests use, so `oxc_resolver`
-/// can resolve `import { ... } from "@msulak/anvil";`.
+/// can resolve `import { ... } from "@anvil-di/anvil";`.
 fn write_anvil_stub(root: &Path) {
-    let pkg = root.join("node_modules/@msulak/anvil");
+    let pkg = root.join("node_modules/@anvil-di/anvil");
     std::fs::create_dir_all(&pkg).unwrap();
     std::fs::write(
         pkg.join("package.json"),
-        r#"{ "name": "@msulak/anvil", "main": "index.ts" }"#,
+        r#"{ "name": "@anvil-di/anvil", "main": "index.ts" }"#,
     )
     .unwrap();
     std::fs::write(

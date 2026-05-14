@@ -1,5 +1,5 @@
-import { Controller, Post, Get, Delete } from "@msulak/anvil-bellows";
-import type { Body, Query, Params, Responds } from "@msulak/anvil-bellows";
+import { Controller, Post, Get, Delete } from "@anvil-di/anvil-bellows";
+import type { Body, Query, Params, Responds } from "@anvil-di/anvil-bellows";
 
 // Minimal stand-ins for express.Request / express.Response in the test environment.
 type Request = any;

@@ -1,5 +1,5 @@
 /**
- * `@msulak/anvil-unplugin` — runs anvil's Rust codegen as part of any bundler's
+ * `@anvil-di/anvil-unplugin` — runs anvil's Rust codegen as part of any bundler's
  * pipeline. One adapter; every bundler (Vite, Rollup, Webpack, Rspack,
  * esbuild) via [unplugin](https://github.com/unjs/unplugin).
  *
@@ -14,7 +14,7 @@
  * @example
  * ```ts
  * // vite.config.ts
- * import anvil from "@msulak/anvil-unplugin/vite";
+ * import anvil from "@anvil-di/anvil-unplugin/vite";
  *
  * export default defineConfig({
  *   plugins: [anvil()],
@@ -34,8 +34,8 @@ import {
   mkdirSync,
 } from "node:fs";
 import { createUnplugin, type UnpluginInstance } from "unplugin";
-import { resolveBinaryPath, unresolvableBinaryError } from "@msulak/anvil-cli";
-import { compile as wasmCompile } from "@msulak/anvil-codegen-wasm";
+import { resolveBinaryPath, unresolvableBinaryError } from "@anvil-di/anvil-cli";
+import { compile as wasmCompile } from "@anvil-di/anvil-codegen-wasm";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,7 +44,7 @@ const execFileAsync = promisify(execFile);
  *
  * Implement this to perform custom codegen (e.g. `bellowsCodegen()`) before
  * the main anvil compilation step. Returned by factory functions such as
- * `bellowsCodegen` in `@msulak/anvil-bellows`.
+ * `bellowsCodegen` in `@anvil-di/anvil-bellows`.
  */
 export interface PreBuildHook {
   /** Stable identifier, shown in diagnostics. */
@@ -89,9 +89,9 @@ export interface AnvilPluginOptions {
   tsconfig?: string;
   /**
    * Path to the `anvil` binary. When unset, the plugin resolves the
-   * native binary via the `@msulak/anvil-cli` npm launcher — which in turn
-   * picks the right per-platform package (`@msulak/anvil-cli-linux-x64`,
-   * `@msulak/anvil-cli-darwin-arm64`, etc.) installed alongside it.
+   * native binary via the `@anvil-di/anvil-cli` npm launcher — which in turn
+   * picks the right per-platform package (`@anvil-di/anvil-cli-linux-x64`,
+   * `@anvil-di/anvil-cli-darwin-arm64`, etc.) installed alongside it.
    *
    * Override only when you need to point at a custom build (e.g. a
    * `cargo build`-produced binary outside `node_modules`).
@@ -115,10 +115,10 @@ export interface AnvilPluginOptions {
    * Which codegen backend to use (M13).
    *
    * - `"native"` (default): spawn the `anvil` Rust binary via
-   *   `@msulak/anvil-cli`. Lower steady-state codegen latency, requires the
+   *   `@anvil-di/anvil-cli`. Lower steady-state codegen latency, requires the
    *   per-platform binary to be installed.
    * - `"wasm"`: run the entire pipeline in-process through
-   *   `@msulak/anvil-codegen-wasm`. No `spawnSync` cost in the bundler hot
+   *   `@anvil-di/anvil-codegen-wasm`. No `spawnSync` cost in the bundler hot
    *   path, works anywhere V8 runs (Bun, Cloudflare Workers,
    *   StackBlitz, etc.). The WASM compile + instantiate happens once
    *   on first build (~80-150ms); subsequent builds are direct
@@ -170,8 +170,8 @@ export interface AnvilPluginOptions {
  */
 export const anvilUnplugin: UnpluginInstance<AnvilPluginOptions | undefined, false> =
   createUnplugin<AnvilPluginOptions | undefined>((rawOptions) => {
-    // Default `cli` to whatever `@msulak/anvil-cli` resolves at runtime (the
-    // matching `@msulak/anvil-cli-<platform>-<arch>` package, or the
+    // Default `cli` to whatever `@anvil-di/anvil-cli` resolves at runtime (the
+    // matching `@anvil-di/anvil-cli-<platform>-<arch>` package, or the
     // `ANVIL_CLI_BIN` env override). This is the recommended path for
     // npm-distributed users; explicit `cli:` overrides take priority
     // for monorepo dev where the binary lives in `target/release`.
@@ -325,7 +325,7 @@ async function invokeBuild(options: {
 }
 
 /**
- * M13: in-process codegen via `@msulak/anvil-codegen-wasm`.
+ * M13: in-process codegen via `@anvil-di/anvil-codegen-wasm`.
  *
  * Reads every `.ts` / `.tsx` file under `rootDir` (defaulting to the
  * first entry's parent dir) into an in-memory file map, hands it to
@@ -346,7 +346,7 @@ async function runWasmBuild(options: {
 }): Promise<void> {
   if (options.entries === undefined || options.entries.length === 0) {
     throw new Error(
-      "@msulak/anvil-unplugin: `mode: \"wasm\"` requires explicit `entries:` paths " +
+      "@anvil-di/anvil-unplugin: `mode: \"wasm\"` requires explicit `entries:` paths " +
         "(auto-discovery from anvil.config.json isn't wired through the WASM " +
         "build yet). Specify `entries: ['src/**/*-component.ts']` or similar.",
     );
@@ -355,14 +355,14 @@ async function runWasmBuild(options: {
     options.rootDir ?? path.dirname(path.resolve(options.entries[0]!));
   const files = collectSourceFiles(root);
 
-  // Also pull in the `@msulak/anvil` runtime so bare-specifier imports
+  // Also pull in the `@anvil-di/anvil` runtime so bare-specifier imports
   // resolve. Locate via require.resolve so we don't hardcode the path.
   try {
-    const anvilPkg = require.resolve("@msulak/anvil/package.json");
+    const anvilPkg = require.resolve("@anvil-di/anvil/package.json");
     const anvilDir = path.dirname(anvilPkg);
     addRecursive(anvilDir, files);
   } catch {
-    // The `@msulak/anvil` runtime isn't installed — caller probably stubbed it
+    // The `@anvil-di/anvil` runtime isn't installed — caller probably stubbed it
     // themselves under a different name; the WASM resolver will
     // surface a `BareNotFound` if anything's actually missing.
   }
@@ -392,7 +392,7 @@ async function runWasmBuild(options: {
 /**
  * Read every `.ts` / `.tsx` file under `root` into a map keyed by
  * absolute path. Skips `node_modules` (those entries are added
- * separately when the host's `@msulak/anvil` runtime is located).
+ * separately when the host's `@anvil-di/anvil` runtime is located).
  */
 function collectSourceFiles(root: string): Record<string, string> {
   const out: Record<string, string> = {};

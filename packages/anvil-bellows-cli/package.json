@@ -1,5 +1,5 @@
 {
-  "name": "@msulak/anvil-bellows-cli",
+  "name": "@anvil-di/anvil-bellows-cli",
   "version": "0.0.1",
   "description": "Native binary launcher for the anvil-bellows codegen CLI. Resolves the right per-platform package at runtime; mirrors esbuild's distribution model.",
   "license": "Apache-2.0",
@@ -23,11 +23,11 @@
     "test": "vitest run --passWithNoTests"
   },
   "optionalDependencies": {
-    "@msulak/anvil-bellows-cli-darwin-arm64": "workspace:*",
-    "@msulak/anvil-bellows-cli-darwin-x64": "workspace:*",
-    "@msulak/anvil-bellows-cli-linux-arm64": "workspace:*",
-    "@msulak/anvil-bellows-cli-linux-x64": "workspace:*",
-    "@msulak/anvil-bellows-cli-win32-x64": "workspace:*"
+    "@anvil-di/anvil-bellows-cli-darwin-arm64": "workspace:*",
+    "@anvil-di/anvil-bellows-cli-darwin-x64": "workspace:*",
+    "@anvil-di/anvil-bellows-cli-linux-arm64": "workspace:*",
+    "@anvil-di/anvil-bellows-cli-linux-x64": "workspace:*",
+    "@anvil-di/anvil-bellows-cli-win32-x64": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

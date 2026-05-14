@@ -18,12 +18,12 @@ const anvilBin = path.join(
 
 function makeFixture(): { dir: string; entry: string; output: string } {
   const dir = mkdtempSync(path.join(tmpdir(), "anvil-unplugin-"));
-  // Stub `@msulak/anvil` runtime stubs so the parser can resolve them.
-  const anvilPkg = path.join(dir, "node_modules", "@msulak/anvil");
+  // Stub `@anvil-di/anvil` runtime stubs so the parser can resolve them.
+  const anvilPkg = path.join(dir, "node_modules", "@anvil-di/anvil");
   mkdirSync(anvilPkg, { recursive: true });
   writeFileSync(
     path.join(anvilPkg, "package.json"),
-    JSON.stringify({ name: "@msulak/anvil", main: "index.ts" }),
+    JSON.stringify({ name: "@anvil-di/anvil", main: "index.ts" }),
   );
   writeFileSync(
     path.join(anvilPkg, "index.ts"),
@@ -41,7 +41,7 @@ function makeFixture(): { dir: string; entry: string; output: string } {
   writeFileSync(
     path.join(dir, "heater.ts"),
     [
-      'import { Inject } from "@msulak/anvil";',
+      'import { Inject } from "@anvil-di/anvil";',
       "@Inject",
       "export class Heater { constructor() {} }",
     ].join("\n"),
@@ -50,7 +50,7 @@ function makeFixture(): { dir: string; entry: string; output: string } {
   writeFileSync(
     entry,
     [
-      'import { Component } from "@msulak/anvil";',
+      'import { Component } from "@anvil-di/anvil";',
       'import { Heater } from "./heater";',
       "@Component({ modules: [] })",
       "export abstract class CoffeeShop {",

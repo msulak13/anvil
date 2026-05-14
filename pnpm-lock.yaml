@@ -14,7 +14,7 @@ importers:
 
   examples/express-app:
     dependencies:
-      '@msulak/anvil':
+      '@anvil-di/anvil':
         specifier: workspace:*
         version: link:../../packages/anvil
       express:
@@ -45,21 +45,21 @@ importers:
 
   examples/todo-app:
     dependencies:
+      '@anvil-di/anvil':
+        specifier: workspace:*
+        version: link:../../packages/anvil
+      '@anvil-di/anvil-bellows':
+        specifier: workspace:*
+        version: link:../../packages/anvil-bellows
+      '@anvil-di/anvil-bellows-openapi':
+        specifier: workspace:*
+        version: link:../../packages/anvil-bellows-openapi
+      '@anvil-di/anvil-unplugin':
+        specifier: workspace:*
+        version: link:../../packages/anvil-unplugin
       '@hey-api/client-fetch':
         specifier: ^0.9.0
         version: 0.9.0(@hey-api/openapi-ts@0.64.15(typescript@5.9.3))
-      '@msulak/anvil':
-        specifier: workspace:*
-        version: link:../../packages/anvil
-      '@msulak/anvil-bellows':
-        specifier: workspace:*
-        version: link:../../packages/anvil-bellows
-      '@msulak/anvil-bellows-openapi':
-        specifier: workspace:*
-        version: link:../../packages/anvil-bellows-openapi
-      '@msulak/anvil-unplugin':
-        specifier: workspace:*
-        version: link:../../packages/anvil-unplugin
       '@tanstack/react-query':
         specifier: ^5.62.0
         version: 5.100.10(react@18.3.1)
@@ -124,7 +124,7 @@ importers:
 
   packages/anvil-bellows:
     dependencies:
-      '@msulak/anvil-bellows-cli':
+      '@anvil-di/anvil-bellows-cli':
         specifier: workspace:*
         version: link:../anvil-bellows-cli
       express:
@@ -159,19 +159,19 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
     optionalDependencies:
-      '@msulak/anvil-bellows-cli-darwin-arm64':
+      '@anvil-di/anvil-bellows-cli-darwin-arm64':
         specifier: workspace:*
         version: link:../anvil-bellows-cli-darwin-arm64
-      '@msulak/anvil-bellows-cli-darwin-x64':
+      '@anvil-di/anvil-bellows-cli-darwin-x64':
         specifier: workspace:*
         version: link:../anvil-bellows-cli-darwin-x64
-      '@msulak/anvil-bellows-cli-linux-arm64':
+      '@anvil-di/anvil-bellows-cli-linux-arm64':
         specifier: workspace:*
         version: link:../anvil-bellows-cli-linux-arm64
-      '@msulak/anvil-bellows-cli-linux-x64':
+      '@anvil-di/anvil-bellows-cli-linux-x64':
         specifier: workspace:*
         version: link:../anvil-bellows-cli-linux-x64
-      '@msulak/anvil-bellows-cli-win32-x64':
+      '@anvil-di/anvil-bellows-cli-win32-x64':
         specifier: workspace:*
         version: link:../anvil-bellows-cli-win32-x64
 
@@ -187,7 +187,7 @@ importers:
 
   packages/anvil-bellows-openapi:
     dependencies:
-      '@msulak/anvil-bellows-openapi-cli':
+      '@anvil-di/anvil-bellows-openapi-cli':
         specifier: workspace:*
         version: link:../anvil-bellows-openapi-cli
     devDependencies:
@@ -207,7 +207,7 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
     optionalDependencies:
-      '@msulak/anvil-bellows-openapi-cli-win32-x64':
+      '@anvil-di/anvil-bellows-openapi-cli-win32-x64':
         specifier: workspace:*
         version: link:../anvil-bellows-openapi-cli-win32-x64
 
@@ -225,19 +225,19 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
     optionalDependencies:
-      '@msulak/anvil-cli-darwin-arm64':
+      '@anvil-di/anvil-cli-darwin-arm64':
         specifier: workspace:*
         version: link:../anvil-cli-darwin-arm64
-      '@msulak/anvil-cli-darwin-x64':
+      '@anvil-di/anvil-cli-darwin-x64':
         specifier: workspace:*
         version: link:../anvil-cli-darwin-x64
-      '@msulak/anvil-cli-linux-arm64':
+      '@anvil-di/anvil-cli-linux-arm64':
         specifier: workspace:*
         version: link:../anvil-cli-linux-arm64
-      '@msulak/anvil-cli-linux-x64':
+      '@anvil-di/anvil-cli-linux-x64':
         specifier: workspace:*
         version: link:../anvil-cli-linux-x64
-      '@msulak/anvil-cli-win32-x64':
+      '@anvil-di/anvil-cli-win32-x64':
         specifier: workspace:*
         version: link:../anvil-cli-win32-x64
 
@@ -265,10 +265,10 @@ importers:
 
   packages/anvil-unplugin:
     dependencies:
-      '@msulak/anvil-cli':
+      '@anvil-di/anvil-cli':
         specifier: workspace:*
         version: link:../anvil-cli
-      '@msulak/anvil-codegen-wasm':
+      '@anvil-di/anvil-codegen-wasm':
         specifier: workspace:*
         version: link:../anvil-codegen-wasm
       unplugin:

@@ -20,11 +20,11 @@ fn write_project(tmp: &TempDir, files: &[(&str, &str)]) -> PathBuf {
 }
 
 fn write_anvil_stub(root: &Path) {
-    let pkg = root.join("node_modules/@msulak/anvil");
+    let pkg = root.join("node_modules/@anvil-di/anvil");
     std::fs::create_dir_all(&pkg).unwrap();
     std::fs::write(
         pkg.join("package.json"),
-        r#"{ "name": "@msulak/anvil", "main": "index.ts" }"#,
+        r#"{ "name": "@anvil-di/anvil", "main": "index.ts" }"#,
     )
     .unwrap();
     std::fs::write(
@@ -48,7 +48,7 @@ fn explain_traces_inject_chain() {
             (
                 "src/heater.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     @Inject
                     export class Heater { constructor() {} }
                 "#,
@@ -56,7 +56,7 @@ fn explain_traces_inject_chain() {
             (
                 "src/pump.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { Heater } from "./heater";
                     @Inject
                     export class Pump { constructor(private h: Heater) {} }
@@ -65,7 +65,7 @@ fn explain_traces_inject_chain() {
             (
                 "src/coffee.ts",
                 r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     import { Pump } from "./pump";
                     @Component({ modules: [] })
                     export abstract class CoffeeShop {
@@ -100,7 +100,7 @@ fn explain_unknown_key_errors() {
         &[(
             "src/coffee.ts",
             r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     @Component({ modules: [] })
                     export abstract class CoffeeShop {}
                 "#,

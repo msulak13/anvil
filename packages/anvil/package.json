@@ -1,5 +1,5 @@
 {
-  "name": "@msulak/anvil",
+  "name": "@anvil-di/anvil",
   "version": "0.0.1",
   "description": "Runtime stubs and types for the anvil compile-time dependency injection framework.",
   "license": "Apache-2.0",

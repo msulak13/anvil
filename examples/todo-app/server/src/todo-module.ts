@@ -1,4 +1,4 @@
-import { Module, Provides, Singleton } from "@msulak/anvil";
+import { Module, Provides, Singleton } from "@anvil-di/anvil";
 import { TodoService } from "./todo-service.js";
 
 @Module

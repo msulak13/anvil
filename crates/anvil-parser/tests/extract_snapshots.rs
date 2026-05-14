@@ -11,7 +11,7 @@ use insta::assert_debug_snapshot;
 #[test]
 fn module_with_provides() {
     let src = r#"
-        import { Module, Provides } from "@msulak/anvil";
+        import { Module, Provides } from "@anvil-di/anvil";
         import { Pump } from "./pump";
 
         @Module
@@ -26,7 +26,7 @@ fn module_with_provides() {
 #[test]
 fn inject_ctor_with_dep() {
     let src = r#"
-        import { Inject } from "@msulak/anvil";
+        import { Inject } from "@anvil-di/anvil";
         import { Heater } from "./heater";
 
         @Inject
@@ -41,7 +41,7 @@ fn inject_ctor_with_dep() {
 #[test]
 fn singleton_class_with_inject_ctor() {
     let src = r#"
-        import { Inject, Singleton } from "@msulak/anvil";
+        import { Inject, Singleton } from "@anvil-di/anvil";
 
         @Inject
         @Singleton
@@ -56,7 +56,7 @@ fn singleton_class_with_inject_ctor() {
 #[test]
 fn component_with_modules_and_entry_points() {
     let src = r#"
-        import { Component, Singleton } from "@msulak/anvil";
+        import { Component, Singleton } from "@anvil-di/anvil";
         import { CoffeeModule } from "./coffee_module";
         import { Pump } from "./pump";
         import { Heater } from "./heater";
@@ -76,7 +76,7 @@ fn component_with_modules_and_entry_points() {
 fn full_coffee_example_in_one_file() {
     // Same-file `Heater` reference exercises the SAME_FILE sentinel.
     let src = r#"
-        import { Inject, Module, Provides, Component, Singleton } from "@msulak/anvil";
+        import { Inject, Module, Provides, Component, Singleton } from "@anvil-di/anvil";
 
         @Inject
         @Singleton
@@ -106,7 +106,7 @@ fn full_coffee_example_in_one_file() {
 #[test]
 fn provides_must_be_static() {
     let src = r#"
-        import { Module, Provides } from "@msulak/anvil";
+        import { Module, Provides } from "@anvil-di/anvil";
         import { Pump } from "./pump";
 
         @Module
@@ -125,7 +125,7 @@ fn provides_must_be_static() {
 #[test]
 fn provides_requires_return_type() {
     let src = r#"
-        import { Module, Provides } from "@msulak/anvil";
+        import { Module, Provides } from "@anvil-di/anvil";
 
         @Module
         export class BadModule {
@@ -143,7 +143,7 @@ fn provides_requires_return_type() {
 #[test]
 fn legacy_inject_on_constructor_is_rejected() {
     let src = r#"
-        import { Inject } from "@msulak/anvil";
+        import { Inject } from "@anvil-di/anvil";
         export class Pump { @Inject constructor() {} }
     "#;
     let err = parse_source(src, "pump.ts").unwrap_err();
@@ -157,7 +157,7 @@ fn legacy_inject_on_constructor_is_rejected() {
 #[test]
 fn module_with_binds_method() {
     let src = r#"
-        import { Module, Binds } from "@msulak/anvil";
+        import { Module, Binds } from "@anvil-di/anvil";
         import { Heater } from "./heater";
         import { ElectricHeater } from "./electric_heater";
 
@@ -173,7 +173,7 @@ fn module_with_binds_method() {
 #[test]
 fn binds_must_be_static() {
     let src = r#"
-        import { Module, Binds } from "@msulak/anvil";
+        import { Module, Binds } from "@anvil-di/anvil";
         import { Heater } from "./heater";
         import { ElectricHeater } from "./electric_heater";
 
@@ -193,7 +193,7 @@ fn binds_must_be_static() {
 #[test]
 fn binds_requires_return_type() {
     let src = r#"
-        import { Module, Binds } from "@msulak/anvil";
+        import { Module, Binds } from "@anvil-di/anvil";
         import { ElectricHeater } from "./electric_heater";
 
         @Module
@@ -212,7 +212,7 @@ fn binds_requires_return_type() {
 #[test]
 fn binds_requires_exactly_one_parameter() {
     let src = r#"
-        import { Module, Binds } from "@msulak/anvil";
+        import { Module, Binds } from "@anvil-di/anvil";
         import { Heater } from "./heater";
 
         @Module
@@ -231,7 +231,7 @@ fn binds_requires_exactly_one_parameter() {
 #[test]
 fn entry_point_requires_return_type() {
     let src = r#"
-        import { Component } from "@msulak/anvil";
+        import { Component } from "@anvil-di/anvil";
 
         @Component({ modules: [] })
         export abstract class Shop {
@@ -252,7 +252,7 @@ fn async_provides_method_unwraps_promise_to_inner_key() {
     // unwraps the Promise wrapper for the binding key (so consumers
     // see the resolved type) and sets `is_async: true` on the provider.
     let src = r#"
-        import { Module, Provides, Singleton } from "@msulak/anvil";
+        import { Module, Provides, Singleton } from "@anvil-di/anvil";
         import { Pool } from "./pool";
         import { Config } from "./config";
 
@@ -276,7 +276,7 @@ fn async_provides_without_promise_return_is_rejected() {
     // but anvil requires an explicit Promise<T> annotation so the
     // unwrap is unambiguous.
     let src = r#"
-        import { Module, Provides } from "@msulak/anvil";
+        import { Module, Provides } from "@anvil-di/anvil";
         import { Pool } from "./pool";
 
         @Module
@@ -301,7 +301,7 @@ fn module_with_into_set_provides() {
     // emits raw bindings with role: IntoSet — graph aggregation folds
     // them into a synthesized Provider::SetMultibinding later.
     let src = r#"
-        import { Module, Provides, IntoSet } from "@msulak/anvil";
+        import { Module, Provides, IntoSet } from "@anvil-di/anvil";
         import { Plugin } from "./plugin";
         import { AuthPlugin } from "./auth-plugin";
         import { LoggingPlugin } from "./logging-plugin";
@@ -319,7 +319,7 @@ fn module_with_into_set_provides() {
 #[test]
 fn into_set_on_binds_is_rejected() {
     let src = r#"
-        import { Module, Binds, IntoSet } from "@msulak/anvil";
+        import { Module, Binds, IntoSet } from "@anvil-di/anvil";
         import { Plugin } from "./plugin";
         import { AuthPlugin } from "./auth-plugin";
 
@@ -340,7 +340,7 @@ fn into_set_on_binds_is_rejected() {
 fn entry_point_with_set_return_type_parses() {
     // A `Set<Plugin>` return on an entry point lowers to Key::Set.
     let src = r#"
-        import { Component } from "@msulak/anvil";
+        import { Component } from "@anvil-di/anvil";
         import { Plugin } from "./plugin";
 
         @Component({ modules: [] })
@@ -361,7 +361,7 @@ fn subcomponent_factory_with_typed_parameters() {
     // remain zero-arg; the graph layer is what rejects parameters
     // declared on a non-subcomponent factory.
     let src = r#"
-        import { Component, Subcomponent } from "@msulak/anvil";
+        import { Component, Subcomponent } from "@anvil-di/anvil";
 
         export interface HttpRequest { url: string }
         export interface HttpResponse { send(body: string): void }
@@ -385,7 +385,7 @@ fn subcomponent_factory_with_typed_parameters() {
 #[test]
 fn subcomponent_with_modules_and_entry_points() {
     let src = r#"
-        import { Component, Subcomponent } from "@msulak/anvil";
+        import { Component, Subcomponent } from "@anvil-di/anvil";
 
         @Subcomponent({ modules: [] })
         export abstract class RequestComponent {
@@ -409,8 +409,8 @@ fn token_provides_extracts_token_key() {
     // Key::Token { name }. The inner type string is stored in
     // token_inner_type on the Binding for codegen use.
     let src = r#"
-        import { Module, Provides } from "@msulak/anvil";
-        import { Token } from "@msulak/anvil";
+        import { Module, Provides } from "@anvil-di/anvil";
+        import { Token } from "@anvil-di/anvil";
         import { Database } from "./database";
 
         @Module
@@ -431,8 +431,8 @@ fn token_inject_param_uses_token_key() {
     // with Key::Token { name } so the dagger can wire it from the
     // corresponding @Provides binding.
     let src = r#"
-        import { Inject } from "@msulak/anvil";
-        import { Token } from "@msulak/anvil";
+        import { Inject } from "@anvil-di/anvil";
+        import { Token } from "@anvil-di/anvil";
         import { Database } from "./database";
 
         @Inject
@@ -449,7 +449,7 @@ fn generic_provides_extracts_key_with_type_args() {
     // M15: @Provides returning Repository<User> lowers to
     // Key::Class { name: "Repository", type_args: [Key::Class { name: "User" }] }.
     let src = r#"
-        import { Module, Provides } from "@msulak/anvil";
+        import { Module, Provides } from "@anvil-di/anvil";
         import { Repository } from "./repository";
         import { User } from "./user";
 
@@ -470,7 +470,7 @@ fn generic_inject_param_uses_key_with_type_args() {
     // M15: a constructor parameter typed Repository<User> becomes a dep
     // with Key::Class { name: "Repository", type_args: [User] }.
     let src = r#"
-        import { Inject } from "@msulak/anvil";
+        import { Inject } from "@anvil-di/anvil";
         import { Repository } from "./repository";
         import { User } from "./user";
 
@@ -489,7 +489,7 @@ fn generic_with_primitive_type_arg_produces_distinct_keys() {
     // *different* keys. Previously ts_type_to_key returned Err for keyword
     // types, .ok() swallowed it, and both collapsed to Key::Class { type_args: [] }.
     let src = r#"
-        import { Inject } from "@msulak/anvil";
+        import { Inject } from "@anvil-di/anvil";
         import { Repository } from "./repository";
 
         @Inject
@@ -515,8 +515,8 @@ fn token_non_literal_name_is_rejected() {
     // Bug 1 fix: Token<T, MY_CONST> (non-literal second arg) must error rather than
     // silently producing Key::Class { name: "Token", type_args: [...] }.
     let src = r#"
-        import { Module, Provides } from "@msulak/anvil";
-        import type { Token } from "@msulak/anvil";
+        import { Module, Provides } from "@anvil-di/anvil";
+        import type { Token } from "@anvil-di/anvil";
         import { Database } from "./database";
         const MY_TOKEN = "primary-db";
 

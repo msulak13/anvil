@@ -1,4 +1,4 @@
-import { Component, Singleton } from "@msulak/anvil";
+import { Component, Singleton } from "@anvil-di/anvil";
 import type { Request, Response } from "express";
 import { AppModule } from "./app-module.js";
 import type { Logger } from "./logger.js";

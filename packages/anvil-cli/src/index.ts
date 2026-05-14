@@ -1,15 +1,15 @@
 /**
- * `@msulak/anvil-cli` — npm launcher for the native `anvil` Rust binary.
+ * `@anvil-di/anvil-cli` — npm launcher for the native `anvil` Rust binary.
  *
  * The package itself ships **no binary**. At install time, npm
  * resolves exactly one of the per-platform `optionalDependencies`
- * (e.g. `@msulak/anvil-cli-linux-x64` or `@msulak/anvil-cli-win32-x64`)
+ * (e.g. `@anvil-di/anvil-cli-linux-x64` or `@anvil-di/anvil-cli-win32-x64`)
  * based on the `os`/`cpu` fields each declares; only that one is fetched.
  * At runtime, `resolveBinaryPath()` dynamically requires the matching
  * platform package and reads the prebuilt binary path from it.
  *
  * This mirrors esbuild's distribution model — the user installs one
- * thing (`npm install @msulak/anvil-cli`) and gets the right native
+ * thing (`npm install @anvil-di/anvil-cli`) and gets the right native
  * binary for their platform without a `postinstall` build step.
  */
 import { existsSync } from "node:fs";
@@ -41,7 +41,7 @@ export function platformPackageName(): string | null {
   if (arches === undefined) return null;
   const suffix = arches[process.arch];
   if (suffix === undefined) return null;
-  return `@msulak/anvil-cli-${suffix}`;
+  return `@anvil-di/anvil-cli-${suffix}`;
 }
 
 /**
@@ -95,7 +95,7 @@ export function unresolvableBinaryError(): string {
   const platformInfo = `${process.platform}/${process.arch}`;
   if (pkg === null) {
     return [
-      `@msulak/anvil-cli: no prebuilt binary is available for ${platformInfo}.`,
+      `@anvil-di/anvil-cli: no prebuilt binary is available for ${platformInfo}.`,
       "",
       "Supported platforms in v0.2:",
       "  - darwin / arm64, darwin / x64",
@@ -108,10 +108,10 @@ export function unresolvableBinaryError(): string {
     ].join("\n");
   }
   return [
-    `@msulak/anvil-cli: couldn't locate the ${BIN_NAME} binary for ${platformInfo}.`,
+    `@anvil-di/anvil-cli: couldn't locate the ${BIN_NAME} binary for ${platformInfo}.`,
     "",
     `Expected the npm package "${pkg}" to be installed alongside`,
-    "@msulak/anvil-cli. If npm skipped optional dependencies, retry the install:",
+    "@anvil-di/anvil-cli. If npm skipped optional dependencies, retry the install:",
     "  npm install --include=optional",
     "  pnpm install               # honors optional deps by default",
     "  yarn install               # honors optional deps by default",
@@ -120,7 +120,7 @@ export function unresolvableBinaryError(): string {
   ].join("\n");
 }
 
-/** Where this `@msulak/anvil-cli` package itself is installed (informational). */
+/** Where this `@anvil-di/anvil-cli` package itself is installed (informational). */
 export const PACKAGE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 export { BIN_NAME };

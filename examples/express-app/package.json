@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "express": "^4.21.2",
-    "@msulak/anvil": "workspace:*"
+    "@anvil-di/anvil": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

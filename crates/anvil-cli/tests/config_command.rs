@@ -20,11 +20,11 @@ fn write_project(tmp: &TempDir, files: &[(&str, &str)]) -> PathBuf {
 }
 
 fn write_anvil_stub(root: &Path) {
-    let pkg = root.join("node_modules/@msulak/anvil");
+    let pkg = root.join("node_modules/@anvil-di/anvil");
     std::fs::create_dir_all(&pkg).unwrap();
     std::fs::write(
         pkg.join("package.json"),
-        r#"{ "name": "@msulak/anvil", "main": "index.ts" }"#,
+        r#"{ "name": "@anvil-di/anvil", "main": "index.ts" }"#,
     )
     .unwrap();
     std::fs::write(
@@ -43,7 +43,7 @@ const COFFEE_SRC: &[(&str, &str)] = &[
     (
         "src/heater.ts",
         r#"
-            import { Inject } from "@msulak/anvil";
+            import { Inject } from "@anvil-di/anvil";
             @Inject
             export class Heater { constructor() {} }
         "#,
@@ -51,7 +51,7 @@ const COFFEE_SRC: &[(&str, &str)] = &[
     (
         "src/pump.ts",
         r#"
-            import { Inject } from "@msulak/anvil";
+            import { Inject } from "@anvil-di/anvil";
             import { Heater } from "./heater";
             @Inject
             export class Pump { constructor(private h: Heater) {} }
@@ -60,7 +60,7 @@ const COFFEE_SRC: &[(&str, &str)] = &[
     (
         "src/coffee-component.ts",
         r#"
-            import { Component } from "@msulak/anvil";
+            import { Component } from "@anvil-di/anvil";
             import { Pump } from "./pump";
             @Component({ modules: [] })
             export abstract class CoffeeShop { abstract pump(): Pump; }

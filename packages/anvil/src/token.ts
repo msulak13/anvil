@@ -14,8 +14,8 @@
  * @example
  * ```ts
  * // db-module.ts
- * import { Module, Provides } from "@msulak/anvil";
- * import type { Token } from "@msulak/anvil";
+ * import { Module, Provides } from "@anvil-di/anvil";
+ * import type { Token } from "@anvil-di/anvil";
  * import type { Database } from "./database";
  *
  * @Module
@@ -27,8 +27,8 @@
  * }
  *
  * // app-component.ts
- * import { Component, Inject } from "@msulak/anvil";
- * import type { Token } from "@msulak/anvil";
+ * import { Component, Inject } from "@anvil-di/anvil";
+ * import type { Token } from "@anvil-di/anvil";
  * import type { Database } from "./database";
  *
  * @Inject

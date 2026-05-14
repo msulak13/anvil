@@ -12,11 +12,11 @@ use assert_cmd::cargo::CommandCargoExt;
 use tempfile::TempDir;
 
 fn write_anvil_stub(root: &Path) {
-    let pkg = root.join("node_modules/@msulak/anvil");
+    let pkg = root.join("node_modules/@anvil-di/anvil");
     std::fs::create_dir_all(&pkg).unwrap();
     std::fs::write(
         pkg.join("package.json"),
-        r#"{ "name": "@msulak/anvil", "main": "index.ts" }"#,
+        r#"{ "name": "@anvil-di/anvil", "main": "index.ts" }"#,
     )
     .unwrap();
     std::fs::write(
@@ -41,14 +41,14 @@ fn watch_regenerates_anvil_file_on_source_change() {
     // Initial sources: trivial component with one entry point.
     std::fs::write(
         root.join("src/heater.ts"),
-        "import { Inject } from \"@msulak/anvil\";\n\
+        "import { Inject } from \"@anvil-di/anvil\";\n\
          @Inject\n\
          export class Heater { constructor() {} }\n",
     )
     .unwrap();
     std::fs::write(
         root.join("src/coffee-component.ts"),
-        "import { Component } from \"@msulak/anvil\";\n\
+        "import { Component } from \"@anvil-di/anvil\";\n\
          import { Heater } from \"./heater\";\n\
          @Component({ modules: [] })\n\
          export abstract class CoffeeShop { abstract heater(): Heater; }\n",
@@ -78,7 +78,7 @@ fn watch_regenerates_anvil_file_on_source_change() {
     std::thread::sleep(Duration::from_millis(50));
     std::fs::write(
         root.join("src/heater.ts"),
-        "import { Inject } from \"@msulak/anvil\";\n\
+        "import { Inject } from \"@anvil-di/anvil\";\n\
          @Inject\n\
          export class Heater { constructor() {} on() {} }\n",
     )

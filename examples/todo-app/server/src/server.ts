@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
-import { bellowsRoutes } from "@msulak/anvil-bellows";
+import { bellowsRoutes } from "@anvil-di/anvil-bellows";
 import { createAppComponent } from "./app-component.anvil.js";
 import { NotFoundError } from "./todo-service.js";
 

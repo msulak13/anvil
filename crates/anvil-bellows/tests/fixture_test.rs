@@ -57,12 +57,12 @@ fn copy_dir(src: &Path, dst: &Path) {
 /// Write minimal package stubs so the generated `routes.module.ts` can be
 /// type-checked without pulling in the full monorepo.
 fn write_stubs(root: &Path) {
-    // @msulak/anvil — provides Module, Provides, IntoSet decorators
-    let anvil = root.join("node_modules/@msulak/anvil");
+    // @anvil-di/anvil — provides Module, Provides, IntoSet decorators
+    let anvil = root.join("node_modules/@anvil-di/anvil");
     std::fs::create_dir_all(&anvil).unwrap();
     std::fs::write(
         anvil.join("package.json"),
-        r#"{ "name": "@msulak/anvil", "main": "index.ts", "types": "index.ts" }"#,
+        r#"{ "name": "@anvil-di/anvil", "main": "index.ts", "types": "index.ts" }"#,
     )
     .unwrap();
     std::fs::write(
@@ -75,12 +75,12 @@ fn write_stubs(root: &Path) {
     )
     .unwrap();
 
-    // @msulak/anvil-bellows — provides RouteDefinition + controller decorators
-    let bellows = root.join("node_modules/@msulak/anvil-bellows");
+    // @anvil-di/anvil-bellows — provides RouteDefinition + controller decorators
+    let bellows = root.join("node_modules/@anvil-di/anvil-bellows");
     std::fs::create_dir_all(&bellows).unwrap();
     std::fs::write(
         bellows.join("package.json"),
-        r#"{ "name": "@msulak/anvil-bellows", "main": "index.ts", "types": "index.ts" }"#,
+        r#"{ "name": "@anvil-di/anvil-bellows", "main": "index.ts", "types": "index.ts" }"#,
     )
     .unwrap();
     std::fs::write(

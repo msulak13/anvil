@@ -20,7 +20,7 @@ const result = spawnSync(binary, process.argv.slice(2), {
 });
 
 if (result.error !== undefined) {
-  process.stderr.write(`@msulak/anvil-cli: failed to spawn ${binary}: ${result.error.message}\n`);
+  process.stderr.write(`@anvil-di/anvil-cli: failed to spawn ${binary}: ${result.error.message}\n`);
   process.exit(1);
 }
 process.exit(result.status ?? 1);

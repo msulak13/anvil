@@ -26,11 +26,11 @@ fn write_project(tmp: &TempDir, files: &[(&str, &str)]) -> PathBuf {
 }
 
 fn write_anvil_stub(root: &Path) {
-    let pkg = root.join("node_modules/@msulak/anvil");
+    let pkg = root.join("node_modules/@anvil-di/anvil");
     std::fs::create_dir_all(&pkg).unwrap();
     std::fs::write(
         pkg.join("package.json"),
-        r#"{ "name": "@msulak/anvil", "main": "index.ts" }"#,
+        r#"{ "name": "@anvil-di/anvil", "main": "index.ts" }"#,
     )
     .unwrap();
     std::fs::write(
@@ -54,7 +54,7 @@ fn build_emits_anvil_file_next_to_component() {
             (
                 "src/heater.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     @Inject
                     export class Heater { constructor() {} }
                 "#,
@@ -62,7 +62,7 @@ fn build_emits_anvil_file_next_to_component() {
             (
                 "src/pump.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { Heater } from "./heater";
                     @Inject
                     export class Pump { constructor(private h: Heater) {} }
@@ -71,7 +71,7 @@ fn build_emits_anvil_file_next_to_component() {
             (
                 "src/coffee-component.ts",
                 r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     import { Pump } from "./pump";
                     import { Heater } from "./heater";
                     @Component({ modules: [] })
@@ -123,7 +123,7 @@ fn build_refuses_to_emit_on_validation_failure() {
             (
                 "src/pump.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { Heater } from "./heater";
                     @Inject
                     export class Pump { constructor(private h: Heater) {} }
@@ -132,7 +132,7 @@ fn build_refuses_to_emit_on_validation_failure() {
             (
                 "src/coffee-component.ts",
                 r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     import { Pump } from "./pump";
                     @Component({ modules: [] })
                     export abstract class CoffeeShop { abstract pump(): Pump; }

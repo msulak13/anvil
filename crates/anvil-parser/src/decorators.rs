@@ -211,7 +211,7 @@ pub enum ExtractError {
 /// Result of extraction.
 pub type Result<T> = std::result::Result<T, ExtractError>;
 
-/// Names recognized as decorators in v0.1. Bound via the user's `import { … } from "@msulak/anvil"`.
+/// Names recognized as decorators in v0.1. Bound via the user's `import { … } from "@anvil-di/anvil"`.
 const KNOWN_DECORATOR_NAMES: &[&str] = &[
     "Module",
     "Provides",
@@ -872,13 +872,13 @@ fn type_annotation_to_key(
 
         // M14: `Token<T, "name">` → Key::Token { name }.
         // Check Token BEFORE doing resolve_name_to_key to allow a user-defined class
-        // named "Token" that happens not to come from @msulak/anvil to pass through as
+        // named "Token" that happens not to come from @anvil-di/anvil to pass through as
         // a generic Key::Class. We only apply the Token logic when the specifier resolves
-        // to @msulak/anvil.
+        // to @anvil-di/anvil.
         if name == "Token" && args.params.len() >= 2 {
-            // Confirm it's from @msulak/anvil by checking the import map.
+            // Confirm it's from @anvil-di/anvil by checking the import map.
             let is_anvil_token = if let Some(ImportSource { specifier, .. }) = imports.get(name) {
-                specifier.contains("@msulak/anvil")
+                specifier.contains("@anvil-di/anvil")
             } else {
                 false
             };
@@ -971,7 +971,7 @@ fn ts_type_to_key(
         // M14: Token<T, "name"> inside a type arg position.
         if name == "Token" && args.params.len() >= 2 {
             let is_anvil_token = if let Some(ImportSource { specifier, .. }) = imports.get(name) {
-                specifier.contains("@msulak/anvil")
+                specifier.contains("@anvil-di/anvil")
             } else {
                 false
             };

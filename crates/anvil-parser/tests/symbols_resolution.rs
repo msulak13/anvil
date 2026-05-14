@@ -84,7 +84,7 @@ fn relative_imports_are_resolved_to_absolute_paths() {
             (
                 "src/heater.ts",
                 r#"
-                    import { Inject, Singleton } from "@msulak/anvil";
+                    import { Inject, Singleton } from "@anvil-di/anvil";
                     @Inject
                     @Singleton
                     export class Heater {
@@ -95,7 +95,7 @@ fn relative_imports_are_resolved_to_absolute_paths() {
             (
                 "src/pump.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { Heater } from "./heater";
                     @Inject
                     export class Pump {
@@ -106,7 +106,7 @@ fn relative_imports_are_resolved_to_absolute_paths() {
             (
                 "src/coffee.ts",
                 r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     import { Pump } from "./pump";
                     import { Heater } from "./heater";
                     @Component({ modules: [] })
@@ -185,7 +185,7 @@ fn tsconfig_paths_alias_resolves() {
             (
                 "src/heater.ts",
                 r#"
-                    import { Singleton, Inject } from "@msulak/anvil";
+                    import { Singleton, Inject } from "@anvil-di/anvil";
                     @Inject
                     @Singleton
                     export class Heater { constructor() {} }
@@ -194,7 +194,7 @@ fn tsconfig_paths_alias_resolves() {
             (
                 "src/pump.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { Heater } from "@app/heater";
                     @Inject
                     export class Pump { constructor(private heater: Heater) {} }
@@ -224,7 +224,7 @@ fn barrel_reexport_resolves_to_real_file() {
             (
                 "src/heater.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     @Inject
                     export class Heater { constructor() {} }
                 "#,
@@ -234,7 +234,7 @@ fn barrel_reexport_resolves_to_real_file() {
             (
                 "src/pump.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { Heater } from "./index";
                     @Inject
                     export class Pump { constructor(private heater: Heater) {} }
@@ -295,7 +295,7 @@ fn node_modules_imports_resolve_but_are_not_walked() {
             (
                 "src/pump.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { Logger } from "some-lib";
                     @Inject
                     export class Pump { constructor(private log: Logger) {} }
@@ -330,15 +330,15 @@ fn node_modules_imports_resolve_but_are_not_walked() {
     );
 }
 
-/// Write a minimal `node_modules/@msulak/anvil/index.ts` so resolver lookups for
+/// Write a minimal `node_modules/@anvil-di/anvil/index.ts` so resolver lookups for
 /// decorator imports succeed in tests. The contents don't matter — we
 /// don't recurse into `node_modules`.
 fn write_anvil_stub(root: &Path) {
-    let pkg = root.join("node_modules/@msulak/anvil");
+    let pkg = root.join("node_modules/@anvil-di/anvil");
     std::fs::create_dir_all(&pkg).unwrap();
     std::fs::write(
         pkg.join("package.json"),
-        r#"{ "name": "@msulak/anvil", "main": "index.ts" }"#,
+        r#"{ "name": "@anvil-di/anvil", "main": "index.ts" }"#,
     )
     .unwrap();
     std::fs::write(

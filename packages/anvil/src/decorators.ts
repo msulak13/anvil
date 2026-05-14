@@ -1,7 +1,7 @@
 /**
  * No-op decorator stubs recognized by the `anvil` Rust codegen toolchain.
  *
- * These exist purely so user code typechecks (`import { Inject } from "@msulak/anvil"`).
+ * These exist purely so user code typechecks (`import { Inject } from "@anvil-di/anvil"`).
  * The actual semantics are implemented at compile time by reading the decorator
  * AST and emitting wiring code into co-located `*.anvil.ts` files.
  *
@@ -15,7 +15,7 @@
  *
  * @example
  * ```ts
- * import { Module, Provides } from "@msulak/anvil";
+ * import { Module, Provides } from "@anvil-di/anvil";
  * import { Pump } from "./pump";
  *
  * @Module
@@ -55,7 +55,7 @@ export function Provides<This, Args extends readonly unknown[], Return>(
  *
  * @example
  * ```ts
- * import { Inject } from "@msulak/anvil";
+ * import { Inject } from "@anvil-di/anvil";
  * import { Heater } from "./heater";
  *
  * @Inject
@@ -89,7 +89,7 @@ export function Inject<T extends abstract new (...args: never[]) => unknown>(
  *
  * @example
  * ```ts
- * import { Module, Binds } from "@msulak/anvil";
+ * import { Module, Binds } from "@anvil-di/anvil";
  * import { Heater } from "./heater";
  * import { ElectricHeater } from "./electric-heater";
  *
@@ -121,7 +121,7 @@ export interface ComponentConfig {
  *
  * @example
  * ```ts
- * import { Component } from "@msulak/anvil";
+ * import { Component } from "@anvil-di/anvil";
  * import { CoffeeModule } from "./coffee-module";
  *
  * @Component({ modules: [CoffeeModule] })
@@ -158,7 +158,7 @@ export interface SubcomponentConfig {
  *
  * @example
  * ```ts
- * import { Component, Subcomponent } from "@msulak/anvil";
+ * import { Component, Subcomponent } from "@anvil-di/anvil";
  * import { RequestModule } from "./request-module";
  *
  * @Subcomponent({ modules: [RequestModule] })
@@ -214,7 +214,7 @@ export function Singleton(target: unknown, _ctx: unknown): unknown {
  *
  * @example
  * ```ts
- * import { Module, Provides, IntoSet, Component } from "@msulak/anvil";
+ * import { Module, Provides, IntoSet, Component } from "@anvil-di/anvil";
  *
  * @Module
  * export class PluginsModule {

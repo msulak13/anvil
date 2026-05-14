@@ -1,5 +1,5 @@
 /**
- * `@msulak/anvil-codegen-wasm` — runs the entire anvil codegen pipeline in
+ * `@anvil-di/anvil-codegen-wasm` — runs the entire anvil codegen pipeline in
  * pure WebAssembly. No native binary, no platform-specific package,
  * no `spawnSync` cost in the bundler hot path.
  *
@@ -10,14 +10,14 @@
  *
  * @example
  * ```ts
- * import { compile } from "@msulak/anvil-codegen-wasm";
+ * import { compile } from "@anvil-di/anvil-codegen-wasm";
  *
  * const result = compile({
  *   entryPath: "/abs/src/app-component.ts",
  *   files: {
  *     "/abs/src/app-component.ts": "...source...",
  *     "/abs/src/heater.ts":        "...source...",
- *     "/abs/node_modules/@msulak/anvil/index.d.ts": "export const Inject: any; ...",
+ *     "/abs/node_modules/@anvil-di/anvil/index.d.ts": "export const Inject: any; ...",
  *   },
  *   version: "0.0.1",
  * });
@@ -49,9 +49,9 @@ export interface CompileInput {
    * and every transitively-reachable source file (the host walks
    * the graph; anvil only consumes what it's given).
    *
-   * Bare-specifier imports like `import { Inject } from "@msulak/anvil"`
+   * Bare-specifier imports like `import { Inject } from "@anvil-di/anvil"`
    * are resolved against entries whose paths contain
-   * `node_modules/@msulak/anvil/...` — so include the runtime stub package
+   * `node_modules/@anvil-di/anvil/...` — so include the runtime stub package
    * under such a path if your source uses anvil decorators.
    */
   files: Record<string, string>;
@@ -64,7 +64,7 @@ export interface CompileInput {
   /**
    * Version string surfaced into the generated dagger's banner
    * comment, so users can correlate emitted output with the
-   * @msulak/anvil-codegen-wasm package version that produced it.
+   * @anvil-di/anvil-codegen-wasm package version that produced it.
    */
   version: string;
 }

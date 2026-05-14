@@ -9,7 +9,7 @@
 /// resolved through the file's import map.
 ///
 /// In **M1** the `module` field carries the **import specifier verbatim**
-/// (e.g. `"./heater"`, `"@msulak/anvil"`, `"my-pkg/sub"`). M2 introduces a resolver
+/// (e.g. `"./heater"`, `"@anvil-di/anvil"`, `"my-pkg/sub"`). M2 introduces a resolver
 /// that rewrites these to absolute, normalized filesystem paths so that
 /// equivalent imports across files compare equal.
 ///

@@ -15,7 +15,7 @@
 //! use anvil_parser::parse_source;
 //!
 //! let src = r#"
-//!     import { Module, Provides } from "@msulak/anvil";
+//!     import { Module, Provides } from "@anvil-di/anvil";
 //!     export class Pump {}
 //!     @Module
 //!     export class CoffeeModule {

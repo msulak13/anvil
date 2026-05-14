@@ -1,5 +1,5 @@
 /**
- * `@msulak/anvil-bellows-cli` — npm launcher for the native `anvil-bellows` Rust binary.
+ * `@anvil-di/anvil-bellows-cli` — npm launcher for the native `anvil-bellows` Rust binary.
  *
  * The package itself ships **no binary**. At install time, npm resolves exactly
  * one of the per-platform `optionalDependencies` based on the `os`/`cpu` fields
@@ -8,7 +8,7 @@
  * binary path from it.
  *
  * This mirrors esbuild's distribution model — the user installs one thing
- * (`npm install @msulak/anvil-bellows-cli`) and gets the right native binary
+ * (`npm install @anvil-di/anvil-bellows-cli`) and gets the right native binary
  * for their platform without a `postinstall` build step.
  */
 import { existsSync } from "node:fs";
@@ -30,7 +30,7 @@ export function platformPackageName(): string | null {
   if (arches === undefined) return null;
   const suffix = arches[process.arch];
   if (suffix === undefined) return null;
-  return `@msulak/anvil-bellows-cli-${suffix}`;
+  return `@anvil-di/anvil-bellows-cli-${suffix}`;
 }
 
 /**
@@ -67,7 +67,7 @@ export function unresolvableBinaryError(): string {
   const platformInfo = `${process.platform}/${process.arch}`;
   if (pkg === null) {
     return [
-      `@msulak/anvil-bellows-cli: no prebuilt binary for ${platformInfo}.`,
+      `@anvil-di/anvil-bellows-cli: no prebuilt binary for ${platformInfo}.`,
       "",
       "Supported platforms: darwin/arm64, darwin/x64, linux/arm64, linux/x64, win32/x64.",
       "",
@@ -76,9 +76,9 @@ export function unresolvableBinaryError(): string {
     ].join("\n");
   }
   return [
-    `@msulak/anvil-bellows-cli: couldn't locate the ${BIN_NAME} binary for ${platformInfo}.`,
+    `@anvil-di/anvil-bellows-cli: couldn't locate the ${BIN_NAME} binary for ${platformInfo}.`,
     "",
-    `Expected "${pkg}" to be installed alongside @msulak/anvil-bellows-cli.`,
+    `Expected "${pkg}" to be installed alongside @anvil-di/anvil-bellows-cli.`,
     "If npm skipped optional dependencies:",
     "  npm install --include=optional",
     "  pnpm install",

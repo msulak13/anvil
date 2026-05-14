@@ -1,5 +1,5 @@
 /**
- * `@msulak/anvil-bellows-openapi-cli` — npm launcher for the native
+ * `@anvil-di/anvil-bellows-openapi-cli` — npm launcher for the native
  * `anvil-bellows-openapi` Rust binary.
  *
  * Resolution order:
@@ -27,7 +27,7 @@ export function platformPackageName(): string | null {
   if (arches === undefined) return null;
   const suffix = arches[process.arch];
   if (suffix === undefined) return null;
-  return `@msulak/anvil-bellows-openapi-cli-${suffix}`;
+  return `@anvil-di/anvil-bellows-openapi-cli-${suffix}`;
 }
 
 export function resolveBinaryPath(): string | null {
@@ -55,7 +55,7 @@ export function unresolvableBinaryError(): string {
   const platformInfo = `${process.platform}/${process.arch}`;
   if (pkg === null) {
     return [
-      `@msulak/anvil-bellows-openapi-cli: no prebuilt binary for ${platformInfo}.`,
+      `@anvil-di/anvil-bellows-openapi-cli: no prebuilt binary for ${platformInfo}.`,
       "",
       "Supported platforms: darwin/arm64, darwin/x64, linux/arm64, linux/x64, win32/x64.",
       "",
@@ -64,9 +64,9 @@ export function unresolvableBinaryError(): string {
     ].join("\n");
   }
   return [
-    `@msulak/anvil-bellows-openapi-cli: couldn't locate the ${BIN_NAME} binary for ${platformInfo}.`,
+    `@anvil-di/anvil-bellows-openapi-cli: couldn't locate the ${BIN_NAME} binary for ${platformInfo}.`,
     "",
-    `Expected "${pkg}" to be installed alongside @msulak/anvil-bellows-openapi-cli.`,
+    `Expected "${pkg}" to be installed alongside @anvil-di/anvil-bellows-openapi-cli.`,
     "If npm skipped optional dependencies:",
     "  npm install --include=optional",
     "  pnpm install",

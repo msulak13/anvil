@@ -281,7 +281,7 @@ pub fn compile_native(input: CompileInput) -> Result<CompileOutput, CompileError
 /// `wasm-bindgen` entry point. Accepts a JS object matching
 /// [`CompileInput`], returns a JS object matching [`CompileOutput`].
 /// Errors thrown into JS land map to the host's normal exception
-/// handling — `@msulak/anvil-unplugin` translates these into bundler-side
+/// handling — `@anvil-di/anvil-unplugin` translates these into bundler-side
 /// diagnostic surfaces.
 #[wasm_bindgen]
 pub fn compile(input_js: JsValue) -> Result<JsValue, JsValue> {
@@ -355,7 +355,7 @@ mod tests {
     fn coffee_project() -> CompileInput {
         let mut files = HashMap::new();
         files.insert(
-            "/proj/node_modules/@msulak/anvil/index.d.ts".to_owned(),
+            "/proj/node_modules/@anvil-di/anvil/index.d.ts".to_owned(),
             "export const Inject: any; export const Module: any; \
              export const Provides: any; export const Component: any; \
              export const Singleton: any;"
@@ -364,7 +364,7 @@ mod tests {
         files.insert(
             "/proj/src/heater.ts".to_owned(),
             r#"
-                import { Inject, Singleton } from "@msulak/anvil";
+                import { Inject, Singleton } from "@anvil-di/anvil";
                 @Inject @Singleton
                 export class Heater { constructor() {} }
             "#
@@ -373,7 +373,7 @@ mod tests {
         files.insert(
             "/proj/src/pump.ts".to_owned(),
             r#"
-                import { Inject } from "@msulak/anvil";
+                import { Inject } from "@anvil-di/anvil";
                 import { Heater } from "./heater";
                 @Inject
                 export class Pump { constructor(private heater: Heater) {} }
@@ -383,7 +383,7 @@ mod tests {
         files.insert(
             "/proj/src/app-component.ts".to_owned(),
             r#"
-                import { Component, Singleton } from "@msulak/anvil";
+                import { Component, Singleton } from "@anvil-di/anvil";
                 import { Pump } from "./pump";
                 @Singleton
                 @Component({ modules: [] })
@@ -427,17 +427,17 @@ mod tests {
         let stub = "export const Inject: any; export const Component: any; \
                     export const Singleton: any;";
         files.insert(
-            r"C:\proj\node_modules\@msulak\anvil\index.d.ts".to_owned(),
+            r"C:\proj\node_modules\@anvil-di\anvil\index.d.ts".to_owned(),
             stub.to_owned(),
         );
         files.insert(
             r"C:\proj\src\heater.ts".to_owned(),
-            r#"import { Inject } from "@msulak/anvil"; @Inject export class Heater {}"#.to_owned(),
+            r#"import { Inject } from "@anvil-di/anvil"; @Inject export class Heater {}"#.to_owned(),
         );
         files.insert(
             r"C:\proj\src\app.ts".to_owned(),
             r#"
-                import { Component } from "@msulak/anvil";
+                import { Component } from "@anvil-di/anvil";
                 import { Heater } from "./heater";
                 @Component({ modules: [] })
                 export abstract class App { abstract heater(): Heater; }

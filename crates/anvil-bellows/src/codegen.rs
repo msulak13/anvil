@@ -85,8 +85,8 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
     } else {
         "Module, Provides, IntoSet"
     };
-    writeln!(s, "import {{ {anvil_imports} }} from \"@msulak/anvil\";").unwrap();
-    s.push_str("import type { RouteDefinition } from \"@msulak/anvil-bellows\";\n");
+    writeln!(s, "import {{ {anvil_imports} }} from \"@anvil-di/anvil\";").unwrap();
+    s.push_str("import type { RouteDefinition } from \"@anvil-di/anvil-bellows\";\n");
 
     // One import per controller file — includes controller class + any schema refs.
     // Also collect dep types that need separate imports.
@@ -257,12 +257,12 @@ fn build_openapi_ts(
 
     writeln!(
         s,
-        "import {{ IntoSet, Module, Provides }} from \"@msulak/anvil\";"
+        "import {{ IntoSet, Module, Provides }} from \"@anvil-di/anvil\";"
     )
     .unwrap();
     writeln!(
         s,
-        "import type {{ RouteDefinition }} from \"@msulak/anvil-bellows\";"
+        "import type {{ RouteDefinition }} from \"@anvil-di/anvil-bellows\";"
     )
     .unwrap();
     writeln!(

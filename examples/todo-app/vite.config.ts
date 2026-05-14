@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import anvil from "@msulak/anvil-unplugin/vite";
-import { bellowsCodegen } from "@msulak/anvil-bellows";
+import anvil from "@anvil-di/anvil-unplugin/vite";
+import { bellowsCodegen } from "@anvil-di/anvil-bellows";
 
 export default defineConfig({
   plugins: [

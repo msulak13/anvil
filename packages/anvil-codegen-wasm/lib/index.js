@@ -1,5 +1,5 @@
 /**
- * `@msulak/anvil-codegen-wasm` — runs the entire anvil codegen pipeline in
+ * `@anvil-di/anvil-codegen-wasm` — runs the entire anvil codegen pipeline in
  * pure WebAssembly. No native binary, no platform-specific package,
  * no `spawnSync` cost in the bundler hot path.
  *
@@ -10,14 +10,14 @@
  *
  * @example
  * ```ts
- * import { compile } from "@msulak/anvil-codegen-wasm";
+ * import { compile } from "@anvil-di/anvil-codegen-wasm";
  *
  * const result = compile({
  *   entryPath: "/abs/src/app-component.ts",
  *   files: {
  *     "/abs/src/app-component.ts": "...source...",
  *     "/abs/src/heater.ts":        "...source...",
- *     "/abs/node_modules/@msulak/anvil/index.d.ts": "export const Inject: any; ...",
+ *     "/abs/node_modules/@anvil-di/anvil/index.d.ts": "export const Inject: any; ...",
  *   },
  *   version: "0.0.1",
  * });

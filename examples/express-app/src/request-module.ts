@@ -1,4 +1,4 @@
-import { Module, Provides } from "@msulak/anvil";
+import { Module, Provides } from "@anvil-di/anvil";
 import type { Request } from "express";
 import { RequestContext } from "./request-context.js";
 

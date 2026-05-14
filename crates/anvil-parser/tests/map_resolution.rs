@@ -12,9 +12,9 @@ use anvil_parser::symbols::ProjectGraph;
 fn project() -> FileMap {
     FileMap::from_pairs(vec![
         // Stub the runtime anvil package so resolve_name_to_key can mint Keys
-        // for our decorators. Bare specifier "@msulak/anvil" lands here.
+        // for our decorators. Bare specifier "@anvil-di/anvil" lands here.
         (
-            PathBuf::from("/proj/node_modules/@msulak/anvil/index.d.ts"),
+            PathBuf::from("/proj/node_modules/@anvil-di/anvil/index.d.ts"),
             "export const Inject: any; export const Module: any; \
              export const Provides: any; export const Component: any; \
              export const Singleton: any; export const Binds: any;"
@@ -23,7 +23,7 @@ fn project() -> FileMap {
         (
             PathBuf::from("/proj/src/heater.ts"),
             r#"
-                import { Inject, Singleton } from "@msulak/anvil";
+                import { Inject, Singleton } from "@anvil-di/anvil";
                 @Inject @Singleton
                 export class Heater { constructor() {} }
             "#
@@ -32,7 +32,7 @@ fn project() -> FileMap {
         (
             PathBuf::from("/proj/src/pump.ts"),
             r#"
-                import { Inject } from "@msulak/anvil";
+                import { Inject } from "@anvil-di/anvil";
                 import { Heater } from "./heater";
                 @Inject
                 export class Pump { constructor(private heater: Heater) {} }
@@ -42,7 +42,7 @@ fn project() -> FileMap {
         (
             PathBuf::from("/proj/src/app-component.ts"),
             r#"
-                import { Component, Singleton } from "@msulak/anvil";
+                import { Component, Singleton } from "@anvil-di/anvil";
                 import { Pump } from "./pump";
                 @Singleton
                 @Component({ modules: [] })
@@ -64,7 +64,7 @@ fn build_from_map_walks_relative_imports_and_normalizes_keys() {
     )
     .expect("graph builds");
 
-    // Three project-source files reachable from the entry; node_modules/@msulak/anvil
+    // Three project-source files reachable from the entry; node_modules/@anvil-di/anvil
     // is resolved (so its specifier normalizes) but not walked.
     let paths: Vec<String> = graph
         .files
@@ -111,13 +111,13 @@ fn missing_file_in_map_surfaces_a_diagnostic() {
     // Entry imports `./missing` which isn't in the file map.
     let files = FileMap::from_pairs(vec![
         (
-            PathBuf::from("/proj/node_modules/@msulak/anvil/index.d.ts"),
+            PathBuf::from("/proj/node_modules/@anvil-di/anvil/index.d.ts"),
             "export const Inject: any;".to_owned(),
         ),
         (
             PathBuf::from("/proj/src/main.ts"),
             r#"
-                import { Inject } from "@msulak/anvil";
+                import { Inject } from "@anvil-di/anvil";
                 import { Helper } from "./missing";
                 @Inject
                 export class Main { constructor(private h: Helper) {} }
@@ -141,13 +141,13 @@ fn tsconfig_paths_alias_resolves_through_the_map() {
     // alias rewrite before extension probing.
     let files = FileMap::from_pairs(vec![
         (
-            PathBuf::from("/proj/node_modules/@msulak/anvil/index.d.ts"),
+            PathBuf::from("/proj/node_modules/@anvil-di/anvil/index.d.ts"),
             "export const Inject: any;".to_owned(),
         ),
         (
             PathBuf::from("/proj/src/heater.ts"),
             r#"
-                import { Inject } from "@msulak/anvil";
+                import { Inject } from "@anvil-di/anvil";
                 @Inject
                 export class Heater { constructor() {} }
             "#
@@ -156,7 +156,7 @@ fn tsconfig_paths_alias_resolves_through_the_map() {
         (
             PathBuf::from("/proj/src/pump.ts"),
             r#"
-                import { Inject } from "@msulak/anvil";
+                import { Inject } from "@anvil-di/anvil";
                 import { Heater } from "@/heater";
                 @Inject
                 export class Pump { constructor(private heater: Heater) {} }

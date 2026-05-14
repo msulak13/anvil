@@ -7,7 +7,7 @@ import { anvilUnplugin, type AnvilPluginOptions } from "./index.js";
  *
  * @example
  * ```ts
- * import anvil from "@msulak/anvil-unplugin/vite";
+ * import anvil from "@anvil-di/anvil-unplugin/vite";
  *
  * export default defineConfig({
  *   plugins: [anvil({ tsconfig: "./tsconfig.json" })],

@@ -750,7 +750,7 @@ mod tests {
     fn parses_basic_controller() {
         let (file, diags) = parse(
             r#"
-import { Controller, Get } from "@msulak/anvil-bellows";
+import { Controller, Get } from "@anvil-di/anvil-bellows";
 
 @Controller("/users")
 export class UserController {
@@ -863,8 +863,8 @@ export class NotAController {
     fn classify_body_query_params() {
         let (file, diags) = parse(
             r#"
-import { Controller, Post } from "@msulak/anvil-bellows";
-import type { Body, Query, Params } from "@msulak/anvil-bellows";
+import { Controller, Post } from "@anvil-di/anvil-bellows";
+import type { Body, Query, Params } from "@anvil-di/anvil-bellows";
 
 export const CreateBody = {};
 export const FilterQuery = {};
@@ -907,7 +907,7 @@ export class UserController {
     fn classify_request_response() {
         let (file, diags) = parse(
             r#"
-import { Controller, Get } from "@msulak/anvil-bellows";
+import { Controller, Get } from "@anvil-di/anvil-bellows";
 
 @Controller("/")
 export class PingController {
@@ -926,7 +926,7 @@ export class PingController {
     fn classify_responds_return_type() {
         let (file, diags) = parse(
             r#"
-import { Controller, Get } from "@msulak/anvil-bellows";
+import { Controller, Get } from "@anvil-di/anvil-bellows";
 export const UserSchema = {};
 
 @Controller("/users")
@@ -953,7 +953,7 @@ export class UserController {
     fn classify_promise_responds_return_type() {
         let (file, diags) = parse(
             r#"
-import { Controller, Get } from "@msulak/anvil-bellows";
+import { Controller, Get } from "@anvil-di/anvil-bellows";
 export const UserSchema = {};
 
 @Controller("/users")

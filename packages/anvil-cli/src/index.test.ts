@@ -19,11 +19,11 @@ describe("platformPackageName", () => {
   it("returns the right package for the current Node process", () => {
     const name = platformPackageName();
     if (process.platform === "win32" && process.arch === "x64") {
-      expect(name).toBe("@msulak/anvil-cli-win32-x64");
+      expect(name).toBe("@anvil-di/anvil-cli-win32-x64");
     } else if (process.platform === "darwin" && process.arch === "arm64") {
-      expect(name).toBe("@msulak/anvil-cli-darwin-arm64");
+      expect(name).toBe("@anvil-di/anvil-cli-darwin-arm64");
     } else if (process.platform === "linux" && process.arch === "x64") {
-      expect(name).toBe("@msulak/anvil-cli-linux-x64");
+      expect(name).toBe("@anvil-di/anvil-cli-linux-x64");
     } else {
       // For other combinations the test environment isn't in the v0.2
       // matrix; just ensure the function doesn't crash.

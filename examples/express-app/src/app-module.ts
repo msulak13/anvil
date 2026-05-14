@@ -1,4 +1,4 @@
-import { Module, Binds } from "@msulak/anvil";
+import { Module, Binds } from "@anvil-di/anvil";
 import { ConsoleLogger } from "./console-logger.js";
 import type { Logger } from "./logger.js";
 

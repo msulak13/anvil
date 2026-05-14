@@ -11,7 +11,7 @@ use oxc_parser::Parser;
 use oxc_span::SourceType;
 
 const SIMPLE_PROVIDES: &str = r#"
-import { Module, Provides, Component } from "@msulak/anvil";
+import { Module, Provides, Component } from "@anvil-di/anvil";
 
 export class Pump {
   constructor() {}
@@ -29,7 +29,7 @@ export abstract class CoffeeShop {
 "#;
 
 const INJECT_CTOR: &str = r#"
-import { Inject, Component } from "@msulak/anvil";
+import { Inject, Component } from "@anvil-di/anvil";
 
 @Inject
 export class Heater {
@@ -48,7 +48,7 @@ export abstract class CoffeeShop {
 "#;
 
 const SINGLETON_SCOPE: &str = r#"
-import { Inject, Singleton, Component } from "@msulak/anvil";
+import { Inject, Singleton, Component } from "@anvil-di/anvil";
 
 @Inject
 @Singleton

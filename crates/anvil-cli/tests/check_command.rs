@@ -26,11 +26,11 @@ fn write_project(tmp: &TempDir, files: &[(&str, &str)]) -> PathBuf {
 }
 
 fn write_anvil_stub(root: &Path) {
-    let pkg = root.join("node_modules/@msulak/anvil");
+    let pkg = root.join("node_modules/@anvil-di/anvil");
     std::fs::create_dir_all(&pkg).unwrap();
     std::fs::write(
         pkg.join("package.json"),
-        r#"{ "name": "@msulak/anvil", "main": "index.ts" }"#,
+        r#"{ "name": "@anvil-di/anvil", "main": "index.ts" }"#,
     )
     .unwrap();
     std::fs::write(
@@ -54,7 +54,7 @@ fn check_passes_on_valid_graph() {
             (
                 "src/heater.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     @Inject
                     export class Heater { constructor() {} }
                 "#,
@@ -62,7 +62,7 @@ fn check_passes_on_valid_graph() {
             (
                 "src/pump.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { Heater } from "./heater";
                     @Inject
                     export class Pump { constructor(private h: Heater) {} }
@@ -71,7 +71,7 @@ fn check_passes_on_valid_graph() {
             (
                 "src/coffee.ts",
                 r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     import { Pump } from "./pump";
                     import { Heater } from "./heater";
                     @Component({ modules: [] })
@@ -106,7 +106,7 @@ fn check_reports_missing_binding() {
             (
                 "src/pump.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { Heater } from "./heater";
                     @Inject
                     export class Pump { constructor(private h: Heater) {} }
@@ -115,7 +115,7 @@ fn check_reports_missing_binding() {
             (
                 "src/coffee.ts",
                 r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     import { Pump } from "./pump";
                     @Component({ modules: [] })
                     export abstract class CoffeeShop {
@@ -146,7 +146,7 @@ fn check_reports_cycle() {
             (
                 "src/a.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { B } from "./b";
                     @Inject
                     export class A { constructor(private b: B) {} }
@@ -155,7 +155,7 @@ fn check_reports_cycle() {
             (
                 "src/b.ts",
                 r#"
-                    import { Inject } from "@msulak/anvil";
+                    import { Inject } from "@anvil-di/anvil";
                     import { A } from "./a";
                     @Inject
                     export class B { constructor(private a: A) {} }
@@ -164,7 +164,7 @@ fn check_reports_cycle() {
             (
                 "src/comp.ts",
                 r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     import { A } from "./a";
                     @Component({ modules: [] })
                     export abstract class Comp { abstract a(): A; }
@@ -194,7 +194,7 @@ fn check_reports_duplicate_binding() {
             (
                 "src/m1.ts",
                 r#"
-                    import { Module, Provides } from "@msulak/anvil";
+                    import { Module, Provides } from "@anvil-di/anvil";
                     import { Heater } from "./heater";
                     @Module
                     export class M1 {
@@ -205,7 +205,7 @@ fn check_reports_duplicate_binding() {
             (
                 "src/m2.ts",
                 r#"
-                    import { Module, Provides } from "@msulak/anvil";
+                    import { Module, Provides } from "@anvil-di/anvil";
                     import { Heater } from "./heater";
                     @Module
                     export class M2 {
@@ -216,7 +216,7 @@ fn check_reports_duplicate_binding() {
             (
                 "src/comp.ts",
                 r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     import { M1 } from "./m1";
                     import { M2 } from "./m2";
                     import { Heater } from "./heater";
@@ -253,7 +253,7 @@ fn check_reports_scope_mismatch() {
             (
                 "src/heater.ts",
                 r#"
-                    import { Inject, Singleton } from "@msulak/anvil";
+                    import { Inject, Singleton } from "@anvil-di/anvil";
                     @Inject
                     @Singleton
                     export class Heater { constructor() {} }
@@ -262,7 +262,7 @@ fn check_reports_scope_mismatch() {
             (
                 "src/comp.ts",
                 r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     import { Heater } from "./heater";
                     @Component({ modules: [] })
                     export abstract class Comp { abstract heater(): Heater; }
@@ -301,7 +301,7 @@ fn check_reports_scope_mismatch_for_singleton_provides() {
             (
                 "src/heater-module.ts",
                 r#"
-                    import { Module, Provides, Singleton } from "@msulak/anvil";
+                    import { Module, Provides, Singleton } from "@anvil-di/anvil";
                     import { Heater } from "./heater";
                     @Module
                     export class HeaterModule {
@@ -314,7 +314,7 @@ fn check_reports_scope_mismatch_for_singleton_provides() {
             (
                 "src/comp.ts",
                 r#"
-                    import { Component } from "@msulak/anvil";
+                    import { Component } from "@anvil-di/anvil";
                     import { HeaterModule } from "./heater-module";
                     import { Heater } from "./heater";
                     @Component({ modules: [HeaterModule] })

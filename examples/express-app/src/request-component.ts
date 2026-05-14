@@ -1,4 +1,4 @@
-import { Subcomponent } from "@msulak/anvil";
+import { Subcomponent } from "@anvil-di/anvil";
 import { RequestModule } from "./request-module.js";
 import { UserController } from "./user-controller.js";
 import { RequestContext } from "./request-context.js";
