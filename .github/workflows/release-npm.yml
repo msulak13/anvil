@@ -1,0 +1,99 @@
+# Publishes all pure TypeScript packages to npm.
+#
+# Does NOT build native binaries — that is handled by the release-cli,
+# release-bellows-cli, and release-bellows-openapi-cli workflows.
+# The launcher shims (anvil-cli, anvil-bellows-cli,
+# anvil-bellows-openapi-cli) are also published here because they
+# contain no platform-specific code; the native binaries they resolve
+# are optional peer packages already on npm before this runs.
+#
+# Triggered manually (workflow_dispatch) or on an `npm-v*` git tag
+# (e.g. `npm-v0.2.0`).
+#
+# Required secret: NPM_TOKEN (classic automation token or granular
+# token with publish access to the @msulak scope).
+
+name: release-npm
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "npm-v*"
+
+permissions:
+  contents: read
+  id-token: write   # npm provenance
+
+jobs:
+  publish:
+    name: publish to npm
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Build packages
+        run: pnpm --filter "./packages/**" -r build
+
+      # Publish in dependency order so consumers can resolve peers.
+      - name: Publish @msulak/anvil
+        run: npm publish --provenance --access public
+        working-directory: packages/anvil
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @msulak/anvil-codegen-wasm
+        run: npm publish --provenance --access public
+        working-directory: packages/anvil-codegen-wasm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @msulak/anvil-bellows
+        run: npm publish --provenance --access public
+        working-directory: packages/anvil-bellows
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @msulak/anvil-unplugin
+        run: npm publish --provenance --access public
+        working-directory: packages/anvil-unplugin
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @msulak/anvil-bellows-openapi
+        run: npm publish --provenance --access public
+        working-directory: packages/anvil-bellows-openapi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Launcher shims — no native binary; resolves at install time via
+      # optionalDependencies on the platform-specific packages.
+      - name: Publish @msulak/anvil-cli
+        run: npm publish --provenance --access public
+        working-directory: packages/anvil-cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @msulak/anvil-bellows-cli
+        run: npm publish --provenance --access public
+        working-directory: packages/anvil-bellows-cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @msulak/anvil-bellows-openapi-cli
+        run: npm publish --provenance --access public
+        working-directory: packages/anvil-bellows-openapi-cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
