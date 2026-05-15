@@ -9,9 +9,13 @@
     "bin/anvil-bellows",
     "index.js"
   ],
-  "os": ["darwin"],
-  "cpu": ["x64"],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "os": [
+      "darwin"
+    ],
+    "cpu": [
+      "x64"
+    ]
   }
 }

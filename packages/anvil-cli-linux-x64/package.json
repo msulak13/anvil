@@ -9,13 +9,13 @@
     "bin/anvil",
     "index.js"
   ],
-  "os": [
-    "linux"
-  ],
-  "cpu": [
-    "x64"
-  ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "os": [
+      "linux"
+    ],
+    "cpu": [
+      "x64"
+    ]
   }
 }
