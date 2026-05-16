@@ -28,24 +28,24 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            package: anvil-bellows-cli-linux-x64
+            package: bellows-cli-linux-x64
             bin: anvil-bellows
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            package: anvil-bellows-cli-linux-arm64
+            package: bellows-cli-linux-arm64
             bin: anvil-bellows
             cross: true
           - target: x86_64-apple-darwin
             os: macos-13
-            package: anvil-bellows-cli-darwin-x64
+            package: bellows-cli-darwin-x64
             bin: anvil-bellows
           - target: aarch64-apple-darwin
             os: macos-14
-            package: anvil-bellows-cli-darwin-arm64
+            package: bellows-cli-darwin-arm64
             bin: anvil-bellows
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            package: anvil-bellows-cli-win32-x64
+            package: bellows-cli-win32-x64
             bin: anvil-bellows.exe
     runs-on: ${{ matrix.os }}
     steps:
@@ -97,18 +97,18 @@ jobs:
 
       - name: Stage binaries into platform packages
         run: |
-          for plat in anvil-bellows-cli-darwin-arm64 anvil-bellows-cli-darwin-x64 \
-                      anvil-bellows-cli-linux-arm64 anvil-bellows-cli-linux-x64 \
-                      anvil-bellows-cli-win32-x64; do
+          for plat in bellows-cli-darwin-arm64 bellows-cli-darwin-x64 \
+                      bellows-cli-linux-arm64 bellows-cli-linux-x64 \
+                      bellows-cli-win32-x64; do
             mkdir -p packages/$plat/bin
             cp -r artifacts/$plat/* packages/$plat/bin/
           done
 
       - name: Publish per-platform packages
         run: |
-          for plat in anvil-bellows-cli-darwin-arm64 anvil-bellows-cli-darwin-x64 \
-                      anvil-bellows-cli-linux-arm64 anvil-bellows-cli-linux-x64 \
-                      anvil-bellows-cli-win32-x64; do
+          for plat in bellows-cli-darwin-arm64 bellows-cli-darwin-x64 \
+                      bellows-cli-linux-arm64 bellows-cli-linux-x64 \
+                      bellows-cli-win32-x64; do
             (cd packages/$plat && npm publish --provenance --access public)
           done
         env:
@@ -119,7 +119,7 @@ jobs:
 
       - name: Build + publish launcher
         run: |
-          pnpm -C packages/anvil-bellows-cli run build
-          (cd packages/anvil-bellows-cli && npm publish --provenance --access public)
+          pnpm -C packages/bellows-cli run build
+          (cd packages/bellows-cli && npm publish --provenance --access public)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

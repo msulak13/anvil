@@ -1,5 +1,5 @@
 {
-  "name": "@anvil-di/anvil-bellows-openapi-cli",
+  "name": "@anvil-di/bellows-openapi-cli",
   "version": "0.0.1",
   "description": "Native binary launcher for the anvil-bellows-openapi CLI. Resolves the right per-platform package at runtime; mirrors esbuild's distribution model.",
   "license": "Apache-2.0",
@@ -22,11 +22,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "optionalDependencies": {
-    "@anvil-di/anvil-bellows-openapi-cli-darwin-arm64": "workspace:*",
-    "@anvil-di/anvil-bellows-openapi-cli-darwin-x64": "workspace:*",
-    "@anvil-di/anvil-bellows-openapi-cli-linux-arm64": "workspace:*",
-    "@anvil-di/anvil-bellows-openapi-cli-linux-x64": "workspace:*",
-    "@anvil-di/anvil-bellows-openapi-cli-win32-x64": "workspace:*"
+    "@anvil-di/bellows-openapi-cli-darwin-arm64": "workspace:*",
+    "@anvil-di/bellows-openapi-cli-darwin-x64": "workspace:*",
+    "@anvil-di/bellows-openapi-cli-linux-arm64": "workspace:*",
+    "@anvil-di/bellows-openapi-cli-linux-x64": "workspace:*",
+    "@anvil-di/bellows-openapi-cli-win32-x64": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

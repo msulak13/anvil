@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import anvil from "@anvil-di/anvil-unplugin/vite";
-import { bellowsCodegen } from "@anvil-di/anvil-bellows";
+import { bellowsCodegen } from "@anvil-di/bellows";
 
 // In the monorepo the darwin-arm64 platform package isn't committed, so
 // fall back to the cargo debug build when the env vars aren't already set.

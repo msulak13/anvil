@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
-import { resolveBinaryPath, unresolvableBinaryError } from "@anvil-di/anvil-bellows-cli";
+import { resolveBinaryPath, unresolvableBinaryError } from "@anvil-di/bellows-cli";
 
 const execFileAsync = promisify(execFile);
 
@@ -41,7 +41,7 @@ export interface BellowsCodegenOptions {
  *
  * @example
  * ```ts
- * import { bellowsCodegen } from "@anvil-di/anvil-bellows";
+ * import { bellowsCodegen } from "@anvil-di/bellows";
  *
  * // In anvil-unplugin options (M4):
  * anvil({ preBuild: [bellowsCodegen({ entry: "src/" })] })

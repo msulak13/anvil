@@ -42,7 +42,7 @@ The zero-annotation surface covers all common CRUD routes. The annotation gap is
 
 ## Decision: `anvil-bellows-openapi`
 
-A standalone CLI tool, published as `@msulak/anvil-bellows-openapi`, reads the same controller files as `anvil-bellows` and emits an OpenAPI 3.1 document. It shares no runtime with `anvil-bellows` and does not depend on `routes.module.ts` — it reads the original controller source directly.
+A standalone CLI tool, published as `@anvil-di/bellows-openapi`, reads the same controller files as `anvil-bellows` and emits an OpenAPI 3.1 document. It shares no runtime with `anvil-bellows` and does not depend on `routes.module.ts` — it reads the original controller source directly.
 
 ```
 anvil-bellows-openapi --entry src/ --output openapi.yaml
@@ -54,7 +54,7 @@ The tool must convert runtime schema objects (Zod, Valibot, ArkType, etc.) to JS
 
 **Automatic Zod detection.** Zod schemas carry a `_def` property. The tool detects this structurally, imports `zod-to-json-schema` as an optional peer dependency, and converts automatically. No user configuration required for Zod projects.
 
-**`JsonSchema` interface (other libraries).** The `Validator<T>` interface in `@msulak/anvil-bellows` is extended with an optional method:
+**`JsonSchema` interface (other libraries).** The `Validator<T>` interface in `@anvil-di/bellows` is extended with an optional method:
 
 ```typescript
 export interface Validator<T> {
@@ -66,7 +66,7 @@ export interface Validator<T> {
 Schema libraries that implement `jsonSchema()` are picked up automatically. For libraries that don't, users wrap the schema:
 
 ```typescript
-import { withJsonSchema } from '@msulak/anvil-bellows';
+import { withJsonSchema } from '@anvil-di/bellows';
 import * as v from 'valibot';
 
 const GetByIdParamsSchema = withJsonSchema(
@@ -182,8 +182,8 @@ As a `postBuild` hook in `anvil-unplugin`:
 ```typescript
 // vite.config.ts
 import anvil from '@msulak/anvil-unplugin/vite';
-import { bellowsCodegen } from '@msulak/anvil-bellows/codegen';
-import { bellowsOpenApi } from '@msulak/anvil-bellows-openapi/unplugin';
+import { bellowsCodegen } from '@anvil-di/bellows/codegen';
+import { bellowsOpenApi } from '@anvil-di/bellows-openapi/unplugin';
 
 export default {
   plugins: [

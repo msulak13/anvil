@@ -2,8 +2,8 @@
 #
 # Does NOT build native binaries — that is handled by the release-cli,
 # release-bellows-cli, and release-bellows-openapi-cli workflows.
-# The launcher shims (anvil-cli, anvil-bellows-cli,
-# anvil-bellows-openapi-cli) are also published here because they
+# The launcher shims (anvil-cli, bellows-cli,
+# bellows-openapi-cli) are also published here because they
 # contain no platform-specific code; the native binaries they resolve
 # are optional peer packages already on npm before this runs.
 #
@@ -60,9 +60,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @msulak/anvil-bellows
+      - name: Publish @anvil-di/bellows
         run: npm publish --provenance --access public
-        working-directory: packages/anvil-bellows
+        working-directory: packages/bellows
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -72,9 +72,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @msulak/anvil-bellows-openapi
+      - name: Publish @anvil-di/bellows-openapi
         run: npm publish --provenance --access public
-        working-directory: packages/anvil-bellows-openapi
+        working-directory: packages/bellows-openapi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -86,14 +86,14 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @msulak/anvil-bellows-cli
+      - name: Publish @anvil-di/bellows-cli
         run: npm publish --provenance --access public
-        working-directory: packages/anvil-bellows-cli
+        working-directory: packages/bellows-cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @msulak/anvil-bellows-openapi-cli
+      - name: Publish @anvil-di/bellows-openapi-cli
         run: npm publish --provenance --access public
-        working-directory: packages/anvil-bellows-openapi-cli
+        working-directory: packages/bellows-openapi-cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

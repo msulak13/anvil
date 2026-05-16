@@ -6,9 +6,9 @@ Implementation plan for `anvil-bellows` (ADR-0006) and `anvil-bellows-openapi` (
 
 | Package | npm name | Role |
 |---|---|---|
-| `packages/anvil-bellows` | `@msulak/anvil-bellows` | Runtime types, decorator stubs, schema utilities |
-| `packages/anvil-bellows-codegen` | `@msulak/anvil-bellows` (bin: `anvil-bellows`) | Controller → `routes.module.ts` codegen CLI |
-| `packages/anvil-bellows-openapi` | `@msulak/anvil-bellows-openapi` | Controller → OpenAPI 3.1 document CLI |
+| `packages/bellows` | `@anvil-di/bellows` | Runtime types, decorator stubs, schema utilities |
+| `packages/bellows-codegen` | `@anvil-di/bellows` (bin: `anvil-bellows`) | Controller → `routes.module.ts` codegen CLI |
+| `packages/bellows-openapi` | `@anvil-di/bellows-openapi` | Controller → OpenAPI 3.1 document CLI |
 
 The runtime package and the codegen CLI share the same npm name because the runtime types (`Body<T>`, `Responds<T>`, etc.) are what users import in their controller files, and the CLI binary is what they invoke in build scripts — bundling them avoids a second dependency declaration. They are separate directories in the monorepo for clean separation of concerns.
 
@@ -68,9 +68,9 @@ M1 and M4 have no prerequisites. M2 requires M1. M3 extends M2. M5 requires M3 (
 
 ---
 
-## M1 — `@msulak/anvil-bellows` runtime package
+## M1 — `@anvil-di/bellows` runtime package
 
-**New package:** `packages/anvil-bellows`
+**New package:** `packages/bellows`
 
 ### Deliverables
 
@@ -139,8 +139,8 @@ export interface RouteDefinition {
 
 ## M2 — `anvil-bellows` static mode (v0.1)
 
-**New package:** `packages/anvil-bellows-codegen`  
-**Published as:** `@msulak/anvil-bellows` (adds `bin: { "anvil-bellows": "./dist/cli.js" }` to the runtime package's `package.json`, or as a separate package depending on size)
+**New package:** `packages/bellows-codegen`  
+**Published as:** `@anvil-di/bellows` (adds `bin: { "anvil-bellows": "./dist/cli.js" }` to the runtime package's `package.json`, or as a separate package depending on size)
 
 ### Deliverables
 
@@ -156,7 +156,7 @@ export interface RouteDefinition {
 // routes.module.ts  (generated — do not edit)
 import { Module, Provides, IntoSet } from "@msulak/anvil";
 import { UserController } from "./user-controller";
-import type { RouteDefinition } from "@msulak/anvil-bellows";
+import type { RouteDefinition } from "@anvil-di/bellows";
 
 @Module
 export class RoutesModule {
@@ -212,7 +212,7 @@ export function bellowsCodegen(options: {
 
 - Fixture: two controller files with literal paths → assert generated `routes.module.ts` matches snapshot
 - Non-literal `@Controller` arg → assert diagnostic emitted, route skipped
-- Generated file passes `tsc --noEmit` against `packages/anvil` and `packages/anvil-bellows` runtime stubs
+- Generated file passes `tsc --noEmit` against `packages/anvil` and `packages/bellows` runtime stubs
 - `bellowsCodegen({ entry })` returns a hook with correct `watchPatterns` (globs the entry directory)
 
 ### Risk: `typeof Schema` extraction
@@ -318,8 +318,8 @@ interface AnvilPluginOptions {
 ```typescript
 // vite.config.ts
 import anvil from '@msulak/anvil-unplugin/vite';
-import { bellowsCodegen } from '@msulak/anvil-bellows';
-import { bellowsOpenApi } from '@msulak/anvil-bellows-openapi/unplugin';
+import { bellowsCodegen } from '@anvil-di/bellows';
+import { bellowsOpenApi } from '@anvil-di/bellows-openapi/unplugin';
 
 export default {
   plugins: [
@@ -341,11 +341,11 @@ export default {
 
 ## M5 — `anvil-bellows-openapi`
 
-**New package:** `packages/anvil-bellows-openapi`
+**New package:** `packages/bellows-openapi`
 
 ### Deliverables
 
-**Shared parser library** — extract the controller-file parsing logic from M3 into an internal `packages/anvil-bellows-parser` (not published to npm). Both `anvil-bellows` and `anvil-bellows-openapi` depend on it. Avoids duplication and divergence. The shared library owns both the `oxc-parser` AST pass and the `TypeResolver` abstraction (with both backends); callers receive parsed controller metadata and never touch the compiler API directly. This extraction is part of M5 setup, not a separate milestone.
+**Shared parser library** — extract the controller-file parsing logic from M3 into an internal `packages/bellows-parser` (not published to npm). Both `anvil-bellows` and `anvil-bellows-openapi` depend on it. Avoids duplication and divergence. The shared library owns both the `oxc-parser` AST pass and the `TypeResolver` abstraction (with both backends); callers receive parsed controller metadata and never touch the compiler API directly. This extraction is part of M5 setup, not a separate milestone.
 
 **OpenAPI document builder:**
 
@@ -393,7 +393,7 @@ anvil-bellows-openapi --entry <dir> --output <file> [--format yaml|json] [--conf
 **`PostBuildHook` export:**
 
 ```typescript
-import { bellowsOpenApi } from '@msulak/anvil-bellows-openapi/unplugin';
+import { bellowsOpenApi } from '@anvil-di/bellows-openapi/unplugin';
 ```
 
 ### Tests
@@ -425,7 +425,7 @@ If `anvil-bellows-parser` is not extracted and both tools copy the parsing logic
 
 ## Open questions
 
-1. **Single npm package vs two.** The runtime types (`Body<T>` etc.) and the CLI binary (`anvil-bellows`) currently share the `@msulak/anvil-bellows` package name. If the CLI grows heavy dependencies (TypeScript compiler, etc.) that shouldn't be in a user's `dependencies`, split into `@msulak/anvil-bellows` (runtime, lean) and `@msulak/anvil-bellows-cli` (codegen binary). Decide at M2 once the dependency list is known.
+1. **Single npm package vs two.** The runtime types (`Body<T>` etc.) and the CLI binary (`anvil-bellows`) currently share the `@anvil-di/bellows` package name. If the CLI grows heavy dependencies (TypeScript compiler, etc.) that shouldn't be in a user's `dependencies`, split into `@anvil-di/bellows` (runtime, lean) and `@anvil-di/bellows-cli` (codegen binary). Decide at M2 once the dependency list is known.
 
 2. **`--tsc` requirement for `express.Request`/`express.Response` passthrough.** Methods that only use raw `req`/`res` and no schema types could in principle avoid `--tsc` (the tool just needs to recognise the well-known names). The current plan requires `--tsc` for any schema-type parameter; raw-only methods could be exempted as an optimisation. Defer until there is a reported pain point.
 

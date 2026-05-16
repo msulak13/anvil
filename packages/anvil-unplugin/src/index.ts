@@ -44,7 +44,7 @@ const execFileAsync = promisify(execFile);
  *
  * Implement this to perform custom codegen (e.g. `bellowsCodegen()`) before
  * the main anvil compilation step. Returned by factory functions such as
- * `bellowsCodegen` in `@anvil-di/anvil-bellows`.
+ * `bellowsCodegen` in `@anvil-di/bellows`.
  */
 export interface PreBuildHook {
   /** Stable identifier, shown in diagnostics. */
