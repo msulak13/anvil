@@ -48,15 +48,15 @@ importers:
       '@anvil-di/anvil':
         specifier: workspace:*
         version: link:../../packages/anvil
-      '@anvil-di/anvil-bellows':
-        specifier: workspace:*
-        version: link:../../packages/anvil-bellows
-      '@anvil-di/anvil-bellows-openapi':
-        specifier: workspace:*
-        version: link:../../packages/anvil-bellows-openapi
       '@anvil-di/anvil-unplugin':
         specifier: workspace:*
         version: link:../../packages/anvil-unplugin
+      '@anvil-di/bellows':
+        specifier: workspace:*
+        version: link:../../packages/bellows
+      '@anvil-di/bellows-openapi':
+        specifier: workspace:*
+        version: link:../../packages/bellows-openapi
       '@hey-api/client-fetch':
         specifier: ^0.9.0
         version: 0.9.0(@hey-api/openapi-ts@0.64.15(typescript@5.9.3))
@@ -121,97 +121,6 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
-
-  packages/anvil-bellows:
-    dependencies:
-      '@anvil-di/anvil-bellows-cli':
-        specifier: workspace:*
-        version: link:../anvil-bellows-cli
-      express:
-        specifier: '>=4'
-        version: 4.22.1
-    devDependencies:
-      '@types/express':
-        specifier: ^5.0.0
-        version: 5.0.6
-      '@types/json-schema':
-        specifier: ^7.0.15
-        version: 7.0.15
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.17)
-      zod:
-        specifier: ^3.23.0
-        version: 3.25.76
-
-  packages/anvil-bellows-cli:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.17
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.17)
-    optionalDependencies:
-      '@anvil-di/anvil-bellows-cli-darwin-arm64':
-        specifier: workspace:*
-        version: link:../anvil-bellows-cli-darwin-arm64
-      '@anvil-di/anvil-bellows-cli-darwin-x64':
-        specifier: workspace:*
-        version: link:../anvil-bellows-cli-darwin-x64
-      '@anvil-di/anvil-bellows-cli-linux-arm64':
-        specifier: workspace:*
-        version: link:../anvil-bellows-cli-linux-arm64
-      '@anvil-di/anvil-bellows-cli-linux-x64':
-        specifier: workspace:*
-        version: link:../anvil-bellows-cli-linux-x64
-      '@anvil-di/anvil-bellows-cli-win32-x64':
-        specifier: workspace:*
-        version: link:../anvil-bellows-cli-win32-x64
-
-  packages/anvil-bellows-cli-darwin-arm64: {}
-
-  packages/anvil-bellows-cli-darwin-x64: {}
-
-  packages/anvil-bellows-cli-linux-arm64: {}
-
-  packages/anvil-bellows-cli-linux-x64: {}
-
-  packages/anvil-bellows-cli-win32-x64: {}
-
-  packages/anvil-bellows-openapi:
-    dependencies:
-      '@anvil-di/anvil-bellows-openapi-cli':
-        specifier: workspace:*
-        version: link:../anvil-bellows-openapi-cli
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.17
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
-  packages/anvil-bellows-openapi-cli:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.17
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-    optionalDependencies:
-      '@anvil-di/anvil-bellows-openapi-cli-win32-x64':
-        specifier: workspace:*
-        version: link:../anvil-bellows-openapi-cli-win32-x64
-
-  packages/anvil-bellows-openapi-cli-win32-x64: {}
 
   packages/anvil-cli:
     devDependencies:
@@ -284,6 +193,97 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
+
+  packages/bellows:
+    dependencies:
+      '@anvil-di/bellows-cli':
+        specifier: workspace:*
+        version: link:../bellows-cli
+      express:
+        specifier: '>=4'
+        version: 5.2.1
+    devDependencies:
+      '@types/express':
+        specifier: ^5.0.0
+        version: 5.0.6
+      '@types/json-schema':
+        specifier: ^7.0.15
+        version: 7.0.15
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.17)
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+
+  packages/bellows-cli:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.17)
+    optionalDependencies:
+      '@anvil-di/bellows-cli-darwin-arm64':
+        specifier: workspace:*
+        version: link:../bellows-cli-darwin-arm64
+      '@anvil-di/bellows-cli-darwin-x64':
+        specifier: workspace:*
+        version: link:../bellows-cli-darwin-x64
+      '@anvil-di/bellows-cli-linux-arm64':
+        specifier: workspace:*
+        version: link:../bellows-cli-linux-arm64
+      '@anvil-di/bellows-cli-linux-x64':
+        specifier: workspace:*
+        version: link:../bellows-cli-linux-x64
+      '@anvil-di/bellows-cli-win32-x64':
+        specifier: workspace:*
+        version: link:../bellows-cli-win32-x64
+
+  packages/bellows-cli-darwin-arm64: {}
+
+  packages/bellows-cli-darwin-x64: {}
+
+  packages/bellows-cli-linux-arm64: {}
+
+  packages/bellows-cli-linux-x64: {}
+
+  packages/bellows-cli-win32-x64: {}
+
+  packages/bellows-openapi:
+    dependencies:
+      '@anvil-di/bellows-openapi-cli':
+        specifier: workspace:*
+        version: link:../bellows-openapi-cli
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/bellows-openapi-cli:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+    optionalDependencies:
+      '@anvil-di/bellows-openapi-cli-win32-x64':
+        specifier: workspace:*
+        version: link:../bellows-openapi-cli-win32-x64
+
+  packages/bellows-openapi-cli-win32-x64: {}
 
 packages:
 
