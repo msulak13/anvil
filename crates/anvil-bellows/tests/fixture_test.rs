@@ -75,12 +75,12 @@ fn write_stubs(root: &Path) {
     )
     .unwrap();
 
-    // @anvil-di/anvil-bellows — provides RouteDefinition + controller decorators
-    let bellows = root.join("node_modules/@anvil-di/anvil-bellows");
+    // @anvil-di/bellows — provides RouteDefinition + controller decorators
+    let bellows = root.join("node_modules/@anvil-di/bellows");
     std::fs::create_dir_all(&bellows).unwrap();
     std::fs::write(
         bellows.join("package.json"),
-        r#"{ "name": "@anvil-di/anvil-bellows", "main": "index.ts", "types": "index.ts" }"#,
+        r#"{ "name": "@anvil-di/bellows", "main": "index.ts", "types": "index.ts" }"#,
     )
     .unwrap();
     std::fs::write(

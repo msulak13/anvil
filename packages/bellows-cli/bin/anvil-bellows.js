@@ -16,7 +16,7 @@ const result = spawnSync(binary, process.argv.slice(2), {
 
 if (result.error !== undefined) {
   process.stderr.write(
-    `@anvil-di/anvil-bellows-cli: failed to spawn ${binary}: ${result.error.message}\n`,
+    `@anvil-di/bellows-cli: failed to spawn ${binary}: ${result.error.message}\n`,
   );
   process.exit(1);
 }
