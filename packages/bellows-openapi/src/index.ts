@@ -4,7 +4,7 @@ import path from "node:path";
 import {
   resolveBinaryPath,
   unresolvableBinaryError,
-} from "@anvil-di/anvil-bellows-openapi-cli";
+} from "@anvil-di/bellows-openapi-cli";
 
 const execFileAsync = promisify(execFile);
 
@@ -38,8 +38,8 @@ export interface BellowsOpenApiOptions {
  *
  * @example
  * ```ts
- * import { bellowsCodegen } from "@anvil-di/anvil-bellows";
- * import { bellowsOpenApi } from "@anvil-di/anvil-bellows-openapi";
+ * import { bellowsCodegen } from "@anvil-di/bellows";
+ * import { bellowsOpenApi } from "@anvil-di/bellows-openapi";
  *
  * anvil({
  *   preBuild: [bellowsCodegen({ entry: "src/" })],

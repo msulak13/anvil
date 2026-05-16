@@ -64,12 +64,12 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 | `packages/anvil-cli` | `@msulak/anvil-cli` | Launcher shim. Resolves the native binary via `optionalDependencies` or the `TSDI_CLI_BIN` env var. |
 | `packages/anvil-cli-<platform>-<arch>` | `@msulak/anvil-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Only win32-x64 committed; others filled by `release-cli.yml`. |
 | `packages/anvil-codegen-wasm` | `@msulak/anvil-codegen-wasm` | WASM build of `crates/tsdi-codegen-wasm`. `wasm-opt = false` — oxc emits `memory.copy` that bundled wasm-opt rejects. 1.4 MB unoptimized is fine. |
-| `packages/anvil-bellows` | `@msulak/anvil-bellows` | Runtime types + decorator stubs for NestJS-style controller codegen (`Validator<T>`, `Body<S>`, `Query<S>`, `Params<S>`, `Responds<S>`, `withJsonSchema`, `RouteDefinition`, + 11 Stage-3 decorator stubs). Also exports `PreBuildHook` + `bellowsCodegen()`. Bellows M1+M2. |
-| `packages/anvil-bellows-cli` | `@msulak/anvil-bellows-cli` | Launcher shim for the `anvil-bellows` native binary. Mirrors `anvil-cli`. Env var: `ANVIL_BELLOWS_CLI_BIN`. |
-| `packages/anvil-bellows-cli-<platform>-<arch>` | `@msulak/anvil-bellows-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Filled by CI release workflow. |
-| `packages/anvil-bellows-openapi` | `@msulak/anvil-bellows-openapi` | Exports `bellowsOpenApi()` PostBuildHook factory. Runs `anvil-bellows-openapi` via env var or platform package. Bellows M5. |
-| `packages/anvil-bellows-openapi-cli` | `@msulak/anvil-bellows-openapi-cli` | Launcher shim for the `anvil-bellows-openapi` native binary. Mirrors `anvil-bellows-cli`. Env var: `ANVIL_BELLOWS_OPENAPI_CLI_BIN`. |
-| `packages/anvil-bellows-openapi-cli-<platform>-<arch>` | `@msulak/anvil-bellows-openapi-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Only win32-x64 committed; others filled by CI release workflow. |
+| `packages/bellows` | `@anvil-di/bellows` | Runtime types + decorator stubs for NestJS-style controller codegen (`Validator<T>`, `Body<S>`, `Query<S>`, `Params<S>`, `Responds<S>`, `withJsonSchema`, `RouteDefinition`, + 11 Stage-3 decorator stubs). Also exports `PreBuildHook` + `bellowsCodegen()`. Bellows M1+M2. |
+| `packages/bellows-cli` | `@anvil-di/bellows-cli` | Launcher shim for the `anvil-bellows` native binary. Mirrors `anvil-cli`. Env var: `ANVIL_BELLOWS_CLI_BIN`. |
+| `packages/bellows-cli-<platform>-<arch>` | `@anvil-di/bellows-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Filled by CI release workflow. |
+| `packages/bellows-openapi` | `@anvil-di/bellows-openapi` | Exports `bellowsOpenApi()` PostBuildHook factory. Runs `anvil-bellows-openapi` via env var or platform package. Bellows M5. |
+| `packages/bellows-openapi-cli` | `@anvil-di/bellows-openapi-cli` | Launcher shim for the `anvil-bellows-openapi` native binary. Mirrors `bellows-cli`. Env var: `ANVIL_BELLOWS_OPENAPI_CLI_BIN`. |
+| `packages/bellows-openapi-cli-<platform>-<arch>` | `@anvil-di/bellows-openapi-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Only win32-x64 committed; others filled by CI release workflow. |
 
 ## Milestone log
 
@@ -89,11 +89,11 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 | M11 | Subcomponent factory params; `prune_unreachable_bindings`; DFS topo guard fix |
 | M12 | Async `@Provides`: `Promise<T>` return, `_resolve` phase, async `create()` |
 | M13 | WASM build: `tsdi-codegen-wasm` crate + npm package, `MapResolver`, `anvil-unplugin` wasm mode |
-| Bellows M1 | `packages/anvil-bellows`: runtime types, `Validator<T>` interface, wrapper types, `withJsonSchema`, `RouteDefinition`, Stage-3 decorator stubs (Controller, Get, Post, Put, Delete, Patch, Middleware, Tag, Returns, Security, Deprecated) |
-| Bellows M2 | `crates/anvil-bellows`: Rust crate + `anvil-bellows` binary — static Oxc parser for `@Controller`/`@Get`/etc., `routes.module.ts` emitter, `PreBuildHook` interface, `bellowsCodegen()` factory. `packages/anvil-bellows-cli` + platform stubs mirror the `anvil-cli` distribution model. |
+| Bellows M1 | `packages/bellows`: runtime types, `Validator<T>` interface, wrapper types, `withJsonSchema`, `RouteDefinition`, Stage-3 decorator stubs (Controller, Get, Post, Put, Delete, Patch, Middleware, Tag, Returns, Security, Deprecated) |
+| Bellows M2 | `crates/anvil-bellows`: Rust crate + `anvil-bellows` binary — static Oxc parser for `@Controller`/`@Get`/etc., `routes.module.ts` emitter, `PreBuildHook` interface, `bellowsCodegen()` factory. `packages/bellows-cli` + platform stubs mirror the `anvil-cli` distribution model. |
 | Bellows M3 | Type-driven adapter generation in `crates/anvil-bellows`. Parser detects `Body<typeof S>`, `Query<typeof S>`, `Params<typeof S>`, `Request`, `Response`, `Responds<typeof S>`, `Promise<Responds<typeof S>>` from the Oxc AST. Codegen emits `safeParse` validation prologues; routes with any `Unknown` param fall back to v0.1 passthrough. Fixture `03_schema_params` with tsc validation. |
 | Bellows M4 | `packages/anvil-unplugin`: `PreBuildHook`/`PostBuildHook` interfaces exported; `AnvilPluginOptions` gains `preBuild`/`postBuild` arrays. `buildStart` runs: preBuild hooks → anvil build → postBuild hooks. Watch mode accumulates changed files across the debounce window and re-runs hooks via `shouldRerun`. 7 new tests (order, watch trigger, watch skip, postBuild cascade). |
-| Bellows M5 | `crates/anvil-bellows-openapi` Rust crate + CLI (`--entry`, `--output`, `--format json\|yaml`, `--config`). Parser extensions: `@Tag`, `@Security`, `@Deprecated`, `@Returns(N)` on controllers/routes. `packages/anvil-bellows-openapi` npm package exports `bellowsOpenApi()` PostBuildHook. `packages/anvil-bellows-openapi-cli` + win32-x64 platform stub mirror the `anvil-bellows-cli` distribution model. |
+| Bellows M5 | `crates/anvil-bellows-openapi` Rust crate + CLI (`--entry`, `--output`, `--format json\|yaml`, `--config`). Parser extensions: `@Tag`, `@Security`, `@Deprecated`, `@Returns(N)` on controllers/routes. `packages/bellows-openapi` npm package exports `bellowsOpenApi()` PostBuildHook. `packages/bellows-openapi-cli` + win32-x64 platform stub mirror the `bellows-cli` distribution model. |
 
 ## Load-bearing implementation notes
 
@@ -164,6 +164,6 @@ Adding a new `Key` or `Provider` variant, or a new `Binding` field, is a codebas
 ### Bellows examples (`examples/todo-app`)
 
 - `Returns(_status, _schema?)` — `_schema` is optional; `@Returns(204)` with one arg is valid Stage-3 TypeScript.
-- `@msulak/anvil-bellows` devDeps use `@types/express@^5`; consumers must also use express 5 types or the `RouteDefinition.handler` type will mismatch across pnpm's per-package node_modules.
+- `@anvil-di/bellows` devDeps use `@types/express@^5`; consumers must also use express 5 types or the `RouteDefinition.handler` type will mismatch across pnpm's per-package node_modules.
 - Zod `.optional()` emits `string | undefined` on the inferred type; service methods must accept `T | undefined` explicitly when `exactOptionalPropertyTypes: true`.
 - The generated `routes.module.ts` is checked into the repo (same pattern as `.anvil.ts` files). `routes.module.ts` lists static methods by name; `server.ts` calls them directly since the decorators are no-ops at runtime.

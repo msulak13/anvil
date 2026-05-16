@@ -7,8 +7,8 @@ import {
   Security,
   Deprecated,
   Returns,
-} from "@anvil-di/anvil-bellows";
-import type { Body, Query, Params, Responds } from "@anvil-di/anvil-bellows";
+} from "@anvil-di/bellows";
+import type { Body, Query, Params, Responds } from "@anvil-di/bellows";
 
 export const CreateUserBody = { safeParse: (x: unknown) => ({ success: true as const, data: x }) };
 export const UserSchema = { safeParse: (x: unknown) => ({ success: true as const, data: x }) };

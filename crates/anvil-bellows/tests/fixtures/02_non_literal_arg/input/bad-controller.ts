@@ -1,4 +1,4 @@
-import { Controller, Get } from "@anvil-di/anvil-bellows";
+import { Controller, Get } from "@anvil-di/bellows";
 
 const BASE = "/bad";
 

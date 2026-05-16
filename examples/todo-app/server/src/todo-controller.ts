@@ -6,8 +6,8 @@ import {
   Delete,
   Tag,
   Returns,
-} from "@anvil-di/anvil-bellows";
-import type { Body, Query, Params, Responds } from "@anvil-di/anvil-bellows";
+} from "@anvil-di/bellows";
+import type { Body, Query, Params, Responds } from "@anvil-di/bellows";
 import type { Response } from "express";
 import { z } from "zod";
 import type { TodoService } from "./todo-service.js";

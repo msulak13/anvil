@@ -28,24 +28,24 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            package: anvil-bellows-openapi-cli-linux-x64
+            package: bellows-openapi-cli-linux-x64
             bin: anvil-bellows-openapi
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            package: anvil-bellows-openapi-cli-linux-arm64
+            package: bellows-openapi-cli-linux-arm64
             bin: anvil-bellows-openapi
             cross: true
           - target: x86_64-apple-darwin
             os: macos-13
-            package: anvil-bellows-openapi-cli-darwin-x64
+            package: bellows-openapi-cli-darwin-x64
             bin: anvil-bellows-openapi
           - target: aarch64-apple-darwin
             os: macos-14
-            package: anvil-bellows-openapi-cli-darwin-arm64
+            package: bellows-openapi-cli-darwin-arm64
             bin: anvil-bellows-openapi
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            package: anvil-bellows-openapi-cli-win32-x64
+            package: bellows-openapi-cli-win32-x64
             bin: anvil-bellows-openapi.exe
     runs-on: ${{ matrix.os }}
     steps:
@@ -97,18 +97,18 @@ jobs:
 
       - name: Stage binaries into platform packages
         run: |
-          for plat in anvil-bellows-openapi-cli-darwin-arm64 anvil-bellows-openapi-cli-darwin-x64 \
-                      anvil-bellows-openapi-cli-linux-arm64 anvil-bellows-openapi-cli-linux-x64 \
-                      anvil-bellows-openapi-cli-win32-x64; do
+          for plat in bellows-openapi-cli-darwin-arm64 bellows-openapi-cli-darwin-x64 \
+                      bellows-openapi-cli-linux-arm64 bellows-openapi-cli-linux-x64 \
+                      bellows-openapi-cli-win32-x64; do
             mkdir -p packages/$plat/bin
             cp -r artifacts/$plat/* packages/$plat/bin/
           done
 
       - name: Publish per-platform packages
         run: |
-          for plat in anvil-bellows-openapi-cli-darwin-arm64 anvil-bellows-openapi-cli-darwin-x64 \
-                      anvil-bellows-openapi-cli-linux-arm64 anvil-bellows-openapi-cli-linux-x64 \
-                      anvil-bellows-openapi-cli-win32-x64; do
+          for plat in bellows-openapi-cli-darwin-arm64 bellows-openapi-cli-darwin-x64 \
+                      bellows-openapi-cli-linux-arm64 bellows-openapi-cli-linux-x64 \
+                      bellows-openapi-cli-win32-x64; do
             (cd packages/$plat && npm publish --provenance --access public)
           done
         env:
@@ -119,7 +119,7 @@ jobs:
 
       - name: Build + publish launcher
         run: |
-          pnpm -C packages/anvil-bellows-openapi-cli run build
-          (cd packages/anvil-bellows-openapi-cli && npm publish --provenance --access public)
+          pnpm -C packages/bellows-openapi-cli run build
+          (cd packages/bellows-openapi-cli && npm publish --provenance --access public)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

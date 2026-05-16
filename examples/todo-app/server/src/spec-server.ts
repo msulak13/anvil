@@ -1,5 +1,5 @@
 import express from "express";
-import { bellowsRoutes } from "@anvil-di/anvil-bellows";
+import { bellowsRoutes } from "@anvil-di/bellows";
 import { createSpecComponent } from "./spec-component.anvil.js";
 
 const app = express();
