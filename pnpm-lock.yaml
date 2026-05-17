@@ -279,9 +279,29 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
     optionalDependencies:
+      '@anvil-di/bellows-openapi-cli-darwin-arm64':
+        specifier: workspace:*
+        version: link:../bellows-openapi-cli-darwin-arm64
+      '@anvil-di/bellows-openapi-cli-darwin-x64':
+        specifier: workspace:*
+        version: link:../bellows-openapi-cli-darwin-x64
+      '@anvil-di/bellows-openapi-cli-linux-arm64':
+        specifier: workspace:*
+        version: link:../bellows-openapi-cli-linux-arm64
+      '@anvil-di/bellows-openapi-cli-linux-x64':
+        specifier: workspace:*
+        version: link:../bellows-openapi-cli-linux-x64
       '@anvil-di/bellows-openapi-cli-win32-x64':
         specifier: workspace:*
         version: link:../bellows-openapi-cli-win32-x64
+
+  packages/bellows-openapi-cli-darwin-arm64: {}
+
+  packages/bellows-openapi-cli-darwin-x64: {}
+
+  packages/bellows-openapi-cli-linux-arm64: {}
+
+  packages/bellows-openapi-cli-linux-x64: {}
 
   packages/bellows-openapi-cli-win32-x64: {}
 
