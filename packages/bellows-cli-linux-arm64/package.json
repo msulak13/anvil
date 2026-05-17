@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/bellows-cli-linux-arm64",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Prebuilt anvil-bellows CLI binary for linux-arm64. Resolved by `@anvil-di/bellows-cli` at runtime.",
   "license": "Apache-2.0",
   "type": "commonjs",
