@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/anvil-cli-darwin-x64",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Prebuilt anvil CLI binary for darwin/x64. Resolved by `@anvil-di/anvil-cli` at runtime.",
   "license": "Apache-2.0",
   "type": "commonjs",

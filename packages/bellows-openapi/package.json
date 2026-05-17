@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/bellows-openapi",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "OpenAPI 3.1 document generator for anvil-bellows NestJS-style controllers.",
   "license": "Apache-2.0",
   "type": "module",
@@ -22,7 +22,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@anvil-di/bellows-openapi-cli": "workspace:*"
+    "@anvil-di/bellows-openapi-cli": "^0.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

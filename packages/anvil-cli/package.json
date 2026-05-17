@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/anvil-cli",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Native binary launcher for the anvil codegen CLI. Resolves the right per-platform package at runtime; mirrors esbuild's distribution model.",
   "license": "Apache-2.0",
   "type": "module",

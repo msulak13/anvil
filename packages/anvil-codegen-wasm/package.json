@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/anvil-codegen-wasm",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "WASM build of the anvil codegen pipeline. Same parser + graph + emitter as the native CLI, in-process for any host that runs WebAssembly (Node, browsers, Workers, Bun).",
   "license": "Apache-2.0",
   "type": "module",

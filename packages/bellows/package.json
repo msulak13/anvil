@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/bellows",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Runtime types and decorator stubs for anvil-bellows NestJS-style controller codegen.",
   "license": "Apache-2.0",
   "type": "module",
@@ -24,7 +24,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@anvil-di/bellows-cli": "workspace:*"
+    "@anvil-di/bellows-cli": "^0.0.3"
   },
   "peerDependencies": {
     "express": ">=4"

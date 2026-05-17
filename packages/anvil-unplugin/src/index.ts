@@ -35,7 +35,6 @@ import {
 } from "node:fs";
 import { createUnplugin, type UnpluginInstance } from "unplugin";
 import { resolveBinaryPath, unresolvableBinaryError } from "@anvil-di/anvil-cli";
-import { compile as wasmCompile } from "@anvil-di/anvil-codegen-wasm";
 
 const execFileAsync = promisify(execFile);
 
@@ -351,6 +350,11 @@ async function runWasmBuild(options: {
         "build yet). Specify `entries: ['src/**/*-component.ts']` or similar.",
     );
   }
+  // Lazy import so the WASM package is only loaded when mode:"wasm" is
+  // actually requested — importing it unconditionally at module load time
+  // would crash native-mode users whose installed package lacks the .wasm
+  // binary (e.g. a build that shipped lib/ without dist/).
+  const { compile: wasmCompile } = await import("@anvil-di/anvil-codegen-wasm");
   const root =
     options.rootDir ?? path.dirname(path.resolve(options.entries[0]!));
   const files = collectSourceFiles(root);
