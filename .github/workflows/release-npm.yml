@@ -11,7 +11,7 @@
 # (e.g. `npm-v0.2.0`).
 #
 # Required secret: NPM_TOKEN (classic automation token or granular
-# token with publish access to the @msulak scope).
+# token with publish access to the @anvil-di scope).
 
 name: release-npm
 
@@ -41,20 +41,31 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
 
-      - name: Build packages
+      - name: Build WASM package
+        run: pnpm -C packages/anvil-codegen-wasm run build:wasm
+
+      - name: Build remaining packages
         run: pnpm --filter "./packages/**" -r build
 
       # Publish in dependency order so consumers can resolve peers.
-      - name: Publish @msulak/anvil
+      - name: Publish @anvil-di/anvil
         run: npm publish --provenance --access public
         working-directory: packages/anvil
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @msulak/anvil-codegen-wasm
+      - name: Publish @anvil-di/anvil-codegen-wasm
         run: npm publish --provenance --access public
         working-directory: packages/anvil-codegen-wasm
         env:
@@ -66,7 +77,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @msulak/anvil-unplugin
+      - name: Publish @anvil-di/anvil-unplugin
         run: npm publish --provenance --access public
         working-directory: packages/anvil-unplugin
         env:
@@ -80,7 +91,7 @@ jobs:
 
       # Launcher shims — no native binary; resolves at install time via
       # optionalDependencies on the platform-specific packages.
-      - name: Publish @msulak/anvil-cli
+      - name: Publish @anvil-di/anvil-cli
         run: npm publish --provenance --access public
         working-directory: packages/anvil-cli
         env:
