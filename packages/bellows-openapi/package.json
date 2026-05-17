@@ -22,7 +22,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@anvil-di/bellows-openapi-cli": "^0.0.3"
+    "@anvil-di/bellows-openapi-cli": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

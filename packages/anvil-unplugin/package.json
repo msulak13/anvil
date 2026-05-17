@@ -40,8 +40,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anvil-di/anvil-cli": "^0.0.3",
-    "@anvil-di/anvil-codegen-wasm": "^0.0.3",
+    "@anvil-di/anvil-cli": "workspace:*",
+    "@anvil-di/anvil-codegen-wasm": "workspace:*",
     "unplugin": "^1.16.0"
   },
   "devDependencies": {

@@ -24,7 +24,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@anvil-di/bellows-cli": "^0.0.3"
+    "@anvil-di/bellows-cli": "workspace:*"
   },
   "peerDependencies": {
     "express": ">=4"

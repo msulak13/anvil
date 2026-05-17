@@ -1,17 +1,13 @@
-# Publishes all pure TypeScript packages to npm.
+# Single release workflow for all npm packages.
 #
-# Does NOT build native binaries — that is handled by the release-cli,
-# release-bellows-cli, and release-bellows-openapi-cli workflows.
-# The launcher shims (anvil-cli, bellows-cli,
-# bellows-openapi-cli) are also published here because they
-# contain no platform-specific code; the native binaries they resolve
-# are optional peer packages already on npm before this runs.
+# Builds native binaries for every platform in parallel, then publishes
+# everything through one job that holds the npm OIDC trust.
 #
 # Triggered manually (workflow_dispatch) or on an `npm-v*` git tag
-# (e.g. `npm-v0.2.0`).
+# (e.g. `npm-v0.3.0`).
 #
-# Required secret: NPM_TOKEN (classic automation token or granular
-# token with publish access to the @anvil-di scope).
+# Required secret: NPM_TOKEN configured for the @anvil-di scope with
+# OIDC provenance linked to this workflow file.
 
 name: release-npm
 
@@ -26,8 +22,160 @@ permissions:
   id-token: write   # npm provenance
 
 jobs:
+  # ── native binary builds ────────────────────────────────────────────
+
+  build-anvil-cli:
+    name: anvil-cli ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            package: anvil-cli-linux-x64
+            bin: anvil
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            package: anvil-cli-linux-arm64
+            bin: anvil
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            package: anvil-cli-darwin-x64
+            bin: anvil
+          - target: aarch64-apple-darwin
+            os: macos-14
+            package: anvil-cli-darwin-arm64
+            bin: anvil
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            package: anvil-cli-win32-x64
+            bin: anvil.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cross (linux-arm64 only)
+        if: matrix.cross == true
+        run: cargo install cross --locked
+      - name: Build
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross build --release -p anvil-cli --target ${{ matrix.target }}
+          else
+            cargo build --release -p anvil-cli --target ${{ matrix.target }}
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}
+          path: target/${{ matrix.target }}/release/${{ matrix.bin }}
+
+  build-bellows-cli:
+    name: bellows-cli ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            package: bellows-cli-linux-x64
+            bin: anvil-bellows
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            package: bellows-cli-linux-arm64
+            bin: anvil-bellows
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            package: bellows-cli-darwin-x64
+            bin: anvil-bellows
+          - target: aarch64-apple-darwin
+            os: macos-14
+            package: bellows-cli-darwin-arm64
+            bin: anvil-bellows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            package: bellows-cli-win32-x64
+            bin: anvil-bellows.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cross (linux-arm64 only)
+        if: matrix.cross == true
+        run: cargo install cross --locked
+      - name: Build
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross build --release -p anvil-bellows --target ${{ matrix.target }}
+          else
+            cargo build --release -p anvil-bellows --target ${{ matrix.target }}
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}
+          path: target/${{ matrix.target }}/release/${{ matrix.bin }}
+
+  build-bellows-openapi-cli:
+    name: bellows-openapi-cli ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            package: bellows-openapi-cli-linux-x64
+            bin: anvil-bellows-openapi
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            package: bellows-openapi-cli-linux-arm64
+            bin: anvil-bellows-openapi
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            package: bellows-openapi-cli-darwin-x64
+            bin: anvil-bellows-openapi
+          - target: aarch64-apple-darwin
+            os: macos-14
+            package: bellows-openapi-cli-darwin-arm64
+            bin: anvil-bellows-openapi
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            package: bellows-openapi-cli-win32-x64
+            bin: anvil-bellows-openapi.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cross (linux-arm64 only)
+        if: matrix.cross == true
+        run: cargo install cross --locked
+      - name: Build
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross build --release -p anvil-bellows-openapi --target ${{ matrix.target }}
+          else
+            cargo build --release -p anvil-bellows-openapi --target ${{ matrix.target }}
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}
+          path: target/${{ matrix.target }}/release/${{ matrix.bin }}
+
+  # ── publish ─────────────────────────────────────────────────────────
+
   publish:
     name: publish to npm
+    needs: [build-anvil-cli, build-bellows-cli, build-bellows-openapi-cli]
     runs-on: ubuntu-latest
 
     steps:
@@ -58,53 +206,107 @@ jobs:
       - name: Build remaining packages
         run: pnpm --filter "./packages/**" -r build
 
+      - name: Download all platform binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage binaries into platform packages
+        run: |
+          for pkg in \
+            anvil-cli-darwin-arm64 anvil-cli-darwin-x64 \
+            anvil-cli-linux-arm64 anvil-cli-linux-x64 \
+            anvil-cli-win32-x64 \
+            bellows-cli-darwin-arm64 bellows-cli-darwin-x64 \
+            bellows-cli-linux-arm64 bellows-cli-linux-x64 \
+            bellows-cli-win32-x64 \
+            bellows-openapi-cli-darwin-arm64 bellows-openapi-cli-darwin-x64 \
+            bellows-openapi-cli-linux-arm64 bellows-openapi-cli-linux-x64 \
+            bellows-openapi-cli-win32-x64; do
+            mkdir -p packages/$pkg/bin
+            cp -r artifacts/$pkg/* packages/$pkg/bin/
+          done
+          # make binaries executable (no-op on Windows artifacts)
+          find packages/*/bin -type f ! -name "*.exe" -exec chmod +x {} \;
+
       # Publish in dependency order so consumers can resolve peers.
       - name: Publish @anvil-di/anvil
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/anvil
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @anvil-di/anvil-codegen-wasm
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/anvil-codegen-wasm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @anvil-di/bellows
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/bellows
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @anvil-di/anvil-unplugin
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/anvil-unplugin
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @anvil-di/bellows-openapi
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/bellows-openapi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Launcher shims — no native binary; resolves at install time via
-      # optionalDependencies on the platform-specific packages.
+      # Platform packages — native binaries staged above
+      - name: Publish anvil-cli platform packages
+        run: |
+          for pkg in anvil-cli-darwin-arm64 anvil-cli-darwin-x64 \
+                     anvil-cli-linux-arm64 anvil-cli-linux-x64 \
+                     anvil-cli-win32-x64; do
+            (cd packages/$pkg && pnpm publish --provenance --access public --no-git-checks)
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish bellows-cli platform packages
+        run: |
+          for pkg in bellows-cli-darwin-arm64 bellows-cli-darwin-x64 \
+                     bellows-cli-linux-arm64 bellows-cli-linux-x64 \
+                     bellows-cli-win32-x64; do
+            (cd packages/$pkg && pnpm publish --provenance --access public --no-git-checks)
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish bellows-openapi-cli platform packages
+        run: |
+          for pkg in bellows-openapi-cli-darwin-arm64 bellows-openapi-cli-darwin-x64 \
+                     bellows-openapi-cli-linux-arm64 bellows-openapi-cli-linux-x64 \
+                     bellows-openapi-cli-win32-x64; do
+            (cd packages/$pkg && pnpm publish --provenance --access public --no-git-checks)
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Launcher shims — published last so platform packages exist when
+      # npm resolves optionalDependencies on install
       - name: Publish @anvil-di/anvil-cli
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/anvil-cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @anvil-di/bellows-cli
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/bellows-cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @anvil-di/bellows-openapi-cli
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/bellows-openapi-cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

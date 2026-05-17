@@ -175,11 +175,11 @@ importers:
   packages/anvil-unplugin:
     dependencies:
       '@anvil-di/anvil-cli':
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: workspace:*
+        version: link:../anvil-cli
       '@anvil-di/anvil-codegen-wasm':
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: workspace:*
+        version: link:../anvil-codegen-wasm
       unplugin:
         specifier: ^1.16.0
         version: 1.16.1
@@ -197,8 +197,8 @@ importers:
   packages/bellows:
     dependencies:
       '@anvil-di/bellows-cli':
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: workspace:*
+        version: link:../bellows-cli
       express:
         specifier: '>=4'
         version: 5.2.1
@@ -260,8 +260,8 @@ importers:
   packages/bellows-openapi:
     dependencies:
       '@anvil-di/bellows-openapi-cli':
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: workspace:*
+        version: link:../bellows-openapi-cli
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -306,91 +306,6 @@ importers:
   packages/bellows-openapi-cli-win32-x64: {}
 
 packages:
-
-  '@anvil-di/anvil-cli-darwin-arm64@0.0.2':
-    resolution: {integrity: sha512-wGU3tkyacKlzTBkPnFloyNSAyV36kpYj8dRlURq9rcfVe8BuHv6lZk+tEEAEf2Asv9rm9R1KQTLIKMsrIybsSg==}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@anvil-di/anvil-cli-darwin-x64@0.0.2':
-    resolution: {integrity: sha512-VBwcwQsE6tG6LIMpCMYag/fs6JlHkwiiELxWRcopDwKmxqWxEIdZqO9ndHN+x4p+MZzHGIZwCJnjNj+J5FToeA==}
-    cpu: [x64]
-    os: [darwin]
-
-  '@anvil-di/anvil-cli-linux-arm64@0.0.2':
-    resolution: {integrity: sha512-2R2X0j8UgmxVOPtfIFhoqkBIgKJgCICkRIEL09VmVgNSS8RdOGwbMp/9HHuyw5GEecDl0R+2PWhQtW/Gfop26g==}
-    cpu: [arm64]
-    os: [linux]
-
-  '@anvil-di/anvil-cli-linux-x64@0.0.2':
-    resolution: {integrity: sha512-pXKH3K57f6pcXFzt7kQJNa0rafhfOhJl4Nv/ljhiM79Op2MW19zqPHvV6e9Ws84BtHG3jUVeKwQAPfJThlIpWw==}
-    cpu: [x64]
-    os: [linux]
-
-  '@anvil-di/anvil-cli-win32-x64@0.0.2':
-    resolution: {integrity: sha512-g5rBGWnLW4n7NdFe2WBylg5SteLKcFp1Bu2sNnMs3acoRTumP1egUys5F6O3E34VWMrJ2OufGUDC0jpk0/2WyA==}
-    cpu: [x64]
-    os: [win32]
-
-  '@anvil-di/anvil-cli@0.0.2':
-    resolution: {integrity: sha512-Hb6THZqNAo3fuPxCDQN+fB7lmffXCyRPchyUWjzAThkCxKpfK9rDSOUK0Z43kyRmnR7RAlCatYK4BbYOJu8+kQ==}
-    hasBin: true
-
-  '@anvil-di/anvil-codegen-wasm@0.0.2':
-    resolution: {integrity: sha512-/VDCbda2l+Y+D9lYarM8f25lVsaRY+s1RLUiDA5E4DoUOM0ZtjG1/jNENQFpwQdt/EpJaw5GnVU2xl8KAHTC9Q==}
-
-  '@anvil-di/bellows-cli-darwin-arm64@0.0.2':
-    resolution: {integrity: sha512-4AMw6BVcKgeckeWKhcKonbavOcT3saxtRJWMHVZFgbW/MWCZhoCmOSDjD+AiuTYc4FZjNLWhfm/+r8yc6Xpo6A==}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@anvil-di/bellows-cli-darwin-x64@0.0.2':
-    resolution: {integrity: sha512-jn42Mq2RxGgKMB6EvWdp4c8LkLHzMoNJLD7BwReJI7po+lr1A6wwApqQzO/U7WREwQV+9C++Iq9PbiMRXDOiwg==}
-    cpu: [x64]
-    os: [darwin]
-
-  '@anvil-di/bellows-cli-linux-arm64@0.0.2':
-    resolution: {integrity: sha512-Y9EtezBUeCgy7SAAkU8jgn1XjPtjw1N+vos3RB4WKNiaDNsFTis2y8nW2IHxgXErOft5/fNOrmzV1kOemd5fCw==}
-    cpu: [arm64]
-    os: [linux]
-
-  '@anvil-di/bellows-cli-linux-x64@0.0.2':
-    resolution: {integrity: sha512-xx9g2qFe+XKXY1ODpS+rABT9JYCnsNICYTgMfVPWirlgHMuJBsGNxrcXJTQ+7Kg3ZO/TILq5eYCgEaq5Te61qg==}
-    cpu: [x64]
-    os: [linux]
-
-  '@anvil-di/bellows-cli-win32-x64@0.0.2':
-    resolution: {integrity: sha512-guYg5mcepsK78VE8GjTKF4g5aGiRo3pI2LC4579mksAs0bRiX9juzeIoxcyMKDulECaXbyfsCbBwQnzuCy/yfg==}
-    cpu: [x64]
-    os: [win32]
-
-  '@anvil-di/bellows-cli@0.0.2':
-    resolution: {integrity: sha512-rnkgTC6nmz+abdVVzoLJlvXVt29dPs2smPes69WVSCJDASelKaUXhvAwPMN9g4KwLKZmlim2/u2ju3N6AUJkkA==}
-    hasBin: true
-
-  '@anvil-di/bellows-openapi-cli-darwin-x64@0.0.2':
-    resolution: {integrity: sha512-7xgyCZfhkQqfYmj/GQjlsOK2u+9Woqy0Ya04UB2Hx91bTf1JmPQXS5VBn5arVz77ddTWXxRVNCXqTGjjeehQZw==}
-    cpu: [x64]
-    os: [darwin]
-
-  '@anvil-di/bellows-openapi-cli-linux-arm64@0.0.2':
-    resolution: {integrity: sha512-FrEoHv8Ps8C/YSp2CXNlKqTdTwz6JLnfz4I248dObFyh0RDq1QhCdRpHNL5WluSOhAxV0PWq9oZHUmEYavoH5w==}
-    cpu: [arm64]
-    os: [linux]
-
-  '@anvil-di/bellows-openapi-cli-linux-x64@0.0.2':
-    resolution: {integrity: sha512-uVHt4/XLryjwCZPKkTN2LQofQaqUCIQjDT9w8+msdcwC4LjtgZZA29YGq74YPn8MhYTVI/mNmd4RPqXqBPWK/A==}
-    cpu: [x64]
-    os: [linux]
-
-  '@anvil-di/bellows-openapi-cli-win32-x64@0.0.2':
-    resolution: {integrity: sha512-fhgetZ3qZ+GY3BNmndK0Fa+C5dY98+12cU0xwoDJeVRU7soL33JvDbU8JRrf29lf+SAclsPVieqr5qQu6m977g==}
-    cpu: [x64]
-    os: [win32]
-
-  '@anvil-di/bellows-openapi-cli@0.0.2':
-    resolution: {integrity: sha512-ZOkUMguht3J4psag6yqsecMwqWWHANiWHyGEEknDMXXzgQNI2ZLU9MMxHSy9VzMSPm9Q9II1/ncHSBo/0LZfjw==}
-    hasBin: true
 
   '@babel/code-frame@7.29.0':
     resolution: {integrity: sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==}
@@ -2161,73 +2076,6 @@ packages:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
 snapshots:
-
-  '@anvil-di/anvil-cli-darwin-arm64@0.0.2':
-    optional: true
-
-  '@anvil-di/anvil-cli-darwin-x64@0.0.2':
-    optional: true
-
-  '@anvil-di/anvil-cli-linux-arm64@0.0.2':
-    optional: true
-
-  '@anvil-di/anvil-cli-linux-x64@0.0.2':
-    optional: true
-
-  '@anvil-di/anvil-cli-win32-x64@0.0.2':
-    optional: true
-
-  '@anvil-di/anvil-cli@0.0.2':
-    optionalDependencies:
-      '@anvil-di/anvil-cli-darwin-arm64': 0.0.2
-      '@anvil-di/anvil-cli-darwin-x64': 0.0.2
-      '@anvil-di/anvil-cli-linux-arm64': 0.0.2
-      '@anvil-di/anvil-cli-linux-x64': 0.0.2
-      '@anvil-di/anvil-cli-win32-x64': 0.0.2
-
-  '@anvil-di/anvil-codegen-wasm@0.0.2': {}
-
-  '@anvil-di/bellows-cli-darwin-arm64@0.0.2':
-    optional: true
-
-  '@anvil-di/bellows-cli-darwin-x64@0.0.2':
-    optional: true
-
-  '@anvil-di/bellows-cli-linux-arm64@0.0.2':
-    optional: true
-
-  '@anvil-di/bellows-cli-linux-x64@0.0.2':
-    optional: true
-
-  '@anvil-di/bellows-cli-win32-x64@0.0.2':
-    optional: true
-
-  '@anvil-di/bellows-cli@0.0.2':
-    optionalDependencies:
-      '@anvil-di/bellows-cli-darwin-arm64': 0.0.2
-      '@anvil-di/bellows-cli-darwin-x64': 0.0.2
-      '@anvil-di/bellows-cli-linux-arm64': 0.0.2
-      '@anvil-di/bellows-cli-linux-x64': 0.0.2
-      '@anvil-di/bellows-cli-win32-x64': 0.0.2
-
-  '@anvil-di/bellows-openapi-cli-darwin-x64@0.0.2':
-    optional: true
-
-  '@anvil-di/bellows-openapi-cli-linux-arm64@0.0.2':
-    optional: true
-
-  '@anvil-di/bellows-openapi-cli-linux-x64@0.0.2':
-    optional: true
-
-  '@anvil-di/bellows-openapi-cli-win32-x64@0.0.2':
-    optional: true
-
-  '@anvil-di/bellows-openapi-cli@0.0.2':
-    optionalDependencies:
-      '@anvil-di/bellows-openapi-cli-darwin-x64': 0.0.2
-      '@anvil-di/bellows-openapi-cli-linux-arm64': 0.0.2
-      '@anvil-di/bellows-openapi-cli-linux-x64': 0.0.2
-      '@anvil-di/bellows-openapi-cli-win32-x64': 0.0.2
 
   '@babel/code-frame@7.29.0':
     dependencies:
