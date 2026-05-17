@@ -432,7 +432,8 @@ mod tests {
         );
         files.insert(
             r"C:\proj\src\heater.ts".to_owned(),
-            r#"import { Inject } from "@anvil-di/anvil"; @Inject export class Heater {}"#.to_owned(),
+            r#"import { Inject } from "@anvil-di/anvil"; @Inject export class Heater {}"#
+                .to_owned(),
         );
         files.insert(
             r"C:\proj\src\app.ts".to_owned(),
