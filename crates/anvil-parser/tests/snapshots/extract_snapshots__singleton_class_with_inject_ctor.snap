@@ -30,8 +30,8 @@ ParsedFile {
             deps: [],
             source: SourceSpan {
                 path: "heater.ts",
-                start: 138,
-                end: 154,
+                start: 140,
+                end: 156,
             },
             role: None,
             token_inner_type: None,

@@ -34,8 +34,8 @@ ParsedFile {
             ],
             source: SourceSpan {
                 path: "service.ts",
-                start: 203,
-                end: 260,
+                start: 207,
+                end: 264,
             },
             role: None,
             token_inner_type: None,

@@ -33,8 +33,8 @@ ParsedFile {
                     deps: [],
                     source: SourceSpan {
                         path: "db-module.ts",
-                        start: 214,
-                        end: 337,
+                        start: 218,
+                        end: 341,
                     },
                     role: None,
                     token_inner_type: Some(
@@ -44,8 +44,8 @@ ParsedFile {
             ],
             source: SourceSpan {
                 path: "db-module.ts",
-                start: 185,
-                end: 347,
+                start: 189,
+                end: 351,
             },
         },
     ],

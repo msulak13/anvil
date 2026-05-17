@@ -29,8 +29,8 @@ ParsedFile {
                     },
                     source: SourceSpan {
                         path: "app.ts",
-                        start: 419,
-                        end: 500,
+                        start: 421,
+                        end: 502,
                     },
                     factory_params: [
                         FactoryParam {
@@ -45,8 +45,8 @@ ParsedFile {
                             },
                             source: SourceSpan {
                                 path: "app.ts",
-                                start: 445,
-                                end: 461,
+                                start: 447,
+                                end: 463,
                             },
                         },
                         FactoryParam {
@@ -61,8 +61,8 @@ ParsedFile {
                             },
                             source: SourceSpan {
                                 path: "app.ts",
-                                start: 463,
-                                end: 480,
+                                start: 465,
+                                end: 482,
                             },
                         },
                     ],
@@ -70,8 +70,8 @@ ParsedFile {
             ],
             source: SourceSpan {
                 path: "app.ts",
-                start: 386,
-                end: 510,
+                start: 388,
+                end: 512,
             },
         },
     ],
@@ -99,16 +99,16 @@ ParsedFile {
                     },
                     source: SourceSpan {
                         path: "app.ts",
-                        start: 288,
-                        end: 323,
+                        start: 290,
+                        end: 325,
                     },
                     factory_params: [],
                 },
             ],
             source: SourceSpan {
                 path: "app.ts",
-                start: 242,
-                end: 333,
+                start: 244,
+                end: 335,
             },
         },
     ],

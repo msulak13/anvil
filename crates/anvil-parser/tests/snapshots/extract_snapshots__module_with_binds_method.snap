@@ -52,8 +52,8 @@ ParsedFile {
                     ],
                     source: SourceSpan {
                         path: "heater_module.ts",
-                        start: 224,
-                        end: 295,
+                        start: 226,
+                        end: 297,
                     },
                     role: None,
                     token_inner_type: None,
@@ -61,8 +61,8 @@ ParsedFile {
             ],
             source: SourceSpan {
                 path: "heater_module.ts",
-                start: 191,
-                end: 305,
+                start: 193,
+                end: 307,
             },
         },
     ],

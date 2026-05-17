@@ -40,8 +40,8 @@ ParsedFile {
                     deps: [],
                     source: SourceSpan {
                         path: "plugins-module.ts",
-                        start: 287,
-                        end: 356,
+                        start: 289,
+                        end: 358,
                     },
                     role: IntoSet,
                     token_inner_type: None,
@@ -72,8 +72,8 @@ ParsedFile {
                     deps: [],
                     source: SourceSpan {
                         path: "plugins-module.ts",
-                        start: 369,
-                        end: 444,
+                        start: 371,
+                        end: 446,
                     },
                     role: IntoSet,
                     token_inner_type: None,
@@ -81,8 +81,8 @@ ParsedFile {
             ],
             source: SourceSpan {
                 path: "plugins-module.ts",
-                start: 253,
-                end: 454,
+                start: 255,
+                end: 456,
             },
         },
     ],

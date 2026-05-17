@@ -51,8 +51,8 @@ ParsedFile {
                     deps: [],
                     source: SourceSpan {
                         path: "user-module.ts",
-                        start: 212,
-                        end: 323,
+                        start: 214,
+                        end: 325,
                     },
                     role: None,
                     token_inner_type: None,
@@ -60,8 +60,8 @@ ParsedFile {
             ],
             source: SourceSpan {
                 path: "user-module.ts",
-                start: 181,
-                end: 333,
+                start: 183,
+                end: 335,
             },
         },
     ],

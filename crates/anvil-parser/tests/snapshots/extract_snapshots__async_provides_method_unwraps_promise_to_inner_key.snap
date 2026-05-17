@@ -51,8 +51,8 @@ ParsedFile {
                     ],
                     source: SourceSpan {
                         path: "database-module.ts",
-                        start: 219,
-                        end: 364,
+                        start: 221,
+                        end: 366,
                     },
                     role: None,
                     token_inner_type: None,
@@ -60,8 +60,8 @@ ParsedFile {
             ],
             source: SourceSpan {
                 path: "database-module.ts",
-                start: 184,
-                end: 374,
+                start: 186,
+                end: 376,
             },
         },
     ],

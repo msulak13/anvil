@@ -40,8 +40,8 @@ ParsedFile {
                     deps: [],
                     source: SourceSpan {
                         path: "coffee_module.ts",
-                        start: 163,
-                        end: 222,
+                        start: 165,
+                        end: 224,
                     },
                     role: None,
                     token_inner_type: None,
@@ -49,8 +49,8 @@ ParsedFile {
             ],
             source: SourceSpan {
                 path: "coffee_module.ts",
-                start: 130,
-                end: 232,
+                start: 132,
+                end: 234,
             },
         },
     ],
