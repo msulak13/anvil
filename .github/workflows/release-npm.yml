@@ -177,6 +177,9 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
+      - name: Upgrade npm for OIDC Trusted Publishers support
+        run: npm install -g npm@latest
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -218,35 +221,26 @@ jobs:
           find packages/*/bin -type f ! -name "*.exe" -exec chmod +x {} \;
 
       # Publish in dependency order so consumers can resolve peers.
+      # pnpm pack replaces workspace:* with real versions; npm publish handles OIDC auth.
       - name: Publish @anvil-di/anvil
-        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/anvil
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm pack && npm publish *.tgz --provenance --access public
 
       - name: Publish @anvil-di/anvil-codegen-wasm
-        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/anvil-codegen-wasm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm pack && npm publish *.tgz --provenance --access public
 
       - name: Publish @anvil-di/bellows
-        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/bellows
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm pack && npm publish *.tgz --provenance --access public
 
       - name: Publish @anvil-di/anvil-unplugin
-        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/anvil-unplugin
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm pack && npm publish *.tgz --provenance --access public
 
       - name: Publish @anvil-di/bellows-openapi
-        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/bellows-openapi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm pack && npm publish *.tgz --provenance --access public
 
       # Platform packages — native binaries staged above
       - name: Publish anvil-cli platform packages
@@ -254,47 +248,35 @@ jobs:
           for pkg in anvil-cli-darwin-arm64 \
                      anvil-cli-linux-arm64 anvil-cli-linux-x64 \
                      anvil-cli-win32-x64; do
-            (cd packages/$pkg && pnpm publish --provenance --access public --no-git-checks)
+            (cd packages/$pkg && pnpm pack && npm publish *.tgz --provenance --access public)
           done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish bellows-cli platform packages
         run: |
           for pkg in bellows-cli-darwin-arm64 \
                      bellows-cli-linux-arm64 bellows-cli-linux-x64 \
                      bellows-cli-win32-x64; do
-            (cd packages/$pkg && pnpm publish --provenance --access public --no-git-checks)
+            (cd packages/$pkg && pnpm pack && npm publish *.tgz --provenance --access public)
           done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish bellows-openapi-cli platform packages
         run: |
           for pkg in bellows-openapi-cli-darwin-arm64 \
                      bellows-openapi-cli-linux-arm64 bellows-openapi-cli-linux-x64 \
                      bellows-openapi-cli-win32-x64; do
-            (cd packages/$pkg && pnpm publish --provenance --access public --no-git-checks)
+            (cd packages/$pkg && pnpm pack && npm publish *.tgz --provenance --access public)
           done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Launcher shims — published last so platform packages exist when
       # npm resolves optionalDependencies on install
       - name: Publish @anvil-di/anvil-cli
-        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/anvil-cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm pack && npm publish *.tgz --provenance --access public
 
       - name: Publish @anvil-di/bellows-cli
-        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/bellows-cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm pack && npm publish *.tgz --provenance --access public
 
       - name: Publish @anvil-di/bellows-openapi-cli
-        run: pnpm publish --provenance --access public --no-git-checks
         working-directory: packages/bellows-openapi-cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm pack && npm publish *.tgz --provenance --access public
