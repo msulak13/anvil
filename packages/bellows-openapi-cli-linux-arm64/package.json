@@ -17,5 +17,9 @@
     "cpu": [
       "arm64"
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/msulak13/anvil.git"
   }
 }

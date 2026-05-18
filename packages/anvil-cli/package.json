@@ -16,7 +16,11 @@
   "bin": {
     "anvil": "./bin/anvil.js"
   },
-  "files": ["bin", "dist", "src"],
+  "files": [
+    "bin",
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -35,5 +39,9 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/msulak13/anvil.git"
   }
 }
