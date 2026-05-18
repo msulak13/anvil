@@ -24,7 +24,6 @@
   },
   "optionalDependencies": {
     "@anvil-di/bellows-cli-darwin-arm64": "workspace:*",
-    "@anvil-di/bellows-cli-darwin-x64": "workspace:*",
     "@anvil-di/bellows-cli-linux-arm64": "workspace:*",
     "@anvil-di/bellows-cli-linux-x64": "workspace:*",
     "@anvil-di/bellows-cli-win32-x64": "workspace:*"

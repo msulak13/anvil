@@ -137,9 +137,6 @@ importers:
       '@anvil-di/anvil-cli-darwin-arm64':
         specifier: workspace:*
         version: link:../anvil-cli-darwin-arm64
-      '@anvil-di/anvil-cli-darwin-x64':
-        specifier: workspace:*
-        version: link:../anvil-cli-darwin-x64
       '@anvil-di/anvil-cli-linux-arm64':
         specifier: workspace:*
         version: link:../anvil-cli-linux-arm64
@@ -151,8 +148,6 @@ importers:
         version: link:../anvil-cli-win32-x64
 
   packages/anvil-cli-darwin-arm64: {}
-
-  packages/anvil-cli-darwin-x64: {}
 
   packages/anvil-cli-linux-arm64: {}
 
@@ -234,9 +229,6 @@ importers:
       '@anvil-di/bellows-cli-darwin-arm64':
         specifier: workspace:*
         version: link:../bellows-cli-darwin-arm64
-      '@anvil-di/bellows-cli-darwin-x64':
-        specifier: workspace:*
-        version: link:../bellows-cli-darwin-x64
       '@anvil-di/bellows-cli-linux-arm64':
         specifier: workspace:*
         version: link:../bellows-cli-linux-arm64
@@ -248,8 +240,6 @@ importers:
         version: link:../bellows-cli-win32-x64
 
   packages/bellows-cli-darwin-arm64: {}
-
-  packages/bellows-cli-darwin-x64: {}
 
   packages/bellows-cli-linux-arm64: {}
 
@@ -282,9 +272,6 @@ importers:
       '@anvil-di/bellows-openapi-cli-darwin-arm64':
         specifier: workspace:*
         version: link:../bellows-openapi-cli-darwin-arm64
-      '@anvil-di/bellows-openapi-cli-darwin-x64':
-        specifier: workspace:*
-        version: link:../bellows-openapi-cli-darwin-x64
       '@anvil-di/bellows-openapi-cli-linux-arm64':
         specifier: workspace:*
         version: link:../bellows-openapi-cli-linux-arm64
@@ -296,8 +283,6 @@ importers:
         version: link:../bellows-openapi-cli-win32-x64
 
   packages/bellows-openapi-cli-darwin-arm64: {}
-
-  packages/bellows-openapi-cli-darwin-x64: {}
 
   packages/bellows-openapi-cli-linux-arm64: {}
 

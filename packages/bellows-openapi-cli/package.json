@@ -23,7 +23,6 @@
   },
   "optionalDependencies": {
     "@anvil-di/bellows-openapi-cli-darwin-arm64": "workspace:*",
-    "@anvil-di/bellows-openapi-cli-darwin-x64": "workspace:*",
     "@anvil-di/bellows-openapi-cli-linux-arm64": "workspace:*",
     "@anvil-di/bellows-openapi-cli-linux-x64": "workspace:*",
     "@anvil-di/bellows-openapi-cli-win32-x64": "workspace:*"

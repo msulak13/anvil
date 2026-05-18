@@ -39,10 +39,6 @@ jobs:
             package: anvil-cli-linux-arm64
             bin: anvil
             cross: true
-          - target: x86_64-apple-darwin
-            os: macos-13
-            package: anvil-cli-darwin-x64
-            bin: anvil
           - target: aarch64-apple-darwin
             os: macos-14
             package: anvil-cli-darwin-arm64
@@ -88,10 +84,6 @@ jobs:
             package: bellows-cli-linux-arm64
             bin: anvil-bellows
             cross: true
-          - target: x86_64-apple-darwin
-            os: macos-13
-            package: bellows-cli-darwin-x64
-            bin: anvil-bellows
           - target: aarch64-apple-darwin
             os: macos-14
             package: bellows-cli-darwin-arm64
@@ -137,10 +129,6 @@ jobs:
             package: bellows-openapi-cli-linux-arm64
             bin: anvil-bellows-openapi
             cross: true
-          - target: x86_64-apple-darwin
-            os: macos-13
-            package: bellows-openapi-cli-darwin-x64
-            bin: anvil-bellows-openapi
           - target: aarch64-apple-darwin
             os: macos-14
             package: bellows-openapi-cli-darwin-arm64
@@ -214,13 +202,13 @@ jobs:
       - name: Stage binaries into platform packages
         run: |
           for pkg in \
-            anvil-cli-darwin-arm64 anvil-cli-darwin-x64 \
+            anvil-cli-darwin-arm64 \
             anvil-cli-linux-arm64 anvil-cli-linux-x64 \
             anvil-cli-win32-x64 \
-            bellows-cli-darwin-arm64 bellows-cli-darwin-x64 \
+            bellows-cli-darwin-arm64 \
             bellows-cli-linux-arm64 bellows-cli-linux-x64 \
             bellows-cli-win32-x64 \
-            bellows-openapi-cli-darwin-arm64 bellows-openapi-cli-darwin-x64 \
+            bellows-openapi-cli-darwin-arm64 \
             bellows-openapi-cli-linux-arm64 bellows-openapi-cli-linux-x64 \
             bellows-openapi-cli-win32-x64; do
             mkdir -p packages/$pkg/bin
@@ -263,7 +251,7 @@ jobs:
       # Platform packages — native binaries staged above
       - name: Publish anvil-cli platform packages
         run: |
-          for pkg in anvil-cli-darwin-arm64 anvil-cli-darwin-x64 \
+          for pkg in anvil-cli-darwin-arm64 \
                      anvil-cli-linux-arm64 anvil-cli-linux-x64 \
                      anvil-cli-win32-x64; do
             (cd packages/$pkg && pnpm publish --provenance --access public --no-git-checks)
@@ -273,7 +261,7 @@ jobs:
 
       - name: Publish bellows-cli platform packages
         run: |
-          for pkg in bellows-cli-darwin-arm64 bellows-cli-darwin-x64 \
+          for pkg in bellows-cli-darwin-arm64 \
                      bellows-cli-linux-arm64 bellows-cli-linux-x64 \
                      bellows-cli-win32-x64; do
             (cd packages/$pkg && pnpm publish --provenance --access public --no-git-checks)
@@ -283,7 +271,7 @@ jobs:
 
       - name: Publish bellows-openapi-cli platform packages
         run: |
-          for pkg in bellows-openapi-cli-darwin-arm64 bellows-openapi-cli-darwin-x64 \
+          for pkg in bellows-openapi-cli-darwin-arm64 \
                      bellows-openapi-cli-linux-arm64 bellows-openapi-cli-linux-x64 \
                      bellows-openapi-cli-win32-x64; do
             (cd packages/$pkg && pnpm publish --provenance --access public --no-git-checks)
