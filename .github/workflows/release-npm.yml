@@ -221,26 +221,27 @@ jobs:
           find packages/*/bin -type f ! -name "*.exe" -exec chmod +x {} \;
 
       # Publish in dependency order so consumers can resolve peers.
-      # pnpm pack replaces workspace:* with real versions; npm publish handles OIDC auth.
+      # The helper script packs (resolving workspace:* → real version) then
+      # publishes via OIDC; skips gracefully if the version is already live.
       - name: Publish @anvil-di/anvil
         working-directory: packages/anvil
-        run: pnpm pack && npm publish *.tgz --provenance --access public
+        run: bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh
 
       - name: Publish @anvil-di/anvil-codegen-wasm
         working-directory: packages/anvil-codegen-wasm
-        run: pnpm pack && npm publish *.tgz --provenance --access public
+        run: bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh
 
       - name: Publish @anvil-di/bellows
         working-directory: packages/bellows
-        run: pnpm pack && npm publish *.tgz --provenance --access public
+        run: bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh
 
       - name: Publish @anvil-di/anvil-unplugin
         working-directory: packages/anvil-unplugin
-        run: pnpm pack && npm publish *.tgz --provenance --access public
+        run: bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh
 
       - name: Publish @anvil-di/bellows-openapi
         working-directory: packages/bellows-openapi
-        run: pnpm pack && npm publish *.tgz --provenance --access public
+        run: bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh
 
       # Platform packages — native binaries staged above
       - name: Publish anvil-cli platform packages
@@ -248,7 +249,7 @@ jobs:
           for pkg in anvil-cli-darwin-arm64 \
                      anvil-cli-linux-arm64 anvil-cli-linux-x64 \
                      anvil-cli-win32-x64; do
-            (cd packages/$pkg && pnpm pack && npm publish *.tgz --provenance --access public)
+            (cd packages/$pkg && bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh)
           done
 
       - name: Publish bellows-cli platform packages
@@ -256,7 +257,7 @@ jobs:
           for pkg in bellows-cli-darwin-arm64 \
                      bellows-cli-linux-arm64 bellows-cli-linux-x64 \
                      bellows-cli-win32-x64; do
-            (cd packages/$pkg && pnpm pack && npm publish *.tgz --provenance --access public)
+            (cd packages/$pkg && bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh)
           done
 
       - name: Publish bellows-openapi-cli platform packages
@@ -264,19 +265,19 @@ jobs:
           for pkg in bellows-openapi-cli-darwin-arm64 \
                      bellows-openapi-cli-linux-arm64 bellows-openapi-cli-linux-x64 \
                      bellows-openapi-cli-win32-x64; do
-            (cd packages/$pkg && pnpm pack && npm publish *.tgz --provenance --access public)
+            (cd packages/$pkg && bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh)
           done
 
       # Launcher shims — published last so platform packages exist when
       # npm resolves optionalDependencies on install
       - name: Publish @anvil-di/anvil-cli
         working-directory: packages/anvil-cli
-        run: pnpm pack && npm publish *.tgz --provenance --access public
+        run: bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh
 
       - name: Publish @anvil-di/bellows-cli
         working-directory: packages/bellows-cli
-        run: pnpm pack && npm publish *.tgz --provenance --access public
+        run: bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh
 
       - name: Publish @anvil-di/bellows-openapi-cli
         working-directory: packages/bellows-openapi-cli
-        run: pnpm pack && npm publish *.tgz --provenance --access public
+        run: bash $GITHUB_WORKSPACE/.github/scripts/npm-publish.sh
