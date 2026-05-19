@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/bellows-openapi-cli-linux-x64",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Prebuilt anvil-bellows-openapi CLI binary for linux/x64. Resolved by `@anvil-di/bellows-openapi-cli` at runtime.",
   "license": "Apache-2.0",
   "type": "commonjs",
@@ -21,5 +21,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/msulak13/anvil.git"
+  },
+  "scripts": {
+    "postinstall": "node -e \"try{require('fs').chmodSync(require('path').join(__dirname,'bin','anvil-bellows-openapi'),0o755)}catch(e){}\"",
+    "prepack": "node -e \"try{require('fs').chmodSync(require('path').join(__dirname,'bin','anvil-bellows-openapi'),0o755)}catch(e){}\""
   }
 }

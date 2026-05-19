@@ -1,7 +1,7 @@
 {
-  "name": "@anvil-di/anvil-cli-linux-arm64",
+  "name": "@anvil-di/anvil-cli-darwin-x64",
   "version": "0.0.4",
-  "description": "Prebuilt anvil CLI binary for linux/arm64. Resolved by `@anvil-di/anvil-cli` at runtime.",
+  "description": "Prebuilt anvil CLI binary for darwin/x64. Resolved by `@anvil-di/anvil-cli` at runtime.",
   "license": "Apache-2.0",
   "type": "commonjs",
   "main": "index.js",
@@ -12,18 +12,18 @@
   "publishConfig": {
     "access": "public",
     "os": [
-      "linux"
+      "darwin"
     ],
     "cpu": [
-      "arm64"
+      "x64"
     ]
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/msulak13/anvil.git"
   },
   "scripts": {
     "postinstall": "node -e \"try{require('fs').chmodSync(require('path').join(__dirname,'bin','anvil'),0o755)}catch(e){}\"",
     "prepack": "node -e \"try{require('fs').chmodSync(require('path').join(__dirname,'bin','anvil'),0o755)}catch(e){}\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/msulak13/anvil.git"
   }
 }
