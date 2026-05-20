@@ -1,4 +1,4 @@
-import { Inject, Singleton } from "@msulak/anvil";
+import { Inject, Singleton } from "@anvil-di/anvil";
 import { Logger } from "./logger";
 import { RegisterFn, RouteRegistrar } from "./route-registrar";
 import { UserService } from "./user-service";

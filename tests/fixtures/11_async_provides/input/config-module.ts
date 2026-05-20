@@ -1,4 +1,4 @@
-import { Module, Provides, Singleton } from "@msulak/anvil";
+import { Module, Provides, Singleton } from "@anvil-di/anvil";
 import { Config } from "./config";
 
 // Async @Provides demonstrating the M12 shape: the method is `async`

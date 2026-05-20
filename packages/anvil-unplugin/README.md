@@ -1,6 +1,6 @@
-# `@msulak/anvil-unplugin`
+# `@anvil-di/anvil-unplugin`
 
-Run [`@msulak/anvil`](https://github.com/msulak13/tsdi) codegen as part of your bundler's normal pipeline. Built on [`unplugin`](https://github.com/unjs/unplugin) so a single adapter works across Vite, Rollup, Webpack, Rspack, and esbuild.
+Run [`@anvil-di/anvil`](https://github.com/msulak13/tsdi) codegen as part of your bundler's normal pipeline. Built on [`unplugin`](https://github.com/unjs/unplugin) so a single adapter works across Vite, Rollup, Webpack, Rspack, and esbuild.
 
 ## Why
 
@@ -15,7 +15,7 @@ That gets stale fast in dev — every edit to a `@Module` requires re-running `a
 
 ```ts
 // vite.config.ts
-import anvil from "@msulak/anvil-unplugin/vite";
+import anvil from "@anvil-di/anvil-unplugin/vite";
 
 export default defineConfig({
   plugins: [anvil()],
@@ -27,11 +27,11 @@ Codegen runs on `buildStart` and on every relevant file change in dev (debounced
 ## Per-bundler imports
 
 ```ts
-import anvil from "@msulak/anvil-unplugin/vite";      // Vite plugin
-import anvil from "@msulak/anvil-unplugin/rollup";    // Rollup plugin
-import anvil from "@msulak/anvil-unplugin/webpack";   // Webpack plugin
-import anvil from "@msulak/anvil-unplugin/rspack";    // Rspack plugin
-import anvil from "@msulak/anvil-unplugin/esbuild";   // esbuild plugin
+import anvil from "@anvil-di/anvil-unplugin/vite";      // Vite plugin
+import anvil from "@anvil-di/anvil-unplugin/rollup";    // Rollup plugin
+import anvil from "@anvil-di/anvil-unplugin/webpack";   // Webpack plugin
+import anvil from "@anvil-di/anvil-unplugin/rspack";    // Rspack plugin
+import anvil from "@anvil-di/anvil-unplugin/esbuild";   // esbuild plugin
 ```
 
 ## Options
@@ -47,7 +47,7 @@ anvil({
   tsconfig: "./tsconfig.json",
 
   // Path to the `anvil` binary. Defaults to the native binary resolved
-  // via @msulak/anvil-cli's optionalDependencies.
+  // via @anvil-di/anvil-cli's optionalDependencies.
   cli: "/path/to/anvil",
 
   // Debounce window for re-running codegen after a file edit (ms).
@@ -56,7 +56,7 @@ anvil({
 
   // Which codegen backend to use:
   // - "native" (default): spawn the anvil Rust binary
-  // - "wasm": run in-process via @msulak/anvil-codegen-wasm (no spawn overhead)
+  // - "wasm": run in-process via @anvil-di/anvil-codegen-wasm (no spawn overhead)
   mode: "native",
 });
 ```
@@ -72,7 +72,7 @@ The bundler's normal TypeScript pipeline then picks up the freshly generated `*.
 
 ## How the binary gets there
 
-`@msulak/anvil-unplugin` depends on [`@msulak/anvil-cli`](../anvil-cli/README.md), which is the npm launcher for anvil's native Rust binary. `@msulak/anvil-cli` declares one `optionalDependencies` entry per supported platform (`@msulak/anvil-cli-linux-x64`, `@msulak/anvil-cli-darwin-arm64`, etc.); npm installs **only** the matching one based on `os`/`cpu` filters. At runtime the unplugin calls `resolveBinaryPath()` from `@msulak/anvil-cli` to find the binary — no PATH manipulation or `cargo install` required.
+`@anvil-di/anvil-unplugin` depends on [`@anvil-di/anvil-cli`](../anvil-cli/README.md), which is the npm launcher for anvil's native Rust binary. `@anvil-di/anvil-cli` declares one `optionalDependencies` entry per supported platform (`@anvil-di/anvil-cli-linux-x64`, `@anvil-di/anvil-cli-darwin-arm64`, etc.); npm installs **only** the matching one based on `os`/`cpu` filters. At runtime the unplugin calls `resolveBinaryPath()` from `@anvil-di/anvil-cli` to find the binary — no PATH manipulation or `cargo install` required.
 
 The same `cli` option still works if you want to point at a custom build (a `cargo build --release`'d binary outside `node_modules`, for example).
 

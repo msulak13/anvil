@@ -36,9 +36,9 @@ export class UserController {
 The plugin emits `routes.module.ts` alongside it:
 
 ```typescript
-import { Module, Provides, IntoSet } from "@msulak/anvil";
+import { Module, Provides, IntoSet } from "@anvil-di/anvil";
 import { UserController } from "./user-controller";
-import { RouteDefinition } from "@msulak/anvil-plugin-nestjs";
+import { RouteDefinition } from "@anvil-di/anvil-plugin-nestjs";
 
 @Module
 export class RoutesModule {
@@ -106,8 +106,8 @@ The ordering and watch mode problems are best solved not by making the standalon
 
 ```typescript
 // vite.config.ts
-import anvil from '@msulak/anvil-unplugin/vite';
-import { nestjsCodegen } from '@msulak/anvil-plugin-nestjs/codegen';
+import anvil from '@anvil-di/anvil-unplugin/vite';
+import { nestjsCodegen } from '@anvil-di/anvil-plugin-nestjs/codegen';
 
 export default {
   plugins: [
@@ -221,7 +221,7 @@ The returned string must be a valid TypeScript expression (not a full statement)
 
 This requires the CLI to keep plugin instances alive from the parse phase through codegen. The current plugin host (`crates/anvil-cli/src/plugin.rs`) drops the plugin after `extract_bindings`; it must be extended to maintain a `plugin_id → PluginRunner` map across both phases.
 
-### 5. Implement the `@msulak/anvil-plugin-nestjs` Wasm Plugin
+### 5. Implement the `@anvil-di/anvil-plugin-nestjs` Wasm Plugin
 
 1. **Extraction (`extract_bindings`):**
    - Emits `Provider::InjectCtor` for each `@Controller` class with its resolved deps and base-path metadata.
@@ -255,7 +255,7 @@ export class Router {
 }
 ```
 
-`RouteDefinition` is defined in `@msulak/anvil-plugin-nestjs` and is a dev dependency (type-only import in user code).
+`RouteDefinition` is defined in `@anvil-di/anvil-plugin-nestjs` and is a dev dependency (type-only import in user code).
 
 ---
 

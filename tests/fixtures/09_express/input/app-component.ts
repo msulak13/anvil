@@ -1,4 +1,4 @@
-import { Component, Singleton } from "@msulak/anvil";
+import { Component, Singleton } from "@anvil-di/anvil";
 import { AppModule } from "./app-module";
 import { Logger } from "./logger";
 import { RouteRegistrar } from "./route-registrar";

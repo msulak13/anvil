@@ -154,7 +154,7 @@ export interface RouteDefinition {
 
 ```typescript
 // routes.module.ts  (generated — do not edit)
-import { Module, Provides, IntoSet } from "@msulak/anvil";
+import { Module, Provides, IntoSet } from "@anvil-di/anvil";
 import { UserController } from "./user-controller";
 import type { RouteDefinition } from "@anvil-di/bellows";
 
@@ -317,7 +317,7 @@ interface AnvilPluginOptions {
 
 ```typescript
 // vite.config.ts
-import anvil from '@msulak/anvil-unplugin/vite';
+import anvil from '@anvil-di/anvil-unplugin/vite';
 import { bellowsCodegen } from '@anvil-di/bellows';
 import { bellowsOpenApi } from '@anvil-di/bellows-openapi/unplugin';
 

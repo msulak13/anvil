@@ -181,7 +181,7 @@ As a `postBuild` hook in `anvil-unplugin`:
 
 ```typescript
 // vite.config.ts
-import anvil from '@msulak/anvil-unplugin/vite';
+import anvil from '@anvil-di/anvil-unplugin/vite';
 import { bellowsCodegen } from '@anvil-di/bellows/codegen';
 import { bellowsOpenApi } from '@anvil-di/bellows-openapi/unplugin';
 

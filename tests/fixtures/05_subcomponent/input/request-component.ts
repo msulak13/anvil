@@ -1,4 +1,4 @@
-import { Subcomponent } from "@msulak/anvil";
+import { Subcomponent } from "@anvil-di/anvil";
 import { RequestHandler } from "./request-handler";
 
 @Subcomponent({ modules: [] })

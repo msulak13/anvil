@@ -1,4 +1,4 @@
-import { Component } from "@msulak/anvil";
+import { Component } from "@anvil-di/anvil";
 import { PluginsModule } from "./plugins-module";
 import { Plugin } from "./plugin";
 

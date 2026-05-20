@@ -1,4 +1,4 @@
-import { Component } from "@msulak/anvil";
+import { Component } from "@anvil-di/anvil";
 import { HttpRequest, HttpResponse } from "./http";
 import { RequestComponent } from "./request-component";
 

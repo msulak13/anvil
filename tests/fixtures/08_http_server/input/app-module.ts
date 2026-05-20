@@ -1,4 +1,4 @@
-import { Module, Binds } from "@msulak/anvil";
+import { Module, Binds } from "@anvil-di/anvil";
 import { Logger } from "./logger";
 import { ConsoleLogger } from "./console-logger";
 

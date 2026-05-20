@@ -1,4 +1,4 @@
-import { Module, Provides } from "@msulak/anvil";
+import { Module, Provides } from "@anvil-di/anvil";
 import { HttpRequest } from "./http";
 import { RequestContext } from "./request-context";
 

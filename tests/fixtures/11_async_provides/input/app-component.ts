@@ -1,4 +1,4 @@
-import { Component, Singleton } from "@msulak/anvil";
+import { Component, Singleton } from "@anvil-di/anvil";
 import { ConfigModule } from "./config-module";
 import { DatabaseModule } from "./database-module";
 import { Config } from "./config";

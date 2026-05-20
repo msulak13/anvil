@@ -27,7 +27,7 @@ The parser populates `original = Some(spec)` whenever a `Key` is minted from an 
 
 `Key::Set` represents a `Set<T>` aggregate produced from one or more `@IntoSet @Provides` contributions. The `element` is always a `Key::Class` in v0.1 (no `Set<Set<T>>`-of-`Set` chains in user code). The graph aggregator synthesizes one `Provider::SetMultibinding` binding per element key from the raw `MultibindRole::IntoSet` bindings the parser emits (see [Multibindings](#multibindings) below).
 
-In **M1** the parser stores the *raw import specifier* in `ModulePath` (e.g. `"./heater"`, `"@msulak/anvil"`, `"my-pkg/sub"`). M2's cross-file resolver rewrites these to absolute paths so equivalent imports compare equal. For type identifiers declared in the same file as their reference, the parser uses the sentinel `ModulePath::SAME_FILE` (`"<self>"`); M2 swaps it for the file's actual absolute path.
+In **M1** the parser stores the *raw import specifier* in `ModulePath` (e.g. `"./heater"`, `"@anvil-di/anvil"`, `"my-pkg/sub"`). M2's cross-file resolver rewrites these to absolute paths so equivalent imports compare equal. For type identifiers declared in the same file as their reference, the parser uses the sentinel `ModulePath::SAME_FILE` (`"<self>"`); M2 swaps it for the file's actual absolute path.
 
 ### How a `Key` is minted
 

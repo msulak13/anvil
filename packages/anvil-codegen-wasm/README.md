@@ -1,13 +1,13 @@
-# `@msulak/anvil-codegen-wasm`
+# `@anvil-di/anvil-codegen-wasm`
 
-WASM build of the [`@msulak/anvil`](https://github.com/msulak13/tsdi) codegen pipeline. Same parser, graph builder, validator, and emitter as the native CLI — exactly the Rust source, compiled with `wasm-pack` — running in-process for any host that runs WebAssembly (Node, browsers, Workers, Bun, Deno, StackBlitz).
+WASM build of the [`@anvil-di/anvil`](https://github.com/msulak13/tsdi) codegen pipeline. Same parser, graph builder, validator, and emitter as the native CLI — exactly the Rust source, compiled with `wasm-pack` — running in-process for any host that runs WebAssembly (Node, browsers, Workers, Bun, Deno, StackBlitz).
 
 ## Why
 
-The native [`@msulak/anvil-cli`](../anvil-cli/README.md) is fast, but every invocation still pays a process-spawn cost (~10ms). Inside a bundler's hot path, that's the difference between "imperceptible" and "every save has a noticeable hitch". `@msulak/anvil-codegen-wasm` is a direct function call:
+The native [`@anvil-di/anvil-cli`](../anvil-cli/README.md) is fast, but every invocation still pays a process-spawn cost (~10ms). Inside a bundler's hot path, that's the difference between "imperceptible" and "every save has a noticeable hitch". `@anvil-di/anvil-codegen-wasm` is a direct function call:
 
 ```ts
-import { compile } from "@msulak/anvil-codegen-wasm";
+import { compile } from "@anvil-di/anvil-codegen-wasm";
 
 const result = compile({
   entryPath: "/abs/src/app-component.ts",
@@ -54,7 +54,7 @@ The blob includes the entire pipeline: `oxc_parser`, `oxc_codegen`, `anvil-core`
 
 ## Path conventions
 
-The wasm32 Rust target uses Unix-style path semantics — backslashes are part of filenames, not separators. The WASM compile boundary normalizes Windows-style paths (`C:\Users\foo`) to forward-slash form (`C:/Users/foo`) automatically; the emitted file paths come back in the same form. Hosts running on Windows can convert back to backslashes for `fs.writeFileSync` calls. (The `@msulak/anvil-unplugin` does this transparently.)
+The wasm32 Rust target uses Unix-style path semantics — backslashes are part of filenames, not separators. The WASM compile boundary normalizes Windows-style paths (`C:\Users\foo`) to forward-slash form (`C:/Users/foo`) automatically; the emitted file paths come back in the same form. Hosts running on Windows can convert back to backslashes for `fs.writeFileSync` calls. (The `@anvil-di/anvil-unplugin` does this transparently.)
 
 ## Output equivalence
 
@@ -70,4 +70,4 @@ Both the WASM and native paths emit **byte-identical output** for the same input
 | Install footprint | one of five platform packages (~4MB) | single ~1.4MB .wasm |
 | Reach | linux/macos/windows on x64+arm64 | anywhere V8/wasmtime runs |
 
-Both paths are first-class. `@msulak/anvil-unplugin` defaults to native (faster) and accepts `mode: "wasm"` as an in-process opt-in.
+Both paths are first-class. `@anvil-di/anvil-unplugin` defaults to native (faster) and accepts `mode: "wasm"` as an in-process opt-in.

@@ -59,11 +59,11 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 
 | Directory | npm name | Role |
 |---|---|---|
-| `packages/anvil` | `@msulak/anvil` | Runtime decorator stubs (`@Inject`, `@Provides`, `@Module`, `@Component`, `@Singleton`, `@Binds`, `@Subcomponent`, `@IntoSet`). All no-ops. `@Singleton` has class + method overloads so `@Singleton @Provides` typechecks. |
-| `packages/anvil-unplugin` | `@msulak/anvil-unplugin` | Bundler plugin (vite/rollup/webpack/rspack/esbuild). Runs `anvil build` on `buildStart`; watch mode debounces file changes. `mode: "wasm"` runs codegen in-process via the WASM package. 5 tests, all green. |
-| `packages/anvil-cli` | `@msulak/anvil-cli` | Launcher shim. Resolves the native binary via `optionalDependencies` or the `TSDI_CLI_BIN` env var. |
-| `packages/anvil-cli-<platform>-<arch>` | `@msulak/anvil-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Only win32-x64 committed; others filled by `release-cli.yml`. |
-| `packages/anvil-codegen-wasm` | `@msulak/anvil-codegen-wasm` | WASM build of `crates/tsdi-codegen-wasm`. `wasm-opt = false` — oxc emits `memory.copy` that bundled wasm-opt rejects. 1.4 MB unoptimized is fine. |
+| `packages/anvil` | `@anvil-di/anvil` | Runtime decorator stubs (`@Inject`, `@Provides`, `@Module`, `@Component`, `@Singleton`, `@Binds`, `@Subcomponent`, `@IntoSet`). All no-ops. `@Singleton` has class + method overloads so `@Singleton @Provides` typechecks. |
+| `packages/anvil-unplugin` | `@anvil-di/anvil-unplugin` | Bundler plugin (vite/rollup/webpack/rspack/esbuild). Runs `anvil build` on `buildStart`; watch mode debounces file changes. `mode: "wasm"` runs codegen in-process via the WASM package. 5 tests, all green. |
+| `packages/anvil-cli` | `@anvil-di/anvil-cli` | Launcher shim. Resolves the native binary via `optionalDependencies` or the `TSDI_CLI_BIN` env var. |
+| `packages/anvil-cli-<platform>-<arch>` | `@anvil-di/anvil-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Only win32-x64 committed; others filled by `release-cli.yml`. |
+| `packages/anvil-codegen-wasm` | `@anvil-di/anvil-codegen-wasm` | WASM build of `crates/tsdi-codegen-wasm`. `wasm-opt = false` — oxc emits `memory.copy` that bundled wasm-opt rejects. 1.4 MB unoptimized is fine. |
 | `packages/bellows` | `@anvil-di/bellows` | Runtime types + decorator stubs for NestJS-style controller codegen (`Validator<T>`, `Body<S>`, `Query<S>`, `Params<S>`, `Responds<S>`, `withJsonSchema`, `RouteDefinition`, + 11 Stage-3 decorator stubs). Also exports `PreBuildHook` + `bellowsCodegen()`. Bellows M1+M2. |
 | `packages/bellows-cli` | `@anvil-di/bellows-cli` | Launcher shim for the `anvil-bellows` native binary. Mirrors `anvil-cli`. Env var: `ANVIL_BELLOWS_CLI_BIN`. |
 | `packages/bellows-cli-<platform>-<arch>` | `@anvil-di/bellows-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Filled by CI release workflow. |

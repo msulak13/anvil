@@ -1,4 +1,4 @@
-import { Component } from "@msulak/anvil";
+import { Component } from "@anvil-di/anvil";
 import { Pump } from "./pump";
 import { Heater } from "./heater";
 

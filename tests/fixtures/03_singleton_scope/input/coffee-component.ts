@@ -1,4 +1,4 @@
-import { Component, Singleton } from "@msulak/anvil";
+import { Component, Singleton } from "@anvil-di/anvil";
 import { Pump } from "./pump";
 import { Heater } from "./heater";
 

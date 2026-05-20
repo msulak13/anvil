@@ -257,7 +257,7 @@ Methods are emitted in **topological order with stable ties broken by `Key` lexi
 ### Input
 ```ts
 // src/coffee/heater.ts
-import { Inject, Singleton } from "@msulak/anvil";
+import { Inject, Singleton } from "@anvil-di/anvil";
 @Inject
 @Singleton
 export class Heater {
@@ -266,7 +266,7 @@ export class Heater {
 }
 
 // src/coffee/pump.ts
-import { Inject } from "@msulak/anvil";
+import { Inject } from "@anvil-di/anvil";
 import { Heater } from "./heater";
 @Inject
 export class Pump {
@@ -275,7 +275,7 @@ export class Pump {
 }
 
 // src/coffee/coffee-component.ts
-import { Component, Singleton } from "@msulak/anvil";
+import { Component, Singleton } from "@anvil-di/anvil";
 import { Pump } from "./pump";
 import { Heater } from "./heater";
 @Singleton
