@@ -1,6 +1,6 @@
 # anvil
 
-> **Status:** pre-alpha (M0 scaffolding). Not yet usable.
+> **Status:** pre-alpha (v0.0.x). Core codegen is functional; API is unstable.
 
 A code-generation dependency injection framework for TypeScript, modeled after [Dagger 2](https://dagger.dev/). The codegen toolchain is written in Rust and emits plain `.ts` files — there is **no runtime reflection**, **no `reflect-metadata`**, and the dependency graph is fully validated **at build time**.
 
@@ -17,37 +17,40 @@ The TypeScript DI ecosystem today splits into two camps:
 
 ```
    user .ts files (with @Module/@Inject/@Component decorators)
-                              |
-                              v
-          ┌────────────────────────────────────────┐
-          │   anvil (Rust CLI, built on Oxc)        │
-          │   parse → IR → graph → validate → emit │
-          └────────────────────────────────────────┘
-                              |
-                              v
-        co-located *.anvil.ts files containing the wired graph
-                              |
-                              v
-                  user's tsc compiles everything
+                             |
+                             v
+         ┌────────────────────────────────────────┐
+         │   anvil (Rust CLI, built on Oxc)        │
+         │   parse → IR → graph → validate → emit │
+         └────────────────────────────────────────┘
+                             |
+                             v
+       co-located *.anvil.ts files containing the wired graph
+                             |
+                             v
+                 user's tsc compiles everything
 ```
 
-User decorators from the `anvil` npm package are no-op identity functions; all real wiring happens at codegen time.
+User decorators from the `@anvil-di/anvil` npm package are no-op identity functions; all real wiring happens at codegen time.
 
-## Quickstart (target API for v0.1)
+## Quickstart
+
+```bash
+npm install -D @anvil-di/anvil-cli @anvil-di/anvil
+```
 
 ```ts
 // src/coffee/heater.ts
-import { Inject, Singleton } from "@msulak/anvil";
+import { Inject, Singleton } from "@anvil-di/anvil";
 
 @Inject
 @Singleton
 export class Heater {
-  constructor() {}
   on() { console.log("heating"); }
 }
 
 // src/coffee/pump.ts
-import { Inject } from "@msulak/anvil";
+import { Inject } from "@anvil-di/anvil";
 import { Heater } from "./heater";
 
 @Inject
@@ -57,7 +60,7 @@ export class Pump {
 }
 
 // src/coffee/coffee-component.ts
-import { Component, Singleton } from "@msulak/anvil";
+import { Component, Singleton } from "@anvil-di/anvil";
 import { Pump } from "./pump";
 
 @Singleton
@@ -73,42 +76,103 @@ $ anvil build
 ```
 
 ```ts
-// later, in app code
+// app.ts
 import { createCoffeeShop } from "./coffee/coffee-component.anvil";
 createCoffeeShop().pump().pump();
+```
+
+### Bundler plugin (Vite / Rollup / webpack / esbuild / Rspack)
+
+```bash
+npm install -D @anvil-di/anvil-unplugin
+```
+
+```ts
+// vite.config.ts
+import { anvilPlugin } from "@anvil-di/anvil-unplugin/vite";
+export default { plugins: [anvilPlugin()] };
+```
+
+Pass `mode: "wasm"` to run codegen in-process via `@anvil-di/anvil-codegen-wasm` without a native binary.
+
+## Supported features
+
+| Feature | Decorator(s) |
+| ------- | ------------ |
+| Constructor injection | `@Inject` |
+| Singleton scoping | `@Singleton` |
+| Module factory methods | `@Module` / `@Provides` |
+| Interface aliasing | `@Binds` |
+| Subcomponents | `@Subcomponent` |
+| Set multibindings | `@IntoSet` |
+| Async providers | `async @Provides` returning `Promise<T>` |
+| Subcomponent factory params | method params on `@Subcomponent` factory |
+
+### Bellows — NestJS-style controller codegen
+
+`@anvil-di/bellows` adds a companion pipeline that parses `@Controller` / `@Get` / `@Post` / … decorator files and emits a typed `routes.module.ts` with `safeParse` validation prologues, plus an optional OpenAPI spec.
+
+```bash
+npm install -D @anvil-di/bellows-cli @anvil-di/bellows
+anvil-bellows --entry src/controllers
 ```
 
 ## Repository layout
 
 ```
 crates/
-  anvil-core/      # IR, dependency graph, validation rules
-  anvil-parser/    # TypeScript parser + decorator extractor (Oxc, M1+)
-  anvil-codegen/   # TS emitter (M4+)
-  anvil-cli/       # `anvil` binary
+  anvil-core/              # IR, dependency graph, validation rules
+  anvil-parser/            # TypeScript parser + decorator extractor (Oxc)
+  anvil-codegen/           # TS emitter
+  anvil-codegen-wasm/      # WASM build of codegen (for unplugin wasm mode)
+  anvil-cli/               # `anvil` binary (build/check/watch/explain)
+  anvil-bellows/           # `anvil-bellows` binary — controller route emitter
+  anvil-bellows-openapi/   # `anvil-bellows-openapi` binary — OpenAPI spec emitter
 packages/
-  anvil/          # runtime: no-op decorator stubs + Token<T>
+  anvil/                   # @anvil-di/anvil — no-op decorator stubs + Token<T>
+  anvil-unplugin/          # @anvil-di/anvil-unplugin — bundler plugin
+  anvil-cli/               # @anvil-di/anvil-cli — native binary launcher shim
+  anvil-codegen-wasm/      # @anvil-di/anvil-codegen-wasm — WASM codegen
+  bellows/                 # @anvil-di/bellows — runtime types + controller stubs
+  bellows-cli/             # @anvil-di/bellows-cli — bellows binary launcher shim
+  bellows-openapi/         # @anvil-di/bellows-openapi — PostBuildHook for OpenAPI
+  bellows-openapi-cli/     # @anvil-di/bellows-openapi-cli — openapi binary shim
+  anvil-cli-<os>-<arch>/           # @anvil-di/anvil-cli-* — per-platform native binaries
+  bellows-cli-<os>-<arch>/         # @anvil-di/bellows-cli-* — per-platform native binaries
+  bellows-openapi-cli-<os>-<arch>/ # per-platform native binaries
 docs/
-  architecture.md, ir.md, codegen.md, validation.md, cli.md
+  architecture.md, ir.md, codegen.md, validation.md, cli.md, bellows-build-plan.md
   adr/            # Architecture Decision Records
-tests/fixtures/   # golden-file tests for the codegen pipeline (M3+)
-examples/         # working sample apps, exercised in CI (M4+)
+tests/fixtures/   # golden-file tests for the codegen pipeline
+examples/         # working sample apps, exercised in CI
 ```
 
 See [`docs/architecture.md`](./docs/architecture.md) for the full pipeline and [`docs/adr/`](./docs/adr/) for the design decisions.
 
 ## Roadmap
 
-| Milestone | Scope                                                        |
-| --------- | ------------------------------------------------------------ |
-| M0        | Workspace scaffolding + CI **(current)**                     |
-| M1        | Stage-3 decorator parsing into IR                            |
-| M2        | Cross-file symbol resolver (tsconfig-aware)                  |
-| M3        | Graph construction + validation (missing/cycle/duplicate)    |
-| M4        | First codegen: `@Component` + `@Module` + `@Provides`        |
-| M5        | CLI: `build` / `watch` / `check` / `explain`                 |
-| **M6**    | `@Inject` ctor + `@Singleton` — **v0.1 release**             |
-| M7+       | `@Binds`, `Token<T>`, subcomponents, multibindings, unplugin |
+| Milestone | Scope | Status |
+| --------- | ----- | ------ |
+| M0  | Workspace scaffolding + CI | done |
+| M1  | Stage-3 decorator parsing into IR | done |
+| M2  | Cross-file symbol resolver (tsconfig-aware) | done |
+| M3  | Graph construction + validation (missing/cycle/duplicate) | done |
+| M4  | First codegen: `@Component` + `@Module` + `@Provides` | done |
+| M5  | CLI: `build` / `watch` / `check` / `explain` | done |
+| M6  | `@Inject` ctor + `@Singleton` — **v0.1 release** | done |
+| M7  | `@Binds` interface aliasing | done |
+| M8  | `@Subcomponent` support | done |
+| M9  | `@IntoSet` set multibindings | done |
+| M10 | `ModulePath.original`: preserve bare node_modules specifiers | done |
+| M11 | Subcomponent factory params; `prune_unreachable_bindings` | done |
+| M12 | Async `@Provides`: `Promise<T>` return, `_resolve` phase | done |
+| M13 | WASM build; `anvil-unplugin` wasm mode | done |
+| Bellows M1 | `@anvil-di/bellows` runtime types + Stage-3 controller stubs | done |
+| Bellows M2 | `anvil-bellows` CLI — static `routes.module.ts` emitter | done |
+| Bellows M3 | Type-driven `safeParse` validation prologues | done |
+| Bellows M4 | `anvil-unplugin` `PreBuildHook`/`PostBuildHook` pipeline | done |
+| Bellows M5 | `anvil-bellows-openapi` CLI — OpenAPI spec generation | done |
+| M14+ | Token bindings, `@Named`, optional injection, v0.1 stable | planned |
 
 ## Building from source
 
@@ -116,10 +180,10 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full pipeline and [
 cargo test --workspace      # Rust unit + snapshot + integration tests
 pnpm install
 pnpm -r test                # TypeScript runtime tests
-pnpm -r build               # Build the runtime package
+pnpm -r build               # Build all npm packages
 ```
 
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full developer workflow and the testing pyramid.
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full developer workflow and testing pyramid.
 
 ## License
 
