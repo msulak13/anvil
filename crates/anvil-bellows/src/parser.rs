@@ -143,6 +143,29 @@ pub struct Route {
     pub deprecated: bool,
     /// Additional responses from `@Returns(status, schema)` decorators.
     pub extra_responses: Vec<ExtraResponse>,
+    /// Ordered middleware chain from `@Middleware(...)` — class-level entries
+    /// first, then method-level, in source order.
+    pub middleware: Vec<MiddlewareRef>,
+}
+
+/// Where an imported identifier comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportOrigin {
+    /// Resolved absolute path from a relative import specifier (`"./foo"`).
+    Relative(PathBuf),
+    /// A bare package specifier (e.g. `"express-rate-limit"`).
+    Package(String),
+}
+
+/// A middleware function referenced via `@Middleware(fn)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiddlewareRef {
+    /// The identifier used to reference the middleware function.
+    pub name: String,
+    /// Where `name` is imported from, if it could be resolved from an
+    /// import statement in the controller file. `None` means it's assumed
+    /// to be declared or re-exported by the controller file itself.
+    pub origin: Option<ImportOrigin>,
 }
 
 /// A single constructor parameter on a `@Controller` class.
@@ -295,7 +318,8 @@ fn parse_source(
             continue;
         };
 
-        let (tags, security) = extract_class_metadata(&class.decorators);
+        let (tags, security, class_middleware) =
+            extract_class_metadata(&class.decorators, &import_map, file_path, &mut diagnostics);
         let mut routes: Vec<Route> = Vec::new();
         let mut ctor_params: Vec<CtorParam> = Vec::new();
 
@@ -333,6 +357,7 @@ fn parse_source(
             let mut route_opt: Option<Route> = None;
             let mut deprecated = false;
             let mut extra_responses: Vec<ExtraResponse> = Vec::new();
+            let mut method_middleware: Vec<MiddlewareRef> = Vec::new();
 
             for dec in &m.decorators {
                 if let Some(route) = try_extract_route(
@@ -349,12 +374,21 @@ fn parse_source(
                     deprecated = true;
                 } else if let Some(er) = try_extract_returns(dec) {
                     extra_responses.push(er);
+                } else if let Some(mut mw) =
+                    try_extract_middleware(dec, &import_map, file_path, &mut diagnostics)
+                {
+                    method_middleware.append(&mut mw);
                 }
             }
 
             if let Some(mut route) = route_opt {
                 route.deprecated = deprecated;
                 route.extra_responses = extra_responses;
+                route.middleware = class_middleware
+                    .iter()
+                    .cloned()
+                    .chain(method_middleware)
+                    .collect();
                 routes.push(route);
             }
         }
@@ -383,25 +417,25 @@ fn parse_source(
     )
 }
 
-/// Walk import declarations in `stmts` and build a map from local name to the
-/// absolute path of the source module (for relative specifiers only).
-fn collect_import_map(stmts: &[Statement<'_>], file_dir: &Path) -> HashMap<String, PathBuf> {
-    let mut map: HashMap<String, PathBuf> = HashMap::new();
+/// Walk import declarations in `stmts` and build a map from local name to its
+/// import origin (relative source path, or bare package specifier).
+fn collect_import_map(stmts: &[Statement<'_>], file_dir: &Path) -> HashMap<String, ImportOrigin> {
+    let mut map: HashMap<String, ImportOrigin> = HashMap::new();
     for stmt in stmts {
         let Statement::ImportDeclaration(import) = stmt else {
             continue;
         };
         let raw_spec = import.source.value.as_str();
-        // Only resolve relative imports; skip package names.
-        if !raw_spec.starts_with("./") && !raw_spec.starts_with("../") {
-            continue;
-        }
-        // Strip .js / .ts extension for path resolution then add .ts.
-        let stem = raw_spec
-            .strip_suffix(".js")
-            .or_else(|| raw_spec.strip_suffix(".ts"))
-            .unwrap_or(raw_spec);
-        let abs = file_dir.join(format!("{stem}.ts"));
+        let origin = if raw_spec.starts_with("./") || raw_spec.starts_with("../") {
+            // Strip .js / .ts extension for path resolution then add .ts.
+            let stem = raw_spec
+                .strip_suffix(".js")
+                .or_else(|| raw_spec.strip_suffix(".ts"))
+                .unwrap_or(raw_spec);
+            ImportOrigin::Relative(file_dir.join(format!("{stem}.ts")))
+        } else {
+            ImportOrigin::Package(raw_spec.to_owned())
+        };
         let Some(specifiers) = &import.specifiers else {
             continue;
         };
@@ -415,7 +449,7 @@ fn collect_import_map(stmts: &[Statement<'_>], file_dir: &Path) -> HashMap<Strin
                     s.local.name.as_str().to_owned()
                 }
             };
-            map.insert(local_name, abs.clone());
+            map.insert(local_name, origin.clone());
         }
     }
     map
@@ -427,7 +461,7 @@ fn collect_import_map(stmts: &[Statement<'_>], file_dir: &Path) -> HashMap<Strin
 /// are recognized. Wrapper types like `Body<S>` and primitives are skipped.
 fn extract_ctor_param(
     param: &FormalParameter<'_>,
-    import_map: &HashMap<String, PathBuf>,
+    import_map: &HashMap<String, ImportOrigin>,
 ) -> Option<CtorParam> {
     let name = match &param.pattern {
         BindingPattern::BindingIdentifier(id) => id.name.as_str().to_owned(),
@@ -444,7 +478,10 @@ fn extract_ctor_param(
         _ => {}
     }
     let type_name = type_name.to_owned();
-    let abs_source = import_map.get(&type_name).cloned();
+    let abs_source = import_map.get(&type_name).and_then(|o| match o {
+        ImportOrigin::Relative(p) => Some(p.clone()),
+        ImportOrigin::Package(_) => None,
+    });
     Some(CtorParam {
         name,
         type_name,
@@ -498,14 +535,26 @@ fn try_extract_route<'a>(
         return_kind,
         deprecated: false, // filled in by caller after scanning all decorators
         extra_responses: vec![], // ditto
+        middleware: vec![], // ditto
     })
 }
 
-/// Extract `@Tag("name")` and `@Security("scheme")` from class decorators.
-fn extract_class_metadata(decorators: &[Decorator<'_>]) -> (Vec<String>, Vec<String>) {
+/// Extract `@Tag("name")`, `@Security("scheme")`, and `@Middleware(...)` from
+/// class decorators.
+fn extract_class_metadata(
+    decorators: &[Decorator<'_>],
+    import_map: &HashMap<String, ImportOrigin>,
+    file_path: &str,
+    diagnostics: &mut Vec<ParseDiagnostic>,
+) -> (Vec<String>, Vec<String>, Vec<MiddlewareRef>) {
     let mut tags = Vec::new();
     let mut security = Vec::new();
+    let mut middleware = Vec::new();
     for dec in decorators {
+        if let Some(mut refs) = try_extract_middleware(dec, import_map, file_path, diagnostics) {
+            middleware.append(&mut refs);
+            continue;
+        }
         let Expression::CallExpression(call) = &dec.expression else {
             continue;
         };
@@ -529,7 +578,39 @@ fn extract_class_metadata(decorators: &[Decorator<'_>]) -> (Vec<String>, Vec<Str
             _ => {}
         }
     }
-    (tags, security)
+    (tags, security, middleware)
+}
+
+/// Try to extract a `@Middleware(fn1, fn2, ...)` decorator's identifier
+/// arguments, resolving each to its import origin when possible.
+fn try_extract_middleware(
+    dec: &Decorator<'_>,
+    import_map: &HashMap<String, ImportOrigin>,
+    file_path: &str,
+    diagnostics: &mut Vec<ParseDiagnostic>,
+) -> Option<Vec<MiddlewareRef>> {
+    let Expression::CallExpression(call) = &dec.expression else {
+        return None;
+    };
+    if decorator_ident_name(&call.callee).as_deref() != Some("Middleware") {
+        return None;
+    }
+    let mut refs = Vec::new();
+    for arg in &call.arguments {
+        if let Argument::Identifier(id) = arg {
+            let name = id.name.to_string();
+            let origin = import_map.get(&name).cloned();
+            refs.push(MiddlewareRef { name, origin });
+        } else {
+            diagnostics.push(ParseDiagnostic {
+                file: file_path.to_owned(),
+                decorator: "Middleware".to_owned(),
+                found: describe_arg(arg),
+                hint: "use a bare identifier imported (or declared) at module scope".to_owned(),
+            });
+        }
+    }
+    Some(refs)
 }
 
 /// Return true when `@Deprecated` is present (with or without arguments).
@@ -974,5 +1055,98 @@ export class UserController {
                 is_async: true
             }
         );
+    }
+
+    #[test]
+    fn class_and_method_middleware_ordered_and_combined() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get, Middleware } from "@anvil-di/anvil-bellows";
+import { requireAuth } from "./auth";
+
+@Controller("/admin")
+@Middleware(requireAuth)
+export class AdminController {
+  @Get("/stats")
+  @Middleware(requireAdmin)
+  stats() {}
+
+  @Get("/ping")
+  ping() {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let ctrl = &file.unwrap().controllers[0];
+
+        // Class-level middleware runs first, then method-level, in source order.
+        let stats = &ctrl.routes[0];
+        assert_eq!(
+            stats
+                .middleware
+                .iter()
+                .map(|m| m.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["requireAuth", "requireAdmin"]
+        );
+        assert!(matches!(
+            stats.middleware[0].origin,
+            Some(ImportOrigin::Relative(_))
+        ));
+        // `requireAdmin` isn't imported anywhere in this file.
+        assert_eq!(stats.middleware[1].origin, None);
+
+        // Class-level middleware applies even to routes with no method-level `@Middleware`.
+        let ping = &ctrl.routes[1];
+        assert_eq!(
+            ping.middleware
+                .iter()
+                .map(|m| m.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["requireAuth"]
+        );
+    }
+
+    #[test]
+    fn middleware_resolves_package_import() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get, Middleware } from "@anvil-di/anvil-bellows";
+import rateLimit from "express-rate-limit";
+
+@Controller("/api")
+export class ApiController {
+  @Get("/")
+  @Middleware(rateLimit)
+  list() {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert_eq!(
+            route.middleware[0].origin,
+            Some(ImportOrigin::Package("express-rate-limit".into()))
+        );
+    }
+
+    #[test]
+    fn non_identifier_middleware_arg_emits_diagnostic() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get, Middleware } from "@anvil-di/anvil-bellows";
+
+@Controller("/api")
+export class ApiController {
+  @Get("/")
+  @Middleware("not-an-identifier")
+  list() {}
+}
+"#,
+        );
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].decorator, "Middleware");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert!(route.middleware.is_empty());
     }
 }
