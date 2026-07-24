@@ -149,6 +149,8 @@ importers:
 
   packages/anvil-cli-darwin-arm64: {}
 
+  packages/anvil-cli-darwin-x64: {}
+
   packages/anvil-cli-linux-arm64: {}
 
   packages/anvil-cli-linux-x64: {}
@@ -194,9 +196,6 @@ importers:
       '@anvil-di/bellows-cli':
         specifier: workspace:*
         version: link:../bellows-cli
-      express:
-        specifier: '>=4'
-        version: 5.2.1
     devDependencies:
       '@types/express':
         specifier: ^5.0.0
@@ -204,6 +203,9 @@ importers:
       '@types/json-schema':
         specifier: ^7.0.15
         version: 7.0.15
+      express:
+        specifier: ^5.0.0
+        version: 5.2.1
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -240,6 +242,8 @@ importers:
         version: link:../bellows-cli-win32-x64
 
   packages/bellows-cli-darwin-arm64: {}
+
+  packages/bellows-cli-darwin-x64: {}
 
   packages/bellows-cli-linux-arm64: {}
 
@@ -283,6 +287,8 @@ importers:
         version: link:../bellows-openapi-cli-win32-x64
 
   packages/bellows-openapi-cli-darwin-arm64: {}
+
+  packages/bellows-openapi-cli-darwin-x64: {}
 
   packages/bellows-openapi-cli-linux-arm64: {}
 

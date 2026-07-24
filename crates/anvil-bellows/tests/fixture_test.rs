@@ -89,6 +89,7 @@ fn write_stubs(root: &Path) {
         "export interface RouteDefinition {\n\
            method: \"GET\" | \"POST\" | \"PUT\" | \"DELETE\" | \"PATCH\";\n\
            path: string;\n\
+           middleware?: ((req: any, res: any, next: any) => void)[];\n\
            handler: (req: any, res: any) => void | Promise<void>;\n\
          }\n\
          export type Body<S> = S extends { safeParse(x: unknown): { success: true; data: infer T } | any } ? T : never;\n\
@@ -326,4 +327,47 @@ fn fixture_03_schema_params_safe_parse_calls() {
     assert!(produced.contains("OrderParams.safeParse(req.params)"));
     assert!(produced.contains("OrderSchema.safeParse(_result)"));
     assert!(produced.contains("res.json(_validated.data)"));
+}
+
+// ---------------------------------------------------------------------------
+// Fixture 04 — @Middleware chains: class-level + method-level, imported from
+//              another file and declared in the controller file itself.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixture_04_middleware_snapshot() {
+    run_fixture("04_middleware");
+}
+
+#[test]
+fn fixture_04_middleware_tsc() {
+    let tsc = tsc_bin();
+    if !tsc.exists() {
+        eprintln!("skipping tsc check — tsc not found at {}", tsc.display());
+        return;
+    }
+
+    let (tmp, _) = run_fixture("04_middleware");
+
+    Command::new(tsc)
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .current_dir(tmp.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn fixture_04_middleware_ordering() {
+    let (_tmp, output_path) = run_fixture("04_middleware");
+    let produced = std::fs::read_to_string(&output_path).unwrap();
+    // Class-level middleware applies to every route.
+    assert!(produced.contains("middleware: [requireAuth],"));
+    // Class-level middleware runs before method-level middleware, in
+    // declaration order.
+    assert!(produced.contains("requireAuth,\n\t\t\t\trequireAdmin,\n\t\t\t\tauditLog"));
+    // Middleware imported from another file is imported into routes.module.ts.
+    assert!(produced.contains("import { requireAdmin, requireAuth } from \"./auth-middleware\";"));
+    // Middleware declared in the controller file itself is imported alongside it.
+    assert!(produced.contains("import { AdminController, auditLog } from \"./admin-controller\";"));
 }

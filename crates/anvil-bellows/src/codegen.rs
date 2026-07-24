@@ -17,7 +17,7 @@ use oxc_span::SourceType;
 use thiserror::Error;
 
 use crate::parser::{
-    Controller, ControllerFile, CtorParam, HttpMethod, ParamKind, ReturnKind, Route,
+    Controller, ControllerFile, CtorParam, HttpMethod, ImportOrigin, ParamKind, ReturnKind, Route,
 };
 
 /// Banner prepended to every generated file.
@@ -73,6 +73,7 @@ pub fn emit_routes_module(
 }
 
 /// Build the raw TypeScript source string (before oxc canonicalization).
+#[allow(clippy::too_many_lines)]
 fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
     let mut s = String::new();
 
@@ -98,6 +99,11 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
             imports.push(ctrl.class_name.clone());
             for route in &ctrl.routes {
                 collect_schema_refs(route, &mut imports);
+                for mw in &route.middleware {
+                    if mw.origin.is_none() && !imports.contains(&mw.name) {
+                        imports.push(mw.name.clone());
+                    }
+                }
             }
         }
         imports.dedup();
@@ -136,6 +142,37 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
         writeln!(s, "import type {{ {} }} from \"{spec}\";", names.join(", ")).unwrap();
     }
 
+    // Emit imports for middleware functions that aren't declared in the
+    // controller's own file — grouped by resolved specifier (relative file or
+    // bare package), one import per specifier.
+    let mut middleware_imports: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for file in files {
+        let ctrl_spec = import_specifier(out_dir, &file.source_path);
+        for ctrl in &file.controllers {
+            for route in &ctrl.routes {
+                for mw in &route.middleware {
+                    let spec = match &mw.origin {
+                        Some(ImportOrigin::Relative(abs)) => import_specifier(out_dir, abs),
+                        Some(ImportOrigin::Package(pkg)) => pkg.clone(),
+                        None => continue, // declared in the controller file — handled above
+                    };
+                    if spec == ctrl_spec {
+                        continue;
+                    }
+                    middleware_imports
+                        .entry(spec)
+                        .or_default()
+                        .push(mw.name.clone());
+                }
+            }
+        }
+    }
+    for (spec, mut names) in middleware_imports {
+        names.sort();
+        names.dedup();
+        writeln!(s, "import {{ {} }} from \"{spec}\";", names.join(", ")).unwrap();
+    }
+
     s.push('\n');
     s.push_str("@Module\n");
     s.push_str("export class RoutesModule {\n");
@@ -160,10 +197,17 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
                 let path = &route.path;
 
                 let handler_body = emit_handler(&param_name, &route.handler_name, route);
+                let middleware_field = if route.middleware.is_empty() {
+                    String::new()
+                } else {
+                    let names: Vec<&str> =
+                        route.middleware.iter().map(|m| m.name.as_str()).collect();
+                    format!("\n      middleware: [{}],", names.join(", "))
+                };
 
                 writeln!(
                     s,
-                    "  @IntoSet @Provides\n  static {method_name}({param_name}: {class_name}): RouteDefinition {{\n    return {{\n      method: \"{http_verb}\",\n      path: \"{path}\",\n      handler: {handler_body},\n    }};\n  }}"
+                    "  @IntoSet @Provides\n  static {method_name}({param_name}: {class_name}): RouteDefinition {{\n    return {{\n      method: \"{http_verb}\",\n      path: \"{path}\",{middleware_field}\n      handler: {handler_body},\n    }};\n  }}"
                 )
                 .unwrap();
             }
@@ -734,6 +778,7 @@ mod tests {
                         return_kind: ReturnKind::Void { is_async: false },
                         deprecated: false,
                         extra_responses: vec![],
+                        middleware: vec![],
                     })
                     .collect(),
             }],
@@ -762,6 +807,7 @@ mod tests {
                         return_kind,
                         deprecated: false,
                         extra_responses: vec![],
+                        middleware: vec![],
                     })
                     .collect(),
             }],
@@ -905,5 +951,57 @@ mod tests {
         assert!(result.contains("(req, res) => userController.list(req, res)"));
         // No safeParse.
         assert!(!result.contains("safeParse"));
+    }
+
+    #[test]
+    fn no_middleware_field_when_empty() {
+        let files = vec![make_file(
+            "/project/src/user-controller.ts",
+            "UserController",
+            vec![("/users/:id", HttpMethod::Get, "byId")],
+        )];
+        let output_path = Path::new("/project/src/routes.module.ts");
+        let result = emit_routes_module(&files, output_path, "0.0.1").unwrap();
+        assert!(!result.contains("middleware"));
+    }
+
+    #[test]
+    fn emits_middleware_array_and_imports() {
+        use crate::parser::{ImportOrigin, MiddlewareRef};
+
+        let mut file = make_file(
+            "/project/src/admin-controller.ts",
+            "AdminController",
+            vec![("/admin", HttpMethod::Get, "dashboard")],
+        );
+        file.controllers[0].routes[0].middleware = vec![
+            MiddlewareRef {
+                name: "requireAuth".into(),
+                origin: Some(ImportOrigin::Relative(PathBuf::from(
+                    "/project/src/auth-middleware.ts",
+                ))),
+            },
+            MiddlewareRef {
+                name: "auditLog".into(),
+                origin: None,
+            },
+            MiddlewareRef {
+                name: "rateLimit".into(),
+                origin: Some(ImportOrigin::Package("express-rate-limit".into())),
+            },
+        ];
+        let output_path = Path::new("/project/src/routes.module.ts");
+        let result = emit_routes_module(&[file], output_path, "0.0.1").unwrap();
+
+        assert!(result.contains("import { requireAuth } from \"./auth-middleware\";"));
+        assert!(result.contains("import { rateLimit } from \"express-rate-limit\";"));
+        // `auditLog` has no resolvable origin — assumed declared in the controller file.
+        assert!(
+            result.contains("import { AdminController, auditLog } from \"./admin-controller\";")
+        );
+        assert!(result.contains("requireAuth"));
+        assert!(result.contains("auditLog"));
+        assert!(result.contains("rateLimit"));
+        assert!(result.contains("middleware"));
     }
 }
