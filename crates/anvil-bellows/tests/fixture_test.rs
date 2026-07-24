@@ -86,9 +86,22 @@ fn write_stubs(root: &Path) {
     std::fs::write(
         bellows.join("index.ts"),
         // handler uses `any` so generated safeParse/res.json calls type-check.
-        "export interface RouteDefinition {\n\
+        "export interface AuthnResult<U = unknown> {\n\
+           identified: boolean;\n\
+           user?: U;\n\
+         }\n\
+         export interface AuthnService<U = unknown, Scheme extends string = never> {\n\
+           identify(req: any): AuthnResult<U> | Promise<AuthnResult<U>>;\n\
+         }\n\
+         export type AuthzDecision = \"allow\" | \"deny\" | \"next\";\n\
+         export interface AuthzService {\n\
+           authorize(req: any, user: unknown): AuthzDecision | Promise<AuthzDecision>;\n\
+         }\n\
+         export interface RouteDefinition {\n\
            method: \"GET\" | \"POST\" | \"PUT\" | \"DELETE\" | \"PATCH\";\n\
            path: string;\n\
+           authn?: AuthnService[];\n\
+           authz?: AuthzService[];\n\
            middleware?: ((req: any, res: any, next: any) => void)[];\n\
            handler: (req: any, res: any) => void | Promise<void>;\n\
          }\n\
@@ -103,6 +116,8 @@ fn write_stubs(root: &Path) {
          export const Delete = (..._: any[]): any => {};\n\
          export const Patch = (..._: any[]): any => {};\n\
          export const Middleware = (..._: any[]): any => {};\n\
+         export const Authn = (..._: any[]): any => {};\n\
+         export const Authz = (..._: any[]): any => {};\n\
          export const Tag = (..._: any[]): any => {};\n\
          export const Returns = (..._: any[]): any => {};\n\
          export const Security = (..._: any[]): any => {};\n\
@@ -370,4 +385,48 @@ fn fixture_04_middleware_ordering() {
     assert!(produced.contains("import { requireAdmin, requireAuth } from \"./auth-middleware\";"));
     // Middleware declared in the controller file itself is imported alongside it.
     assert!(produced.contains("import { AdminController, auditLog } from \"./admin-controller\";"));
+}
+
+// ---------------------------------------------------------------------------
+// Fixture 05 — @Authn/@Authz: class-level authn cascade + method-level authz
+//              cascade, DI-injected extra params, cross-file scheme literal.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixture_05_authn_authz_snapshot() {
+    run_fixture("05_authn_authz");
+}
+
+#[test]
+fn fixture_05_authn_authz_tsc() {
+    let tsc = tsc_bin();
+    if !tsc.exists() {
+        eprintln!("skipping tsc check — tsc not found at {}", tsc.display());
+        return;
+    }
+
+    let (tmp, _) = run_fixture("05_authn_authz");
+
+    Command::new(tsc)
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .current_dir(tmp.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn fixture_05_authn_authz_di_params_and_fields() {
+    let (_tmp, output_path) = run_fixture("05_authn_authz");
+    let produced = std::fs::read_to_string(&output_path).unwrap();
+
+    // Class-level @Authn applies to every route on the controller.
+    assert!(produced.contains("authn: [sessionAuthn]"));
+    // Method-level @Authz applies only to `stats`.
+    assert!(produced.contains("authz: [roleAuthz]"));
+    // Extra DI params on the provider methods.
+    assert!(produced.contains("sessionAuthn: SessionAuthn"));
+    assert!(produced.contains("roleAuthz: RoleAuthz"));
+    // Both service classes are type-only imported from the same file.
+    assert!(produced.contains("import type { RoleAuthz, SessionAuthn } from \"./auth-services\";"));
 }

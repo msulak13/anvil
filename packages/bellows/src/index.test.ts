@@ -20,6 +20,7 @@ import {
   Tag,
 } from "./decorators.js";
 import { bellowsRoutes, type RouteDefinition } from "./routes.js";
+import type { AuthnService, AuthzService } from "./authz.js";
 
 // --- Validator<T> structural compatibility ---
 
@@ -281,6 +282,252 @@ describe("bellowsRoutes", () => {
       await fetch(`${url}/x`);
       await new Promise((resolve) => setTimeout(resolve, 10));
       expect(calls).toEqual(["handler", "onResponse"]);
+    } finally {
+      await close();
+    }
+  });
+});
+
+// --- bellowsRoutes: authn/authz cascade ---
+
+describe("bellowsRoutes authn/authz", () => {
+  const identify =
+    (identified: boolean, user?: unknown): AuthnService["identify"] =>
+    () => (identified ? { identified: true, user } : { identified: false });
+
+  const authorize =
+    (decision: "allow" | "deny" | "next"): AuthzService["authorize"] =>
+    () => decision;
+
+  it("no authn/authz declared: request passes through unchanged", async () => {
+    const routes: RouteDefinition[] = [
+      { method: "GET", path: "/x", handler: (_req, res) => res.json({ ok: true }) },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(200);
+    } finally {
+      await close();
+    }
+  });
+
+  it("authn declared, none identify: 401, handler not called", async () => {
+    let handlerCalled = false;
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        authn: [{ identify: identify(false) }],
+        handler: (_req, res) => {
+          handlerCalled = true;
+          res.json({ ok: true });
+        },
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(401);
+      expect(handlerCalled).toBe(false);
+    } finally {
+      await close();
+    }
+  });
+
+  it("authn declared, first service identifies: handler runs, later services skipped", async () => {
+    const calls: string[] = [];
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        authn: [
+          {
+            identify: () => {
+              calls.push("first");
+              return { identified: true, user: { id: "u1" } };
+            },
+          },
+          {
+            identify: () => {
+              calls.push("second");
+              return { identified: true };
+            },
+          },
+        ],
+        handler: (_req, res) => res.json({ ok: true }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(200);
+      expect(calls).toEqual(["first"]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("authz declared, none allow: 403, handler not called", async () => {
+    let handlerCalled = false;
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        authz: [{ authorize: authorize("next") }],
+        handler: (_req, res) => {
+          handlerCalled = true;
+          res.json({ ok: true });
+        },
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(403);
+      expect(handlerCalled).toBe(false);
+    } finally {
+      await close();
+    }
+  });
+
+  it("authz declared, a service allows: handler runs", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        authz: [{ authorize: authorize("next") }, { authorize: authorize("allow") }],
+        handler: (_req, res) => res.json({ ok: true }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(200);
+    } finally {
+      await close();
+    }
+  });
+
+  it("authz declared, a service denies: 403 without consulting later services", async () => {
+    const calls: string[] = [];
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        authz: [
+          {
+            authorize: () => {
+              calls.push("first");
+              return "deny";
+            },
+          },
+          {
+            authorize: () => {
+              calls.push("second");
+              return "allow";
+            },
+          },
+        ],
+        handler: (_req, res) => res.json({ ok: true }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(403);
+      expect(calls).toEqual(["first"]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("authn + authz both declared: authz only runs after authn succeeds, sees the identified user", async () => {
+    let seenUser: unknown;
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        authn: [{ identify: identify(true, { id: "u1" }) }],
+        authz: [
+          {
+            authorize: (_req, user) => {
+              seenUser = user;
+              return "allow";
+            },
+          },
+        ],
+        handler: (_req, res) => res.json({ ok: true }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(200);
+      expect(seenUser).toEqual({ id: "u1" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("authn + authz both declared, authn fails: authz never runs, 401", async () => {
+    let authzCalled = false;
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        authn: [{ identify: identify(false) }],
+        authz: [
+          {
+            authorize: () => {
+              authzCalled = true;
+              return "allow";
+            },
+          },
+        ],
+        handler: (_req, res) => res.json({ ok: true }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(401);
+      expect(authzCalled).toBe(false);
+    } finally {
+      await close();
+    }
+  });
+
+  it("runs authn/authz before route middleware", async () => {
+    const calls: string[] = [];
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        authn: [
+          {
+            identify: () => {
+              calls.push("authn");
+              return { identified: true };
+            },
+          },
+        ],
+        middleware: [
+          (_req, _res, next) => {
+            calls.push("middleware");
+            next();
+          },
+        ],
+        handler: (_req, res) => {
+          calls.push("handler");
+          res.json({ ok: true });
+        },
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      await fetch(`${url}/x`);
+      expect(calls).toEqual(["authn", "middleware", "handler"]);
     } finally {
       await close();
     }

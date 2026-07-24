@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
     Argument, BindingPattern, ClassElement, Declaration, Decorator, Expression, FormalParameter,
-    ImportDeclarationSpecifier, MethodDefinitionKind, PropertyKey, Statement, TSType, TSTypeName,
-    TSTypeQueryExprName,
+    ImportDeclarationSpecifier, MethodDefinitionKind, PropertyKey, Statement, TSLiteral, TSType,
+    TSTypeName, TSTypeQueryExprName,
 };
 use oxc_parser::Parser;
 use oxc_span::SourceType;
@@ -146,6 +146,12 @@ pub struct Route {
     /// Ordered middleware chain from `@Middleware(...)` — class-level entries
     /// first, then method-level, in source order.
     pub middleware: Vec<MiddlewareRef>,
+    /// Ordered authentication cascade from `@Authn(...)` — class-level entries
+    /// first, then method-level, in source order.
+    pub authn: Vec<AuthRef>,
+    /// Ordered authorization cascade from `@Authz(...)` — class-level entries
+    /// first, then method-level, in source order.
+    pub authz: Vec<AuthRef>,
 }
 
 /// Where an imported identifier comes from.
@@ -166,6 +172,23 @@ pub struct MiddlewareRef {
     /// import statement in the controller file. `None` means it's assumed
     /// to be declared or re-exported by the controller file itself.
     pub origin: Option<ImportOrigin>,
+}
+
+/// A service class referenced via `@Authn(...)` or `@Authz(...)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthRef {
+    /// The class name used to reference the service.
+    pub name: String,
+    /// Where `name` is imported from, if it could be resolved from an
+    /// import statement in the controller file. `None` means it's assumed
+    /// to be declared or re-exported by the controller file itself.
+    pub origin: Option<ImportOrigin>,
+    /// For `@Authn` refs only: the `OpenAPI` security-scheme key read directly
+    /// off the class's `implements AuthnService<U, "scheme">` clause. `None`
+    /// when the class can't be resolved (e.g. a package import) or the
+    /// literal isn't present in that exact shape — this only affects `OpenAPI`
+    /// visibility, never the runtime auth check. Always `None` for `@Authz`.
+    pub scheme: Option<String>,
 }
 
 /// A single constructor parameter on a `@Controller` class.
@@ -276,7 +299,7 @@ pub fn parse_entry(
 }
 
 /// Parse a single TypeScript source string.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::similar_names)]
 fn parse_source(
     source: &str,
     file_path: &str,
@@ -318,7 +341,7 @@ fn parse_source(
             continue;
         };
 
-        let (tags, security, class_middleware) =
+        let class_meta =
             extract_class_metadata(&class.decorators, &import_map, file_path, &mut diagnostics);
         let mut routes: Vec<Route> = Vec::new();
         let mut ctor_params: Vec<CtorParam> = Vec::new();
@@ -358,6 +381,8 @@ fn parse_source(
             let mut deprecated = false;
             let mut extra_responses: Vec<ExtraResponse> = Vec::new();
             let mut method_middleware: Vec<MiddlewareRef> = Vec::new();
+            let mut method_authn: Vec<AuthRef> = Vec::new();
+            let mut method_authz: Vec<AuthRef> = Vec::new();
 
             for dec in &m.decorators {
                 if let Some(route) = try_extract_route(
@@ -378,17 +403,41 @@ fn parse_source(
                     try_extract_middleware(dec, &import_map, file_path, &mut diagnostics)
                 {
                     method_middleware.append(&mut mw);
+                } else if let Some(mut refs) =
+                    try_extract_auth_refs(dec, "Authn", &import_map, file_path, &mut diagnostics)
+                {
+                    method_authn.append(&mut refs);
+                } else if let Some(mut refs) =
+                    try_extract_auth_refs(dec, "Authz", &import_map, file_path, &mut diagnostics)
+                {
+                    method_authz.append(&mut refs);
                 }
             }
 
             if let Some(mut route) = route_opt {
                 route.deprecated = deprecated;
                 route.extra_responses = extra_responses;
-                route.middleware = class_middleware
+                route.middleware = class_meta
+                    .middleware
                     .iter()
                     .cloned()
                     .chain(method_middleware)
                     .collect();
+                route.authn = class_meta
+                    .authn
+                    .iter()
+                    .cloned()
+                    .chain(method_authn)
+                    .collect();
+                route.authz = class_meta
+                    .authz
+                    .iter()
+                    .cloned()
+                    .chain(method_authz)
+                    .collect();
+                for a in &mut route.authn {
+                    a.scheme = resolve_authn_scheme(&a.name, a.origin.as_ref());
+                }
                 routes.push(route);
             }
         }
@@ -398,8 +447,8 @@ fn parse_source(
                 class_name,
                 ctor_params,
                 routes,
-                tags,
-                security,
+                tags: class_meta.tags,
+                security: class_meta.security,
             });
         }
     }
@@ -536,23 +585,50 @@ fn try_extract_route<'a>(
         deprecated: false, // filled in by caller after scanning all decorators
         extra_responses: vec![], // ditto
         middleware: vec![], // ditto
+        authn: vec![],     // ditto
+        authz: vec![],     // ditto
     })
 }
 
-/// Extract `@Tag("name")`, `@Security("scheme")`, and `@Middleware(...)` from
-/// class decorators.
+/// Metadata collected from a controller class's own decorators (as opposed to
+/// its methods').
+struct ClassMetadata {
+    tags: Vec<String>,
+    security: Vec<String>,
+    middleware: Vec<MiddlewareRef>,
+    authn: Vec<AuthRef>,
+    authz: Vec<AuthRef>,
+}
+
+/// Extract `@Tag("name")`, `@Security("scheme")`, `@Middleware(...)`,
+/// `@Authn(...)`, and `@Authz(...)` from class decorators.
+#[allow(clippy::similar_names)]
 fn extract_class_metadata(
     decorators: &[Decorator<'_>],
     import_map: &HashMap<String, ImportOrigin>,
     file_path: &str,
     diagnostics: &mut Vec<ParseDiagnostic>,
-) -> (Vec<String>, Vec<String>, Vec<MiddlewareRef>) {
+) -> ClassMetadata {
     let mut tags = Vec::new();
     let mut security = Vec::new();
     let mut middleware = Vec::new();
+    let mut authn = Vec::new();
+    let mut authz = Vec::new();
     for dec in decorators {
         if let Some(mut refs) = try_extract_middleware(dec, import_map, file_path, diagnostics) {
             middleware.append(&mut refs);
+            continue;
+        }
+        if let Some(mut refs) =
+            try_extract_auth_refs(dec, "Authn", import_map, file_path, diagnostics)
+        {
+            authn.append(&mut refs);
+            continue;
+        }
+        if let Some(mut refs) =
+            try_extract_auth_refs(dec, "Authz", import_map, file_path, diagnostics)
+        {
+            authz.append(&mut refs);
             continue;
         }
         let Expression::CallExpression(call) = &dec.expression else {
@@ -578,7 +654,13 @@ fn extract_class_metadata(
             _ => {}
         }
     }
-    (tags, security, middleware)
+    ClassMetadata {
+        tags,
+        security,
+        middleware,
+        authn,
+        authz,
+    }
 }
 
 /// Try to extract a `@Middleware(fn1, fn2, ...)` decorator's identifier
@@ -611,6 +693,91 @@ fn try_extract_middleware(
         }
     }
     Some(refs)
+}
+
+/// Try to extract a `@Authn(Class1, Class2, ...)` or `@Authz(...)` decorator's
+/// identifier arguments, resolving each to its import origin when possible.
+/// `decorator_name` is `"Authn"` or `"Authz"`; the returned refs' `scheme` is
+/// always `None` here — callers resolve it separately for `@Authn` refs.
+fn try_extract_auth_refs(
+    dec: &Decorator<'_>,
+    decorator_name: &str,
+    import_map: &HashMap<String, ImportOrigin>,
+    file_path: &str,
+    diagnostics: &mut Vec<ParseDiagnostic>,
+) -> Option<Vec<AuthRef>> {
+    let Expression::CallExpression(call) = &dec.expression else {
+        return None;
+    };
+    if decorator_ident_name(&call.callee).as_deref() != Some(decorator_name) {
+        return None;
+    }
+    let mut refs = Vec::new();
+    for arg in &call.arguments {
+        if let Argument::Identifier(id) = arg {
+            let name = id.name.to_string();
+            let origin = import_map.get(&name).cloned();
+            refs.push(AuthRef {
+                name,
+                origin,
+                scheme: None,
+            });
+        } else {
+            diagnostics.push(ParseDiagnostic {
+                file: file_path.to_owned(),
+                decorator: decorator_name.to_owned(),
+                found: describe_arg(arg),
+                hint: "use a bare identifier imported (or declared) at module scope".to_owned(),
+            });
+        }
+    }
+    Some(refs)
+}
+
+/// Resolve the `Scheme` string literal from `class_name`'s
+/// `implements AuthnService<U, "scheme">` clause, by opening and parsing the
+/// file it's declared in. Returns `None` when `origin` isn't a resolvable
+/// relative import, the class or clause can't be found, the target file has
+/// syntax errors, or the second type argument isn't a string-literal type —
+/// this is metadata-only (`OpenAPI` visibility), so any failure is silent.
+fn resolve_authn_scheme(class_name: &str, origin: Option<&ImportOrigin>) -> Option<String> {
+    let ImportOrigin::Relative(path) = origin? else {
+        return None;
+    };
+    let source = std::fs::read_to_string(path).ok()?;
+    let allocator = Allocator::default();
+    let ret = Parser::new(&allocator, &source, SourceType::ts()).parse();
+    if !ret.errors.is_empty() {
+        return None;
+    }
+    for stmt in &ret.program.body {
+        let class = match stmt {
+            Statement::ClassDeclaration(c) => c.as_ref(),
+            Statement::ExportNamedDeclaration(decl) => match &decl.declaration {
+                Some(Declaration::ClassDeclaration(c)) => c.as_ref(),
+                _ => continue,
+            },
+            _ => continue,
+        };
+        let Some(id) = &class.id else { continue };
+        if id.name.as_str() != class_name {
+            continue;
+        }
+        for implements in &class.implements {
+            if ts_type_name_local(&implements.expression) != "AuthnService" {
+                continue;
+            }
+            let scheme_arg = implements.type_arguments.as_ref()?.params.get(1)?;
+            let TSType::TSLiteralType(lit) = scheme_arg else {
+                return None;
+            };
+            let TSLiteral::StringLiteral(s) = &lit.literal else {
+                return None;
+            };
+            return Some(s.value.to_string());
+        }
+    }
+    None
 }
 
 /// Return true when `@Deprecated` is present (with or without arguments).
@@ -1148,5 +1315,178 @@ export class ApiController {
         assert_eq!(diags[0].decorator, "Middleware");
         let route = &file.unwrap().controllers[0].routes[0];
         assert!(route.middleware.is_empty());
+    }
+
+    #[test]
+    fn class_and_method_auth_ordered_and_combined() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get, Authn, Authz } from "@anvil-di/anvil-bellows";
+import { SessionAuthn } from "./session-authn";
+import { RoleAuthz } from "./role-authz";
+
+@Controller("/admin")
+@Authn(SessionAuthn)
+export class AdminController {
+  @Get("/stats")
+  @Authz(RoleAuthz)
+  stats() {}
+
+  @Get("/ping")
+  ping() {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let ctrl = &file.unwrap().controllers[0];
+
+        // Class-level @Authn applies to every route; method-level @Authz only to `stats`.
+        let stats = &ctrl.routes[0];
+        assert_eq!(
+            stats
+                .authn
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SessionAuthn"]
+        );
+        assert_eq!(
+            stats
+                .authz
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["RoleAuthz"]
+        );
+
+        let ping = &ctrl.routes[1];
+        assert_eq!(
+            ping.authn
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SessionAuthn"]
+        );
+        assert!(ping.authz.is_empty());
+    }
+
+    #[test]
+    fn non_identifier_auth_arg_emits_diagnostic() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+
+@Controller("/api")
+export class ApiController {
+  @Get("/")
+  @Authn("not-an-identifier")
+  list() {}
+}
+"#,
+        );
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].decorator, "Authn");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert!(route.authn.is_empty());
+    }
+
+    #[test]
+    fn authn_scheme_extracted_from_direct_implements_literal() {
+        let dir = tempfile::tempdir().unwrap();
+
+        std::fs::write(
+            dir.path().join("session-authn.ts"),
+            r#"
+import type { AuthnService, AuthnResult } from "@anvil-di/bellows";
+export class SessionAuthn implements AuthnService<{ id: string }, "bearerAuth"> {
+  identify(req: unknown): AuthnResult<{ id: string }> { return { identified: false }; }
+}
+"#,
+        )
+        .unwrap();
+
+        let controller_path = dir.path().join("admin-controller.ts");
+        let src = r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+import { SessionAuthn } from "./session-authn";
+
+@Controller("/admin")
+@Authn(SessionAuthn)
+export class AdminController {
+  @Get("/stats")
+  stats() {}
+}
+"#;
+        std::fs::write(&controller_path, src).unwrap();
+
+        let (file, diags) = parse_source(
+            src,
+            &controller_path.display().to_string(),
+            &controller_path,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let ctrl = &file.unwrap().controllers[0];
+        assert_eq!(
+            ctrl.routes[0].authn[0].scheme.as_deref(),
+            Some("bearerAuth")
+        );
+    }
+
+    #[test]
+    fn authn_scheme_omitted_when_implements_clause_missing() {
+        let dir = tempfile::tempdir().unwrap();
+
+        std::fs::write(
+            dir.path().join("session-authn.ts"),
+            r"
+export class SessionAuthn {
+  identify(req: unknown) { return { identified: false }; }
+}
+",
+        )
+        .unwrap();
+
+        let controller_path = dir.path().join("admin-controller.ts");
+        let src = r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+import { SessionAuthn } from "./session-authn";
+
+@Controller("/admin")
+@Authn(SessionAuthn)
+export class AdminController {
+  @Get("/stats")
+  stats() {}
+}
+"#;
+        std::fs::write(&controller_path, src).unwrap();
+
+        let (file, diags) = parse_source(
+            src,
+            &controller_path.display().to_string(),
+            &controller_path,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let ctrl = &file.unwrap().controllers[0];
+        assert_eq!(ctrl.routes[0].authn[0].scheme, None);
+    }
+
+    #[test]
+    fn authn_scheme_omitted_for_package_origin() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+import { SomeAuthn } from "some-auth-package";
+
+@Controller("/admin")
+@Authn(SomeAuthn)
+export class AdminController {
+  @Get("/stats")
+  stats() {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let ctrl = &file.unwrap().controllers[0];
+        assert_eq!(ctrl.routes[0].authn[0].scheme, None);
     }
 }
