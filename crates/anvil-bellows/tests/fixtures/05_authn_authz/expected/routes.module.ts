@@ -18,7 +18,9 @@ export @Module class RoutesModule {
 			path: "/admin/stats",
 			authn: [sessionAuthn],
 			authz: [roleAuthz],
-			handler: (req, res) => adminController.stats(req, res)
+			handler: (req, res) => {
+				adminController.stats(res.locals.user);
+			}
 		};
 	}
 }

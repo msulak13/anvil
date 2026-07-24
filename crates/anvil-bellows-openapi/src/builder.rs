@@ -410,6 +410,7 @@ mod tests {
                     name: "SessionAuthn".into(),
                     origin: None,
                     scheme: Some("bearerAuth".into()),
+                    user_identity: None,
                 }],
                 authz: vec![],
             }],

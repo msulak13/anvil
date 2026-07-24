@@ -712,6 +712,9 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
             }
             ParamKind::Request => call_args.push("req".to_owned()),
             ParamKind::Response => call_args.push("res".to_owned()),
+            // Express types `Response.locals` as `Record<string, any>`, so
+            // this is assignable to `T` in `AuthnUser<T>` without a cast.
+            ParamKind::User(_) => call_args.push("res.locals.user".to_owned()),
             ParamKind::Unknown => unreachable!("filtered above"),
         }
     }
@@ -989,6 +992,41 @@ mod tests {
     }
 
     #[test]
+    fn emit_authn_user_param_injects_res_locals_user() {
+        use crate::parser::{ParamKind, UserTypeRef};
+
+        let params = vec![
+            TypedParam {
+                name: "user".into(),
+                kind: ParamKind::User(UserTypeRef {
+                    type_name: "AdminUser".into(),
+                    identity: None,
+                }),
+            },
+            TypedParam {
+                name: "req".into(),
+                kind: ParamKind::Request,
+            },
+        ];
+
+        let files = vec![make_typed_file(
+            "/project/src/admin-controller.ts",
+            "AdminController",
+            vec![(
+                "/admin/stats",
+                HttpMethod::Get,
+                "stats",
+                params,
+                ReturnKind::Void { is_async: false },
+            )],
+        )];
+        let output_path = Path::new("/project/src/routes.module.ts");
+        let result = emit_routes_module(&files, output_path, "0.0.1").unwrap();
+
+        assert!(result.contains("adminController.stats(res.locals.user, req)"));
+    }
+
+    #[test]
     fn unknown_params_fallback_to_passthrough() {
         use crate::parser::ParamKind;
 
@@ -1102,11 +1140,13 @@ mod tests {
                 "/project/src/session-authn.ts",
             ))),
             scheme: Some("bearerAuth".into()),
+            user_identity: None,
         }];
         file.controllers[0].routes[0].authz = vec![AuthRef {
             name: "RoleAuthz".into(),
             origin: None,
             scheme: None,
+            user_identity: None,
         }];
         let output_path = Path::new("/project/src/routes.module.ts");
         let result = emit_routes_module(&[file], output_path, "0.0.1").unwrap();
@@ -1138,6 +1178,7 @@ mod tests {
             name: "AllInOne".into(),
             origin: None,
             scheme: None,
+            user_identity: None,
         };
         file.controllers[0].routes[0].authn = vec![shared.clone()];
         file.controllers[0].routes[0].authz = vec![shared];

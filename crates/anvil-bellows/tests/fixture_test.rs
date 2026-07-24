@@ -97,6 +97,7 @@ fn write_stubs(root: &Path) {
          export interface AuthzService {\n\
            authorize(req: any, user: unknown): AuthzDecision | Promise<AuthzDecision>;\n\
          }\n\
+         export type AuthnUser<T> = T;\n\
          export interface RouteDefinition {\n\
            method: \"GET\" | \"POST\" | \"PUT\" | \"DELETE\" | \"PATCH\";\n\
            path: string;\n\
@@ -429,4 +430,6 @@ fn fixture_05_authn_authz_di_params_and_fields() {
     assert!(produced.contains("roleAuthz: RoleAuthz"));
     // Both service classes are type-only imported from the same file.
     assert!(produced.contains("import type { RoleAuthz, SessionAuthn } from \"./auth-services\";"));
+    // `stats`'s AuthnUser<User> param is injected from res.locals.user.
+    assert!(produced.contains("adminController.stats(res.locals.user)"));
 }

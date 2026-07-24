@@ -20,3 +20,13 @@ export type AuthzDecision = "allow" | "deny" | "next";
 export interface AuthzService {
   authorize(req: Request, user: unknown): AuthzDecision | Promise<AuthzDecision>;
 }
+
+/**
+ * Marks a handler parameter for injection of the identified user
+ * (`res.locals.user`, set by the route's `@Authn` cascade). `T` is a pure
+ * type-level marker — anvil-bellows' codegen statically verifies `T`
+ * identity-matches the `U` declared by every `@Authn` service on the route
+ * (`implements AuthnService<U, Scheme>`), rejecting the route at build time
+ * if they disagree or can't be resolved. At runtime this is just `T`.
+ */
+export type AuthnUser<T> = T;
