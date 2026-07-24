@@ -73,7 +73,9 @@ fn build_operation(
     let parameters = build_parameters(path_param_names, &route.params, schemas);
     let request_body = build_request_body(&route.params, schemas);
     let responses = build_responses(route, schemas);
-    let security = build_security(&ctrl.security, config, diagnostics);
+    let mut scheme_names = ctrl.security.clone();
+    scheme_names.extend(route.authn.iter().filter_map(|a| a.scheme.clone()));
+    let security = build_security(&scheme_names, config, diagnostics);
 
     // Use BTreeMap so operation keys are alphabetically sorted regardless of
     // whether the serde_json `preserve_order` feature is active in this build.
@@ -382,5 +384,65 @@ mod tests {
             operation_id("OrderController", &HttpMethod::Post, "create"),
             "orderControllerPostCreate"
         );
+    }
+
+    #[test]
+    fn authn_scheme_merges_into_operation_security() {
+        use crate::config::{InfoConfig, SecuritySchemeConfig};
+        use anvil_bellows::{AuthRef, ReturnKind as RK, Route};
+        use std::path::PathBuf;
+
+        let ctrl = Controller {
+            class_name: "AdminController".into(),
+            ctor_params: vec![],
+            tags: vec![],
+            security: vec![],
+            routes: vec![Route {
+                method: HttpMethod::Get,
+                path: "/admin/stats".into(),
+                handler_name: "stats".into(),
+                params: vec![],
+                return_kind: RK::Void { is_async: false },
+                deprecated: false,
+                extra_responses: vec![],
+                middleware: vec![],
+                authn: vec![AuthRef {
+                    name: "SessionAuthn".into(),
+                    origin: None,
+                    scheme: Some("bearerAuth".into()),
+                    user_identity: None,
+                }],
+                authz: vec![],
+            }],
+        };
+        let files = vec![ControllerFile {
+            source_path: PathBuf::from("/project/src/admin-controller.ts"),
+            controllers: vec![ctrl],
+        }];
+
+        let mut config = OpenApiConfig {
+            info: InfoConfig {
+                title: "API".into(),
+                version: "1.0.0".into(),
+            },
+            servers: vec![],
+            security_schemes: BTreeMap::new(),
+        };
+        config.security_schemes.insert(
+            "bearerAuth".into(),
+            SecuritySchemeConfig {
+                r#type: "http".into(),
+                scheme: Some("bearer".into()),
+                name: None,
+                r#in: None,
+            },
+        );
+
+        let mut diagnostics = Vec::new();
+        let doc = build_openapi(&files, &config, &mut diagnostics);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+        let security = &doc["paths"]["/admin/stats"]["get"]["security"];
+        assert_eq!(json!(security), json!([{ "bearerAuth": [] }]));
     }
 }

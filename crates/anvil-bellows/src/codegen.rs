@@ -17,7 +17,8 @@ use oxc_span::SourceType;
 use thiserror::Error;
 
 use crate::parser::{
-    Controller, ControllerFile, CtorParam, HttpMethod, ImportOrigin, ParamKind, ReturnKind, Route,
+    AuthRef, Controller, ControllerFile, CtorParam, HttpMethod, ImportOrigin, ParamKind,
+    ReturnKind, Route,
 };
 
 /// Banner prepended to every generated file.
@@ -73,7 +74,7 @@ pub fn emit_routes_module(
 }
 
 /// Build the raw TypeScript source string (before oxc canonicalization).
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::similar_names)]
 fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
     let mut s = String::new();
 
@@ -102,6 +103,11 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
                 for mw in &route.middleware {
                     if mw.origin.is_none() && !imports.contains(&mw.name) {
                         imports.push(mw.name.clone());
+                    }
+                }
+                for a in route.authn.iter().chain(&route.authz) {
+                    if a.origin.is_none() && !imports.contains(&a.name) {
+                        imports.push(a.name.clone());
                     }
                 }
             }
@@ -173,6 +179,36 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
         writeln!(s, "import {{ {} }} from \"{spec}\";", names.join(", ")).unwrap();
     }
 
+    // Emit type-only imports for @Authn/@Authz service classes that aren't
+    // declared in the controller's own file — these are only ever used in a
+    // type-annotation position on the generated provider method, never
+    // called as a value, so `import type` is always correct here (unlike
+    // middleware, which is imported as a value).
+    let mut auth_imports: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for file in files {
+        let ctrl_spec = import_specifier(out_dir, &file.source_path);
+        for ctrl in &file.controllers {
+            for route in &ctrl.routes {
+                for a in route.authn.iter().chain(&route.authz) {
+                    let spec = match &a.origin {
+                        Some(ImportOrigin::Relative(abs)) => import_specifier(out_dir, abs),
+                        Some(ImportOrigin::Package(pkg)) => pkg.clone(),
+                        None => continue, // declared in the controller file — handled above
+                    };
+                    if spec == ctrl_spec {
+                        continue;
+                    }
+                    auth_imports.entry(spec).or_default().push(a.name.clone());
+                }
+            }
+        }
+    }
+    for (spec, mut names) in auth_imports {
+        names.sort();
+        names.dedup();
+        writeln!(s, "import type {{ {} }} from \"{spec}\";", names.join(", ")).unwrap();
+    }
+
     s.push('\n');
     s.push_str("@Module\n");
     s.push_str("export class RoutesModule {\n");
@@ -204,10 +240,13 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
                         route.middleware.iter().map(|m| m.name.as_str()).collect();
                     format!("\n      middleware: [{}],", names.join(", "))
                 };
+                let authn_field = auth_field("authn", &route.authn);
+                let authz_field = auth_field("authz", &route.authz);
+                let extra_params_sig = extra_auth_params_sig(route);
 
                 writeln!(
                     s,
-                    "  @IntoSet @Provides\n  static {method_name}({param_name}: {class_name}): RouteDefinition {{\n    return {{\n      method: \"{http_verb}\",\n      path: \"{path}\",{middleware_field}\n      handler: {handler_body},\n    }};\n  }}"
+                    "  @IntoSet @Provides\n  static {method_name}({param_name}: {class_name}{extra_params_sig}): RouteDefinition {{\n    return {{\n      method: \"{http_verb}\",\n      path: \"{path}\",{middleware_field}{authn_field}{authz_field}\n      handler: {handler_body},\n    }};\n  }}"
                 )
                 .unwrap();
             }
@@ -216,6 +255,32 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
 
     s.push_str("}\n");
     s
+}
+
+/// Render the `authn: [...]`/`authz: [...]` `RouteDefinition` field, or an
+/// empty string when `refs` is empty (field omitted entirely).
+fn auth_field(field_name: &str, refs: &[AuthRef]) -> String {
+    if refs.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = refs.iter().map(|a| lower_first(&a.name)).collect();
+    format!("\n      {field_name}: [{}],", names.join(", "))
+}
+
+/// Build the extra `, local: ClassName` DI parameters a route's provider
+/// method needs for its `@Authn`/`@Authz` service classes, deduped by class
+/// name (a class referenced by both decorators gets one shared parameter).
+fn extra_auth_params_sig(route: &Route) -> String {
+    let mut seen: Vec<&str> = Vec::new();
+    let mut sig = String::new();
+    for a in route.authn.iter().chain(&route.authz) {
+        if seen.contains(&a.name.as_str()) {
+            continue;
+        }
+        seen.push(&a.name);
+        write!(sig, ", {}: {}", lower_first(&a.name), a.name).unwrap();
+    }
+    sig
 }
 
 /// Emit a `@Singleton @Provides` method that constructs a controller from its deps.
@@ -647,6 +712,9 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
             }
             ParamKind::Request => call_args.push("req".to_owned()),
             ParamKind::Response => call_args.push("res".to_owned()),
+            // Express types `Response.locals` as `Record<string, any>`, so
+            // this is assignable to `T` in `AuthnUser<T>` without a cast.
+            ParamKind::User(_) => call_args.push("res.locals.user".to_owned()),
             ParamKind::Unknown => unreachable!("filtered above"),
         }
     }
@@ -779,6 +847,8 @@ mod tests {
                         deprecated: false,
                         extra_responses: vec![],
                         middleware: vec![],
+                        authn: vec![],
+                        authz: vec![],
                     })
                     .collect(),
             }],
@@ -808,6 +878,8 @@ mod tests {
                         deprecated: false,
                         extra_responses: vec![],
                         middleware: vec![],
+                        authn: vec![],
+                        authz: vec![],
                     })
                     .collect(),
             }],
@@ -920,6 +992,41 @@ mod tests {
     }
 
     #[test]
+    fn emit_authn_user_param_injects_res_locals_user() {
+        use crate::parser::{ParamKind, UserTypeRef};
+
+        let params = vec![
+            TypedParam {
+                name: "user".into(),
+                kind: ParamKind::User(UserTypeRef {
+                    type_name: "AdminUser".into(),
+                    identity: None,
+                }),
+            },
+            TypedParam {
+                name: "req".into(),
+                kind: ParamKind::Request,
+            },
+        ];
+
+        let files = vec![make_typed_file(
+            "/project/src/admin-controller.ts",
+            "AdminController",
+            vec![(
+                "/admin/stats",
+                HttpMethod::Get,
+                "stats",
+                params,
+                ReturnKind::Void { is_async: false },
+            )],
+        )];
+        let output_path = Path::new("/project/src/routes.module.ts");
+        let result = emit_routes_module(&files, output_path, "0.0.1").unwrap();
+
+        assert!(result.contains("adminController.stats(res.locals.user, req)"));
+    }
+
+    #[test]
     fn unknown_params_fallback_to_passthrough() {
         use crate::parser::ParamKind;
 
@@ -1003,5 +1110,84 @@ mod tests {
         assert!(result.contains("auditLog"));
         assert!(result.contains("rateLimit"));
         assert!(result.contains("middleware"));
+    }
+
+    #[test]
+    fn no_authn_authz_fields_when_empty() {
+        let files = vec![make_file(
+            "/project/src/user-controller.ts",
+            "UserController",
+            vec![("/users/:id", HttpMethod::Get, "byId")],
+        )];
+        let output_path = Path::new("/project/src/routes.module.ts");
+        let result = emit_routes_module(&files, output_path, "0.0.1").unwrap();
+        assert!(!result.contains("authn"));
+        assert!(!result.contains("authz"));
+    }
+
+    #[test]
+    fn emits_authn_authz_di_params_fields_and_imports() {
+        use crate::parser::AuthRef;
+
+        let mut file = make_file(
+            "/project/src/admin-controller.ts",
+            "AdminController",
+            vec![("/admin/stats", HttpMethod::Get, "stats")],
+        );
+        file.controllers[0].routes[0].authn = vec![AuthRef {
+            name: "SessionAuthn".into(),
+            origin: Some(ImportOrigin::Relative(PathBuf::from(
+                "/project/src/session-authn.ts",
+            ))),
+            scheme: Some("bearerAuth".into()),
+            user_identity: None,
+        }];
+        file.controllers[0].routes[0].authz = vec![AuthRef {
+            name: "RoleAuthz".into(),
+            origin: None,
+            scheme: None,
+            user_identity: None,
+        }];
+        let output_path = Path::new("/project/src/routes.module.ts");
+        let result = emit_routes_module(&[file], output_path, "0.0.1").unwrap();
+
+        // Cross-file authn class gets a type-only import.
+        assert!(result.contains("import type { SessionAuthn } from \"./session-authn\";"));
+        // Same-file authz class is folded into the controller's value import.
+        assert!(
+            result.contains("import { AdminController, RoleAuthz } from \"./admin-controller\";")
+        );
+        // Extra DI params on the provider method.
+        assert!(result.contains("sessionAuthn: SessionAuthn"));
+        assert!(result.contains("roleAuthz: RoleAuthz"));
+        // Fields on the RouteDefinition literal.
+        assert!(result.contains("authn: [sessionAuthn]"));
+        assert!(result.contains("authz: [roleAuthz]"));
+    }
+
+    #[test]
+    fn authn_authz_referencing_same_class_share_one_di_param() {
+        use crate::parser::AuthRef;
+
+        let mut file = make_file(
+            "/project/src/admin-controller.ts",
+            "AdminController",
+            vec![("/admin/stats", HttpMethod::Get, "stats")],
+        );
+        let shared = AuthRef {
+            name: "AllInOne".into(),
+            origin: None,
+            scheme: None,
+            user_identity: None,
+        };
+        file.controllers[0].routes[0].authn = vec![shared.clone()];
+        file.controllers[0].routes[0].authz = vec![shared];
+        let output_path = Path::new("/project/src/routes.module.ts");
+        let result = emit_routes_module(&[file], output_path, "0.0.1").unwrap();
+
+        // Only one `allInOne: AllInOne` parameter should appear, reused by both fields.
+        assert_eq!(result.matches("allInOne: AllInOne").count(), 1);
+        assert!(result.contains("authn: [allInOne]"));
+        assert!(result.contains("authz: [allInOne]"));
     }
 }

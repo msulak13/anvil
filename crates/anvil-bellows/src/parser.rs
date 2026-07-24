@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
     Argument, BindingPattern, ClassElement, Declaration, Decorator, Expression, FormalParameter,
-    ImportDeclarationSpecifier, MethodDefinitionKind, PropertyKey, Statement, TSType, TSTypeName,
-    TSTypeQueryExprName,
+    ImportDeclarationSpecifier, MethodDefinitionKind, PropertyKey, Statement, TSLiteral, TSType,
+    TSTypeName, TSTypeQueryExprName,
 };
 use oxc_parser::Parser;
 use oxc_span::SourceType;
@@ -87,8 +87,37 @@ pub enum ParamKind {
     Request,
     /// `Response` or `express.Response` — inject the raw response object.
     Response,
+    /// `AuthnUser<T>` — inject the identified user (`res.locals.user`),
+    /// validated against the route's `@Authn` services' declared user type.
+    User(UserTypeRef),
     /// Unrecognized annotation — triggers v0.1 passthrough for the whole route.
     Unknown,
+}
+
+/// The resolved declaration site of a type — used to compare `AuthnUser<T>`
+/// against the `U` each `@Authn` service declares in
+/// `implements AuthnService<U, Scheme>`, by identity rather than by name
+/// alone (two different `User` types in different files must not compare
+/// equal just because they share a name).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeIdentity {
+    /// Absolute path to the file that declares (or, if imported, re-exports)
+    /// the type at its declaration site.
+    pub file: PathBuf,
+    /// The type's local name at that declaration site.
+    pub name: String,
+}
+
+/// The `T` in a handler's `AuthnUser<T>` parameter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserTypeRef {
+    /// Raw type text, for diagnostics — the identifier name, or `"<inline>"`
+    /// when `T` isn't a bare type reference.
+    pub type_name: String,
+    /// The resolved declaration site, or `None` when `T` isn't a bare
+    /// identifier type reference (e.g. an inline object type) and so can't
+    /// be identity-compared against `@Authn` services' user types.
+    pub identity: Option<TypeIdentity>,
 }
 
 /// A named parameter extracted from a handler method signature.
@@ -146,6 +175,12 @@ pub struct Route {
     /// Ordered middleware chain from `@Middleware(...)` — class-level entries
     /// first, then method-level, in source order.
     pub middleware: Vec<MiddlewareRef>,
+    /// Ordered authentication cascade from `@Authn(...)` — class-level entries
+    /// first, then method-level, in source order.
+    pub authn: Vec<AuthRef>,
+    /// Ordered authorization cascade from `@Authz(...)` — class-level entries
+    /// first, then method-level, in source order.
+    pub authz: Vec<AuthRef>,
 }
 
 /// Where an imported identifier comes from.
@@ -166,6 +201,29 @@ pub struct MiddlewareRef {
     /// import statement in the controller file. `None` means it's assumed
     /// to be declared or re-exported by the controller file itself.
     pub origin: Option<ImportOrigin>,
+}
+
+/// A service class referenced via `@Authn(...)` or `@Authz(...)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthRef {
+    /// The class name used to reference the service.
+    pub name: String,
+    /// Where `name` is imported from, if it could be resolved from an
+    /// import statement in the controller file. `None` means it's assumed
+    /// to be declared or re-exported by the controller file itself.
+    pub origin: Option<ImportOrigin>,
+    /// For `@Authn` refs only: the `OpenAPI` security-scheme key read directly
+    /// off the class's `implements AuthnService<U, "scheme">` clause. `None`
+    /// when the class can't be resolved (e.g. a package import) or the
+    /// literal isn't present in that exact shape — this only affects `OpenAPI`
+    /// visibility, never the runtime auth check. Always `None` for `@Authz`.
+    pub scheme: Option<String>,
+    /// For `@Authn` refs only: the resolved declaration site of `U` in
+    /// `implements AuthnService<U, Scheme>`, used to validate `AuthnUser<T>`
+    /// handler parameters. `None` when unresolvable (same conditions as
+    /// `scheme`, plus `U` not being a bare identifier type reference).
+    /// Always `None` for `@Authz`.
+    pub user_identity: Option<TypeIdentity>,
 }
 
 /// A single constructor parameter on a `@Controller` class.
@@ -276,7 +334,7 @@ pub fn parse_entry(
 }
 
 /// Parse a single TypeScript source string.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::similar_names)]
 fn parse_source(
     source: &str,
     file_path: &str,
@@ -318,7 +376,7 @@ fn parse_source(
             continue;
         };
 
-        let (tags, security, class_middleware) =
+        let class_meta =
             extract_class_metadata(&class.decorators, &import_map, file_path, &mut diagnostics);
         let mut routes: Vec<Route> = Vec::new();
         let mut ctor_params: Vec<CtorParam> = Vec::new();
@@ -345,8 +403,13 @@ fn parse_source(
                 _ => continue,
             };
 
-            let typed_params: Vec<TypedParam> =
-                m.value.params.items.iter().map(classify_param).collect();
+            let typed_params: Vec<TypedParam> = m
+                .value
+                .params
+                .items
+                .iter()
+                .map(|p| classify_param(p, &import_map, abs_path))
+                .collect();
 
             let return_kind = classify_return(
                 m.value.return_type.as_ref().map(|a| &a.type_annotation),
@@ -358,6 +421,8 @@ fn parse_source(
             let mut deprecated = false;
             let mut extra_responses: Vec<ExtraResponse> = Vec::new();
             let mut method_middleware: Vec<MiddlewareRef> = Vec::new();
+            let mut method_authn: Vec<AuthRef> = Vec::new();
+            let mut method_authz: Vec<AuthRef> = Vec::new();
 
             for dec in &m.decorators {
                 if let Some(route) = try_extract_route(
@@ -378,18 +443,48 @@ fn parse_source(
                     try_extract_middleware(dec, &import_map, file_path, &mut diagnostics)
                 {
                     method_middleware.append(&mut mw);
+                } else if let Some(mut refs) =
+                    try_extract_auth_refs(dec, "Authn", &import_map, file_path, &mut diagnostics)
+                {
+                    method_authn.append(&mut refs);
+                } else if let Some(mut refs) =
+                    try_extract_auth_refs(dec, "Authz", &import_map, file_path, &mut diagnostics)
+                {
+                    method_authz.append(&mut refs);
                 }
             }
 
             if let Some(mut route) = route_opt {
                 route.deprecated = deprecated;
                 route.extra_responses = extra_responses;
-                route.middleware = class_middleware
+                route.middleware = class_meta
+                    .middleware
                     .iter()
                     .cloned()
                     .chain(method_middleware)
                     .collect();
-                routes.push(route);
+                route.authn = class_meta
+                    .authn
+                    .iter()
+                    .cloned()
+                    .chain(method_authn)
+                    .collect();
+                route.authz = class_meta
+                    .authz
+                    .iter()
+                    .cloned()
+                    .chain(method_authz)
+                    .collect();
+                for a in &mut route.authn {
+                    let resolved = resolve_authn_type_args(&a.name, a.origin.as_ref());
+                    a.scheme = resolved.scheme;
+                    a.user_identity = resolved.user_identity;
+                }
+                if let Some(diag) = validate_authn_user_param(&route, file_path) {
+                    diagnostics.push(diag);
+                } else {
+                    routes.push(route);
+                }
             }
         }
 
@@ -398,8 +493,8 @@ fn parse_source(
                 class_name,
                 ctor_params,
                 routes,
-                tags,
-                security,
+                tags: class_meta.tags,
+                security: class_meta.security,
             });
         }
     }
@@ -536,23 +631,50 @@ fn try_extract_route<'a>(
         deprecated: false, // filled in by caller after scanning all decorators
         extra_responses: vec![], // ditto
         middleware: vec![], // ditto
+        authn: vec![],     // ditto
+        authz: vec![],     // ditto
     })
 }
 
-/// Extract `@Tag("name")`, `@Security("scheme")`, and `@Middleware(...)` from
-/// class decorators.
+/// Metadata collected from a controller class's own decorators (as opposed to
+/// its methods').
+struct ClassMetadata {
+    tags: Vec<String>,
+    security: Vec<String>,
+    middleware: Vec<MiddlewareRef>,
+    authn: Vec<AuthRef>,
+    authz: Vec<AuthRef>,
+}
+
+/// Extract `@Tag("name")`, `@Security("scheme")`, `@Middleware(...)`,
+/// `@Authn(...)`, and `@Authz(...)` from class decorators.
+#[allow(clippy::similar_names)]
 fn extract_class_metadata(
     decorators: &[Decorator<'_>],
     import_map: &HashMap<String, ImportOrigin>,
     file_path: &str,
     diagnostics: &mut Vec<ParseDiagnostic>,
-) -> (Vec<String>, Vec<String>, Vec<MiddlewareRef>) {
+) -> ClassMetadata {
     let mut tags = Vec::new();
     let mut security = Vec::new();
     let mut middleware = Vec::new();
+    let mut authn = Vec::new();
+    let mut authz = Vec::new();
     for dec in decorators {
         if let Some(mut refs) = try_extract_middleware(dec, import_map, file_path, diagnostics) {
             middleware.append(&mut refs);
+            continue;
+        }
+        if let Some(mut refs) =
+            try_extract_auth_refs(dec, "Authn", import_map, file_path, diagnostics)
+        {
+            authn.append(&mut refs);
+            continue;
+        }
+        if let Some(mut refs) =
+            try_extract_auth_refs(dec, "Authz", import_map, file_path, diagnostics)
+        {
+            authz.append(&mut refs);
             continue;
         }
         let Expression::CallExpression(call) = &dec.expression else {
@@ -578,7 +700,13 @@ fn extract_class_metadata(
             _ => {}
         }
     }
-    (tags, security, middleware)
+    ClassMetadata {
+        tags,
+        security,
+        middleware,
+        authn,
+        authz,
+    }
 }
 
 /// Try to extract a `@Middleware(fn1, fn2, ...)` decorator's identifier
@@ -611,6 +739,250 @@ fn try_extract_middleware(
         }
     }
     Some(refs)
+}
+
+/// Try to extract a `@Authn(Class1, Class2, ...)` or `@Authz(...)` decorator's
+/// identifier arguments, resolving each to its import origin when possible.
+/// `decorator_name` is `"Authn"` or `"Authz"`; the returned refs' `scheme` is
+/// always `None` here — callers resolve it separately for `@Authn` refs.
+fn try_extract_auth_refs(
+    dec: &Decorator<'_>,
+    decorator_name: &str,
+    import_map: &HashMap<String, ImportOrigin>,
+    file_path: &str,
+    diagnostics: &mut Vec<ParseDiagnostic>,
+) -> Option<Vec<AuthRef>> {
+    let Expression::CallExpression(call) = &dec.expression else {
+        return None;
+    };
+    if decorator_ident_name(&call.callee).as_deref() != Some(decorator_name) {
+        return None;
+    }
+    let mut refs = Vec::new();
+    for arg in &call.arguments {
+        if let Argument::Identifier(id) = arg {
+            let name = id.name.to_string();
+            let origin = import_map.get(&name).cloned();
+            refs.push(AuthRef {
+                name,
+                origin,
+                scheme: None,
+                user_identity: None,
+            });
+        } else {
+            diagnostics.push(ParseDiagnostic {
+                file: file_path.to_owned(),
+                decorator: decorator_name.to_owned(),
+                found: describe_arg(arg),
+                hint: "use a bare identifier imported (or declared) at module scope".to_owned(),
+            });
+        }
+    }
+    Some(refs)
+}
+
+/// The `U` and `Scheme` type arguments read off a class's
+/// `implements AuthnService<U, Scheme>` clause.
+struct AuthnTypeArgs {
+    user_identity: Option<TypeIdentity>,
+    scheme: Option<String>,
+}
+
+/// Resolve `type_name`'s declaration site: if it's imported via a relative
+/// import in `import_map`, that import's target file; if it's a package
+/// import, unresolvable (`None`); otherwise assumed declared in `file_path`
+/// itself (mirrors the same-file convention used for middleware/auth refs).
+fn resolve_type_identity(
+    type_name: &str,
+    import_map: &HashMap<String, ImportOrigin>,
+    file_path: &Path,
+) -> Option<TypeIdentity> {
+    match import_map.get(type_name) {
+        Some(ImportOrigin::Relative(p)) => Some(TypeIdentity {
+            file: p.clone(),
+            name: type_name.to_owned(),
+        }),
+        Some(ImportOrigin::Package(_)) => None,
+        None => Some(TypeIdentity {
+            file: file_path.to_path_buf(),
+            name: type_name.to_owned(),
+        }),
+    }
+}
+
+/// Resolve the `U` (user type) and `Scheme` (`OpenAPI` security-scheme key)
+/// type arguments from `class_name`'s `implements AuthnService<U, "scheme">`
+/// clause, by opening and parsing the file it's declared in. Both resolve to
+/// `None` independently when `origin` isn't a resolvable relative import, the
+/// class or clause can't be found, the target file has syntax errors, or the
+/// respective type argument isn't in the exact required shape (a bare
+/// identifier type reference for `U`, a string-literal type for `Scheme`) —
+/// any failure here is silent; callers turn `None` into diagnostics only
+/// where actually required (`AuthnUser<T>` validation), since `Scheme` alone
+/// is optional `OpenAPI` metadata.
+fn resolve_authn_type_args(class_name: &str, origin: Option<&ImportOrigin>) -> AuthnTypeArgs {
+    let unresolved = AuthnTypeArgs {
+        user_identity: None,
+        scheme: None,
+    };
+    let Some(ImportOrigin::Relative(path)) = origin else {
+        return unresolved;
+    };
+    let Ok(source) = std::fs::read_to_string(path) else {
+        return unresolved;
+    };
+    let allocator = Allocator::default();
+    let ret = Parser::new(&allocator, &source, SourceType::ts()).parse();
+    if !ret.errors.is_empty() {
+        return unresolved;
+    }
+    let file_dir = path.parent().unwrap_or(Path::new("."));
+    let service_import_map = collect_import_map(&ret.program.body, file_dir);
+
+    for stmt in &ret.program.body {
+        let class = match stmt {
+            Statement::ClassDeclaration(c) => c.as_ref(),
+            Statement::ExportNamedDeclaration(decl) => match &decl.declaration {
+                Some(Declaration::ClassDeclaration(c)) => c.as_ref(),
+                _ => continue,
+            },
+            _ => continue,
+        };
+        let Some(id) = &class.id else { continue };
+        if id.name.as_str() != class_name {
+            continue;
+        }
+        for implements in &class.implements {
+            if ts_type_name_local(&implements.expression) != "AuthnService" {
+                continue;
+            }
+            let Some(type_args) = implements.type_arguments.as_ref() else {
+                return unresolved;
+            };
+            let user_identity = type_args.params.first().and_then(|t| {
+                let TSType::TSTypeReference(tref) = t else {
+                    return None;
+                };
+                if !matches!(tref.type_name, TSTypeName::IdentifierReference(_)) {
+                    return None;
+                }
+                let name = ts_type_name_local(&tref.type_name);
+                resolve_type_identity(name, &service_import_map, path)
+            });
+            let scheme = type_args.params.get(1).and_then(|t| {
+                let TSType::TSLiteralType(lit) = t else {
+                    return None;
+                };
+                let TSLiteral::StringLiteral(s) = &lit.literal else {
+                    return None;
+                };
+                Some(s.value.to_string())
+            });
+            return AuthnTypeArgs {
+                user_identity,
+                scheme,
+            };
+        }
+    }
+    unresolved
+}
+
+/// Validate `AuthnUser<T>` handler parameters against the route's `@Authn`
+/// services, requiring `T` to identity-match the user type declared by
+/// *every* service on the route (the "matches all of" rule) — the most
+/// restrictive option, chosen because a route whose declared services
+/// disagree (or can't be proven to agree) would otherwise resolve to a
+/// non-deterministic user shape at runtime, undetectable by the type system.
+/// Returns `Some(diagnostic)` and the caller drops the route entirely; `None`
+/// means either no `AuthnUser<T>` param is present, or it's provably safe.
+fn validate_authn_user_param(route: &Route, file_path: &str) -> Option<ParseDiagnostic> {
+    let user_params: Vec<&UserTypeRef> = route
+        .params
+        .iter()
+        .filter_map(|p| match &p.kind {
+            ParamKind::User(u) => Some(u),
+            _ => None,
+        })
+        .collect();
+    if user_params.is_empty() {
+        return None;
+    }
+
+    if route.authn.is_empty() {
+        return Some(ParseDiagnostic {
+            file: file_path.to_owned(),
+            decorator: "AuthnUser".to_owned(),
+            found: "no @Authn services declared on this route".to_owned(),
+            hint: "declare at least one @Authn(...) service, or remove the AuthnUser<T> parameter"
+                .to_owned(),
+        });
+    }
+
+    // Every @Authn service must resolve to the same user-type identity —
+    // an unresolvable identity can't be proven consistent, so it's treated
+    // the same as a disagreement.
+    let mut common: Option<&TypeIdentity> = None;
+    for a in &route.authn {
+        let Some(id) = &a.user_identity else {
+            return Some(ParseDiagnostic {
+                file: file_path.to_owned(),
+                decorator: "AuthnUser".to_owned(),
+                found: format!(
+                    "@Authn service `{}` has no directly-resolvable user type in its \
+                     `implements AuthnService<U, Scheme>` clause",
+                    a.name
+                ),
+                hint: "AuthnUser<T> requires every @Authn service on the route to declare a \
+                       bare, resolvable identifier as AuthnService's first type argument"
+                    .to_owned(),
+            });
+        };
+        match common {
+            None => common = Some(id),
+            Some(existing) if existing != id => {
+                return Some(ParseDiagnostic {
+                    file: file_path.to_owned(),
+                    decorator: "AuthnUser".to_owned(),
+                    found: "this route's @Authn services declare different user types".to_owned(),
+                    hint: "AuthnUser<T> requires all @Authn services on a route to agree on \
+                           the same user type — consider a shared base type"
+                        .to_owned(),
+                });
+            }
+            Some(_) => {}
+        }
+    }
+    let common = common.expect("route.authn is non-empty, so common was set in the loop above");
+
+    for u in &user_params {
+        let Some(t_identity) = &u.identity else {
+            return Some(ParseDiagnostic {
+                file: file_path.to_owned(),
+                decorator: "AuthnUser".to_owned(),
+                found: format!(
+                    "AuthnUser<{}> is not a directly-resolvable named type",
+                    u.type_name
+                ),
+                hint: "use a bare imported or locally-declared type identifier as AuthnUser's \
+                       type argument"
+                    .to_owned(),
+            });
+        };
+        if t_identity != common {
+            return Some(ParseDiagnostic {
+                file: file_path.to_owned(),
+                decorator: "AuthnUser".to_owned(),
+                found: format!(
+                    "AuthnUser<{}> does not match this route's @Authn user type",
+                    u.type_name
+                ),
+                hint: "make AuthnUser<T>'s T identical to the user type declared by every \
+                       @Authn service on this route"
+                    .to_owned(),
+            });
+        }
+    }
+    None
 }
 
 /// Return true when `@Deprecated` is present (with or without arguments).
@@ -651,7 +1023,11 @@ fn try_extract_returns(dec: &Decorator<'_>) -> Option<ExtraResponse> {
 }
 
 /// Classify a formal parameter by its type annotation.
-fn classify_param(param: &FormalParameter<'_>) -> TypedParam {
+fn classify_param(
+    param: &FormalParameter<'_>,
+    import_map: &HashMap<String, ImportOrigin>,
+    file_path: &Path,
+) -> TypedParam {
     let name = match &param.pattern {
         BindingPattern::BindingIdentifier(id) => id.name.as_str().to_owned(),
         _ => "_".to_owned(),
@@ -660,13 +1036,17 @@ fn classify_param(param: &FormalParameter<'_>) -> TypedParam {
         .type_annotation
         .as_ref()
         .map_or(ParamKind::Unknown, |ann| {
-            classify_ts_type(&ann.type_annotation)
+            classify_ts_type(&ann.type_annotation, import_map, file_path)
         });
     TypedParam { name, kind }
 }
 
 /// Classify a `TSType` into a `ParamKind`.
-fn classify_ts_type(ty: &TSType<'_>) -> ParamKind {
+fn classify_ts_type(
+    ty: &TSType<'_>,
+    import_map: &HashMap<String, ImportOrigin>,
+    file_path: &Path,
+) -> ParamKind {
     let TSType::TSTypeReference(tref) = ty else {
         return ParamKind::Unknown;
     };
@@ -674,6 +1054,7 @@ fn classify_ts_type(ty: &TSType<'_>) -> ParamKind {
     match local_name {
         "Request" => return ParamKind::Request,
         "Response" => return ParamKind::Response,
+        "AuthnUser" => return classify_authn_user(tref, import_map, file_path),
         "Body" | "Query" | "Params" => {}
         _ => return ParamKind::Unknown,
     }
@@ -686,6 +1067,33 @@ fn classify_ts_type(ty: &TSType<'_>) -> ParamKind {
         "Params" => ParamKind::Params(schema),
         _ => unreachable!(),
     }
+}
+
+/// Classify `AuthnUser<T>`, resolving `T`'s declaration site when it's a bare
+/// identifier type reference (the only shape `AuthnUser<T>` validation can
+/// identity-compare against `@Authn` services' declared user type).
+fn classify_authn_user(
+    tref: &oxc_ast::ast::TSTypeReference<'_>,
+    import_map: &HashMap<String, ImportOrigin>,
+    file_path: &Path,
+) -> ParamKind {
+    let Some(t_arg) = tref.type_arguments.as_ref().and_then(|p| p.params.first()) else {
+        return ParamKind::Unknown;
+    };
+    let (type_name, identity) = match t_arg {
+        TSType::TSTypeReference(inner)
+            if matches!(inner.type_name, TSTypeName::IdentifierReference(_)) =>
+        {
+            let name = ts_type_name_local(&inner.type_name).to_owned();
+            let identity = resolve_type_identity(&name, import_map, file_path);
+            (name, identity)
+        }
+        _ => ("<inline>".to_owned(), None),
+    };
+    ParamKind::User(UserTypeRef {
+        type_name,
+        identity,
+    })
 }
 
 /// Classify the return type annotation into a `ReturnKind`.
@@ -1148,5 +1556,398 @@ export class ApiController {
         assert_eq!(diags[0].decorator, "Middleware");
         let route = &file.unwrap().controllers[0].routes[0];
         assert!(route.middleware.is_empty());
+    }
+
+    #[test]
+    fn class_and_method_auth_ordered_and_combined() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get, Authn, Authz } from "@anvil-di/anvil-bellows";
+import { SessionAuthn } from "./session-authn";
+import { RoleAuthz } from "./role-authz";
+
+@Controller("/admin")
+@Authn(SessionAuthn)
+export class AdminController {
+  @Get("/stats")
+  @Authz(RoleAuthz)
+  stats() {}
+
+  @Get("/ping")
+  ping() {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let ctrl = &file.unwrap().controllers[0];
+
+        // Class-level @Authn applies to every route; method-level @Authz only to `stats`.
+        let stats = &ctrl.routes[0];
+        assert_eq!(
+            stats
+                .authn
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SessionAuthn"]
+        );
+        assert_eq!(
+            stats
+                .authz
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["RoleAuthz"]
+        );
+
+        let ping = &ctrl.routes[1];
+        assert_eq!(
+            ping.authn
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SessionAuthn"]
+        );
+        assert!(ping.authz.is_empty());
+    }
+
+    #[test]
+    fn non_identifier_auth_arg_emits_diagnostic() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+
+@Controller("/api")
+export class ApiController {
+  @Get("/")
+  @Authn("not-an-identifier")
+  list() {}
+}
+"#,
+        );
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].decorator, "Authn");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert!(route.authn.is_empty());
+    }
+
+    #[test]
+    fn authn_scheme_extracted_from_direct_implements_literal() {
+        let dir = tempfile::tempdir().unwrap();
+
+        std::fs::write(
+            dir.path().join("session-authn.ts"),
+            r#"
+import type { AuthnService, AuthnResult } from "@anvil-di/bellows";
+export class SessionAuthn implements AuthnService<{ id: string }, "bearerAuth"> {
+  identify(req: unknown): AuthnResult<{ id: string }> { return { identified: false }; }
+}
+"#,
+        )
+        .unwrap();
+
+        let controller_path = dir.path().join("admin-controller.ts");
+        let src = r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+import { SessionAuthn } from "./session-authn";
+
+@Controller("/admin")
+@Authn(SessionAuthn)
+export class AdminController {
+  @Get("/stats")
+  stats() {}
+}
+"#;
+        std::fs::write(&controller_path, src).unwrap();
+
+        let (file, diags) = parse_source(
+            src,
+            &controller_path.display().to_string(),
+            &controller_path,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let ctrl = &file.unwrap().controllers[0];
+        assert_eq!(
+            ctrl.routes[0].authn[0].scheme.as_deref(),
+            Some("bearerAuth")
+        );
+    }
+
+    #[test]
+    fn authn_scheme_omitted_when_implements_clause_missing() {
+        let dir = tempfile::tempdir().unwrap();
+
+        std::fs::write(
+            dir.path().join("session-authn.ts"),
+            r"
+export class SessionAuthn {
+  identify(req: unknown) { return { identified: false }; }
+}
+",
+        )
+        .unwrap();
+
+        let controller_path = dir.path().join("admin-controller.ts");
+        let src = r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+import { SessionAuthn } from "./session-authn";
+
+@Controller("/admin")
+@Authn(SessionAuthn)
+export class AdminController {
+  @Get("/stats")
+  stats() {}
+}
+"#;
+        std::fs::write(&controller_path, src).unwrap();
+
+        let (file, diags) = parse_source(
+            src,
+            &controller_path.display().to_string(),
+            &controller_path,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let ctrl = &file.unwrap().controllers[0];
+        assert_eq!(ctrl.routes[0].authn[0].scheme, None);
+    }
+
+    #[test]
+    fn authn_scheme_omitted_for_package_origin() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+import { SomeAuthn } from "some-auth-package";
+
+@Controller("/admin")
+@Authn(SomeAuthn)
+export class AdminController {
+  @Get("/stats")
+  stats() {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let ctrl = &file.unwrap().controllers[0];
+        assert_eq!(ctrl.routes[0].authn[0].scheme, None);
+    }
+
+    #[test]
+    fn authn_user_valid_when_all_services_agree() {
+        let dir = tempfile::tempdir().unwrap();
+
+        std::fs::write(
+            dir.path().join("user-types.ts"),
+            r"
+export interface AdminUser {
+  id: string;
+}
+",
+        )
+        .unwrap();
+
+        std::fs::write(
+            dir.path().join("session-authn.ts"),
+            r#"
+import type { AuthnService, AuthnResult } from "@anvil-di/bellows";
+import type { AdminUser } from "./user-types";
+export class SessionAuthn implements AuthnService<AdminUser, "bearerAuth"> {
+  identify(req: unknown): AuthnResult<AdminUser> { return { identified: false }; }
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            dir.path().join("api-key-authn.ts"),
+            r#"
+import type { AuthnService, AuthnResult } from "@anvil-di/bellows";
+import type { AdminUser } from "./user-types";
+export class ApiKeyAuthn implements AuthnService<AdminUser, "apiKeyAuth"> {
+  identify(req: unknown): AuthnResult<AdminUser> { return { identified: false }; }
+}
+"#,
+        )
+        .unwrap();
+
+        let controller_path = dir.path().join("admin-controller.ts");
+        let src = r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+import type { AuthnUser } from "@anvil-di/bellows";
+import type { AdminUser } from "./user-types";
+import { SessionAuthn } from "./session-authn";
+import { ApiKeyAuthn } from "./api-key-authn";
+
+@Controller("/admin")
+@Authn(SessionAuthn, ApiKeyAuthn)
+export class AdminController {
+  @Get("/stats")
+  stats(user: AuthnUser<AdminUser>): void {}
+}
+"#;
+        std::fs::write(&controller_path, src).unwrap();
+
+        let (file, diags) = parse_source(
+            src,
+            &controller_path.display().to_string(),
+            &controller_path,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let ctrl = &file.unwrap().controllers[0];
+        assert_eq!(ctrl.routes.len(), 1);
+        let ParamKind::User(user_ref) = &ctrl.routes[0].params[0].kind else {
+            panic!("expected ParamKind::User");
+        };
+        assert_eq!(user_ref.type_name, "AdminUser");
+        assert_eq!(
+            user_ref.identity.as_ref().unwrap().name,
+            "AdminUser".to_owned()
+        );
+    }
+
+    #[test]
+    fn authn_user_rejected_when_services_disagree() {
+        let dir = tempfile::tempdir().unwrap();
+
+        std::fs::write(
+            dir.path().join("admin-authn.ts"),
+            r#"
+import type { AuthnService, AuthnResult } from "@anvil-di/bellows";
+export interface AdminUser { id: string; }
+export class AdminAuthn implements AuthnService<AdminUser, "bearerAuth"> {
+  identify(req: unknown): AuthnResult<AdminUser> { return { identified: false }; }
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            dir.path().join("guest-authn.ts"),
+            r#"
+import type { AuthnService, AuthnResult } from "@anvil-di/bellows";
+export interface GuestUser { sessionId: string; }
+export class GuestAuthn implements AuthnService<GuestUser, "cookieAuth"> {
+  identify(req: unknown): AuthnResult<GuestUser> { return { identified: false }; }
+}
+"#,
+        )
+        .unwrap();
+
+        let controller_path = dir.path().join("admin-controller.ts");
+        let src = r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+import type { AuthnUser } from "@anvil-di/bellows";
+import type { AdminUser } from "./admin-authn";
+import { AdminAuthn } from "./admin-authn";
+import { GuestAuthn } from "./guest-authn";
+
+@Controller("/admin")
+@Authn(AdminAuthn, GuestAuthn)
+export class AdminController {
+  @Get("/stats")
+  stats(user: AuthnUser<AdminUser>): void {}
+}
+"#;
+        std::fs::write(&controller_path, src).unwrap();
+
+        let (file, diags) = parse_source(
+            src,
+            &controller_path.display().to_string(),
+            &controller_path,
+        );
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].decorator, "AuthnUser");
+        assert!(diags[0].found.contains("different user types"));
+        // The route is dropped entirely — no controller survives with 0 routes.
+        assert!(file.is_none());
+    }
+
+    #[test]
+    fn authn_user_rejected_when_no_authn_declared() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get } from "@anvil-di/anvil-bellows";
+import type { AuthnUser } from "@anvil-di/bellows";
+
+interface AdminUser { id: string; }
+
+@Controller("/admin")
+export class AdminController {
+  @Get("/stats")
+  stats(user: AuthnUser<AdminUser>): void {}
+}
+"#,
+        );
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].decorator, "AuthnUser");
+        assert!(diags[0].found.contains("no @Authn services declared"));
+        assert!(file.is_none());
+    }
+
+    #[test]
+    fn authn_user_rejected_when_service_unresolvable() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+import type { AuthnUser } from "@anvil-di/bellows";
+import { SomeAuthn } from "some-auth-package";
+
+interface AdminUser { id: string; }
+
+@Controller("/admin")
+@Authn(SomeAuthn)
+export class AdminController {
+  @Get("/stats")
+  stats(user: AuthnUser<AdminUser>): void {}
+}
+"#,
+        );
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].decorator, "AuthnUser");
+        assert!(diags[0].found.contains("no directly-resolvable user type"));
+        assert!(file.is_none());
+    }
+
+    #[test]
+    fn authn_user_rejected_when_t_is_inline_type() {
+        let dir = tempfile::tempdir().unwrap();
+
+        std::fs::write(
+            dir.path().join("session-authn.ts"),
+            r#"
+import type { AuthnService, AuthnResult } from "@anvil-di/bellows";
+export interface AdminUser { id: string; }
+export class SessionAuthn implements AuthnService<AdminUser, "bearerAuth"> {
+  identify(req: unknown): AuthnResult<AdminUser> { return { identified: false }; }
+}
+"#,
+        )
+        .unwrap();
+
+        let controller_path = dir.path().join("admin-controller.ts");
+        let src = r#"
+import { Controller, Get, Authn } from "@anvil-di/anvil-bellows";
+import type { AuthnUser } from "@anvil-di/bellows";
+import { SessionAuthn } from "./session-authn";
+
+@Controller("/admin")
+@Authn(SessionAuthn)
+export class AdminController {
+  @Get("/stats")
+  stats(user: AuthnUser<{ id: string }>): void {}
+}
+"#;
+        std::fs::write(&controller_path, src).unwrap();
+
+        let (file, diags) = parse_source(
+            src,
+            &controller_path.display().to_string(),
+            &controller_path,
+        );
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].decorator, "AuthnUser");
+        assert!(diags[0]
+            .found
+            .contains("not a directly-resolvable named type"));
+        assert!(file.is_none());
     }
 }
