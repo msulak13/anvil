@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import type { Validator } from "./schema.js";
+import type { ResponseCodec, Validator } from "./schema.js";
 import { withJsonSchema } from "./schema.js";
 import {
   Controller,
@@ -282,6 +282,78 @@ describe("bellowsRoutes", () => {
       await fetch(`${url}/x`);
       await new Promise((resolve) => setTimeout(resolve, 10));
       expect(calls).toEqual(["handler", "onResponse"]);
+    } finally {
+      await close();
+    }
+  });
+});
+
+// --- ResponseCodec / Produces: the handler emitted for a `Produces<S, C>`
+// route, run through a real Express server. This isn't testing anvil-bellows
+// codegen itself (that's Rust-side, covered by its own unit tests) — it's
+// proving that the *shape* of code codegen emits (schema.safeParse, then
+// codec.contentType/encode instead of res.json) actually behaves correctly
+// against a live server, not just as a string match.
+
+describe("ResponseCodec / Produces (codegen output shape)", () => {
+  const TwimlResponseSchema = z.object({
+    type: z.literal("goodbye"),
+    text: z.string().min(1),
+  });
+  type TwimlResponse = z.infer<typeof TwimlResponseSchema>;
+
+  const twimlCodec: ResponseCodec<TwimlResponse> = {
+    contentType: "application/xml",
+    encode: (value) => `<Response><Say>${value.text}</Say></Response>`,
+  };
+
+  /** Exactly the handler body `anvil-bellows` codegen emits for `Produces<S, C>`. */
+  function producesHandler(getResult: () => unknown): RouteDefinition["handler"] {
+    return (_req, res) => {
+      const result = getResult();
+      const validated = TwimlResponseSchema.safeParse(result);
+      if (!validated.success) {
+        res.status(500).json(validated.error);
+        return;
+      }
+      res.type(twimlCodec.contentType).send(twimlCodec.encode(validated.data));
+    };
+  }
+
+  it("sends the codec-encoded body with the codec's content-type, not JSON", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "POST",
+        path: "/webhooks/gather",
+        handler: producesHandler(() => ({ type: "goodbye", text: "bye now" })),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/webhooks/gather`, { method: "POST" });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toMatch(/^application\/xml/);
+      const body = await res.text();
+      expect(body).toBe("<Response><Say>bye now</Say></Response>");
+    } finally {
+      await close();
+    }
+  });
+
+  it("still 500s with a JSON error body when the handler's return value fails schema validation", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "POST",
+        path: "/webhooks/gather",
+        // Missing `text` — fails TwimlResponseSchema before the codec ever runs.
+        handler: producesHandler(() => ({ type: "goodbye" })),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/webhooks/gather`, { method: "POST" });
+      expect(res.status).toBe(500);
+      expect(res.headers.get("content-type")).toMatch(/^application\/json/);
     } finally {
       await close();
     }

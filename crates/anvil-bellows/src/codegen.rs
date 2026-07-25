@@ -640,9 +640,14 @@ fn collect_schema_refs(route: &Route, out: &mut Vec<String>) {
             out.push(ident.clone());
         }
     }
-    if let ReturnKind::Responds { schema, .. } = &route.return_kind {
+    if let ReturnKind::Responds { schema, codec, .. } = &route.return_kind {
         if !out.contains(&schema.ident) {
             out.push(schema.ident.clone());
+        }
+        if let Some(codec) = codec {
+            if !out.contains(&codec.ident) {
+                out.push(codec.ident.clone());
+            }
         }
     }
 }
@@ -723,7 +728,7 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
     let await_kw = if is_async { "await " } else { "" };
 
     match &route.return_kind {
-        ReturnKind::Responds { schema, .. } => {
+        ReturnKind::Responds { schema, codec, .. } => {
             let s = &schema.ident;
             writeln!(
                 body,
@@ -732,7 +737,16 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
             .unwrap();
             writeln!(body, "      const _validated = {s}.safeParse(_result);").unwrap();
             writeln!(body, "      if (!_validated.success) {{ res.status(500).json(_validated.error); return; }}").unwrap();
-            body.push_str("      res.json(_validated.data);");
+            if let Some(codec) = codec {
+                let c = &codec.ident;
+                write!(
+                    body,
+                    "      res.type({c}.contentType).send({c}.encode(_validated.data));"
+                )
+                .unwrap();
+            } else {
+                body.push_str("      res.json(_validated.data);");
+            }
         }
         ReturnKind::Void { .. } => {
             // Controller manages `res` itself.
@@ -966,6 +980,7 @@ mod tests {
             schema: SchemaRef {
                 ident: "UserSchema".into(),
             },
+            codec: None,
             is_async: false,
         };
 
@@ -989,6 +1004,50 @@ mod tests {
         assert!(result.contains("res.json(_validated.data)"));
         // No typeof in generated code.
         assert!(!result.contains("typeof CreateBody"));
+    }
+
+    #[test]
+    fn emit_typed_adapter_produces_uses_codec_instead_of_json() {
+        use crate::parser::{ParamKind, SchemaRef};
+
+        let params = vec![TypedParam {
+            name: "body".into(),
+            kind: ParamKind::Body(SchemaRef {
+                ident: "GatherWebhookSchema".into(),
+            }),
+        }];
+        let return_kind = ReturnKind::Responds {
+            schema: SchemaRef {
+                ident: "TwimlResponseSchema".into(),
+            },
+            codec: Some(SchemaRef {
+                ident: "twimlCodec".into(),
+            }),
+            is_async: true,
+        };
+
+        let files = vec![make_typed_file(
+            "/project/src/webhooks-controller.ts",
+            "WebhooksController",
+            vec![(
+                "/webhooks/gather",
+                HttpMethod::Post,
+                "gather",
+                params,
+                return_kind,
+            )],
+        )];
+        let output_path = Path::new("/project/src/routes.module.ts");
+        let result = emit_routes_module(&files, output_path, "0.0.1").unwrap();
+
+        // Codec import alongside the controller and schema.
+        assert!(result
+            .contains("WebhooksController, GatherWebhookSchema, TwimlResponseSchema, twimlCodec"));
+        // Validates against the schema, then hands off to the codec — no res.json().
+        assert!(result.contains("TwimlResponseSchema.safeParse(_result)"));
+        assert!(result
+            .contains("res.type(twimlCodec.contentType).send(twimlCodec.encode(_validated.data))"));
+        assert!(!result.contains("res.json(_validated.data)"));
     }
 
     #[test]
