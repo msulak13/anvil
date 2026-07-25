@@ -108,12 +108,32 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
         });
         needs_internal_server_error |= matches!(route.return_kind, ReturnKind::Responds { .. });
     }
+    // SseStream/disconnectSignal are only referenced from the typed-adapter
+    // path, same gating as the error classes above.
+    let sse_params = files
+        .iter()
+        .flat_map(|f| &f.controllers)
+        .flat_map(|c| &c.routes)
+        .filter(|r| !r.params.is_empty() && all_params_recognized(r))
+        .flat_map(|r| &r.params);
+    let mut needs_sse_stream = false;
+    let mut needs_disconnect_signal = false;
+    for param in sse_params {
+        needs_sse_stream |= matches!(param.kind, ParamKind::Sse);
+        needs_disconnect_signal |= matches!(param.kind, ParamKind::Sse | ParamKind::Signal);
+    }
     let mut bellows_value_imports: Vec<&str> = Vec::new();
     if needs_bad_request_error {
         bellows_value_imports.push("BadRequestError");
     }
     if needs_internal_server_error {
         bellows_value_imports.push("InternalServerError");
+    }
+    if needs_sse_stream {
+        bellows_value_imports.push("SseStream");
+    }
+    if needs_disconnect_signal {
+        bellows_value_imports.push("disconnectSignal");
     }
     if !bellows_value_imports.is_empty() {
         writeln!(
@@ -754,6 +774,10 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
             // Express types `Response.locals` as `Record<string, any>`, so
             // this is assignable to `T` in `AuthnUser<T>` without a cast.
             ParamKind::User(_) => call_args.push("res.locals.user".to_owned()),
+            ParamKind::Sse => {
+                call_args.push("new SseStream(res, disconnectSignal(req))".to_owned());
+            }
+            ParamKind::Signal => call_args.push("disconnectSignal(req)".to_owned()),
             ParamKind::Unknown => unreachable!("filtered above"),
         }
     }
@@ -890,6 +914,7 @@ mod tests {
                         method: m,
                         path: p.to_owned(),
                         handler_name: h.to_owned(),
+                        is_sse: false,
                         params: vec![],
                         return_kind: ReturnKind::Void { is_async: false },
                         deprecated: false,
@@ -921,6 +946,7 @@ mod tests {
                         method: m,
                         path: p.to_owned(),
                         handler_name: h.to_owned(),
+                        is_sse: false,
                         params,
                         return_kind,
                         deprecated: false,
