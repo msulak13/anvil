@@ -76,20 +76,15 @@ export function Sse(
   return (target, _ctx) => target;
 }
 
-// Class-decorator overload: `@Middleware(fn) class Ctrl {}`
-export function Middleware(
-  ...fns: ExpressMiddleware[]
-): <T extends abstract new (...args: never[]) => unknown>(
-  target: T,
-  ctx: ClassDecoratorContext<T>,
-) => T;
-// Method-decorator overload: `@Middleware(fn) handler() {}`
-export function Middleware(
-  ...fns: ExpressMiddleware[]
-): <This, Args extends readonly unknown[], Return>(
-  target: (this: This, ...args: Args) => Return,
-  ctx: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,
-) => (this: This, ...args: Args) => Return;
+/**
+ * Usable as either a class or method decorator: `@Middleware(fn) class Ctrl {}`
+ * or `@Middleware(fn) handler() {}`. Deliberately has no typed overloads —
+ * TS's decorator-overload resolution always binds the first matching
+ * signature regardless of the actual target, so a class-decorator overload
+ * and a method-decorator overload with identical outer parameter lists can't
+ * coexist (whichever is declared second fails to typecheck at its call
+ * sites). A single loosely-typed signature checks correctly at both.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function Middleware(..._fns: ExpressMiddleware[]): any {
   return (target: unknown) => target;
@@ -114,58 +109,28 @@ export function Returns(
   return (target, _ctx) => target;
 }
 
-// Class-decorator overload: `@Security("bearer") class Ctrl {}`
-export function Security(
-  scheme: string,
-): <T extends abstract new (...args: never[]) => unknown>(
-  target: T,
-  ctx: ClassDecoratorContext<T>,
-) => T;
-// Method-decorator overload: `@Security("bearer") handler() {}`
-export function Security(
-  scheme: string,
-): <This, Args extends readonly unknown[], Return>(
-  target: (this: This, ...args: Args) => Return,
-  ctx: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,
-) => (this: This, ...args: Args) => Return;
+/**
+ * Usable as either a class or method decorator — see the note on
+ * `Middleware`'s signature above for why this has no typed overloads.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function Security(_scheme: string): any {
   return (target: unknown) => target;
 }
 
-// Class-decorator overload: `@Authn(SessionAuthn) class Ctrl {}`
-export function Authn(
-  ...services: AuthnServiceClass[]
-): <T extends abstract new (...args: never[]) => unknown>(
-  target: T,
-  ctx: ClassDecoratorContext<T>,
-) => T;
-// Method-decorator overload: `@Authn(SessionAuthn) handler() {}`
-export function Authn(
-  ...services: AuthnServiceClass[]
-): <This, Args extends readonly unknown[], Return>(
-  target: (this: This, ...args: Args) => Return,
-  ctx: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,
-) => (this: This, ...args: Args) => Return;
+/**
+ * Usable as either a class or method decorator — see the note on
+ * `Middleware`'s signature above for why this has no typed overloads.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function Authn(..._services: AuthnServiceClass[]): any {
   return (target: unknown) => target;
 }
 
-// Class-decorator overload: `@Authz(RoleAuthz) class Ctrl {}`
-export function Authz(
-  ...services: AuthzServiceClass[]
-): <T extends abstract new (...args: never[]) => unknown>(
-  target: T,
-  ctx: ClassDecoratorContext<T>,
-) => T;
-// Method-decorator overload: `@Authz(RoleAuthz) handler() {}`
-export function Authz(
-  ...services: AuthzServiceClass[]
-): <This, Args extends readonly unknown[], Return>(
-  target: (this: This, ...args: Args) => Return,
-  ctx: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,
-) => (this: This, ...args: Args) => Return;
+/**
+ * Usable as either a class or method decorator — see the note on
+ * `Middleware`'s signature above for why this has no typed overloads.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function Authz(..._services: AuthzServiceClass[]): any {
   return (target: unknown) => target;
