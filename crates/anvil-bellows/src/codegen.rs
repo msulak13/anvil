@@ -103,7 +103,11 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
         needs_bad_request_error |= route.params.iter().any(|p| {
             matches!(
                 p.kind,
-                ParamKind::Body(_) | ParamKind::Query(_) | ParamKind::Params(_)
+                ParamKind::Body(_)
+                    | ParamKind::Query(_)
+                    | ParamKind::Params(_)
+                    | ParamKind::FormBody(_)
+                    | ParamKind::Headers(_)
             )
         });
         needs_internal_server_error |= matches!(route.return_kind, ReturnKind::Responds { .. });
@@ -297,10 +301,14 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
                 let authn_field = auth_field("authn", &route.authn);
                 let authz_field = auth_field("authz", &route.authz);
                 let extra_params_sig = extra_auth_params_sig(route);
+                let body_parser_field = match route_body_parser(route) {
+                    Some(kind) => format!("\n      bodyParser: \"{kind}\","),
+                    None => String::new(),
+                };
 
                 writeln!(
                     s,
-                    "  @IntoSet @Provides\n  static {method_name}({param_name}: {class_name}{extra_params_sig}): RouteDefinition {{\n    return {{\n      method: \"{http_verb}\",\n      path: \"{path}\",{middleware_field}{authn_field}{authz_field}\n      handler: {handler_body},\n    }};\n  }}"
+                    "  @IntoSet @Provides\n  static {method_name}({param_name}: {class_name}{extra_params_sig}): RouteDefinition {{\n    return {{\n      method: \"{http_verb}\",\n      path: \"{path}\",{middleware_field}{authn_field}{authz_field}{body_parser_field}\n      handler: {handler_body},\n    }};\n  }}"
                 )
                 .unwrap();
             }
@@ -399,7 +407,10 @@ pub fn emit_openapi_module(
 fn collect_openapi_schema_idents(route: &Route, out: &mut BTreeSet<String>) {
     for param in &route.params {
         match &param.kind {
-            ParamKind::Body(s) | ParamKind::Query(s) => {
+            ParamKind::Body(s)
+            | ParamKind::Query(s)
+            | ParamKind::FormBody(s)
+            | ParamKind::Headers(s) => {
                 out.insert(s.ident.clone());
             }
             _ => {}
@@ -568,7 +579,11 @@ fn openapi_emit_operation_ts(
         .params
         .iter()
         .any(|p| matches!(p.kind, ParamKind::Query(_)));
-    if !path_params.is_empty() || has_query {
+    let has_headers = route
+        .params
+        .iter()
+        .any(|p| matches!(p.kind, ParamKind::Headers(_)));
+    if !path_params.is_empty() || has_query || has_headers {
         writeln!(s, "{indent}  parameters: [").unwrap();
         for pname in path_params {
             writeln!(
@@ -588,25 +603,39 @@ fn openapi_emit_operation_ts(
                 .unwrap();
             }
         }
+        for param in &route.params {
+            if let ParamKind::Headers(schema) = &param.kind {
+                let schema_id = &schema.ident;
+                let name = &param.name;
+                writeln!(
+                    s,
+                    "{indent}    {{ in: \"header\", name: \"{name}\", required: false, schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }},"
+                )
+                .unwrap();
+            }
+        }
         writeln!(s, "{indent}  ],").unwrap();
     }
 
     if let Some(body_param) = route
         .params
         .iter()
-        .find(|p| matches!(p.kind, ParamKind::Body(_)))
+        .find(|p| matches!(p.kind, ParamKind::Body(_) | ParamKind::FormBody(_)))
     {
-        if let ParamKind::Body(schema) = &body_param.kind {
-            let schema_id = &schema.ident;
-            writeln!(s, "{indent}  requestBody: {{").unwrap();
-            writeln!(
-                s,
-                "{indent}    content: {{ \"application/json\": {{ schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }} }},"
-            )
-            .unwrap();
-            writeln!(s, "{indent}    required: true,").unwrap();
-            writeln!(s, "{indent}  }},").unwrap();
-        }
+        let (schema, content_type) = match &body_param.kind {
+            ParamKind::Body(schema) => (schema, "application/json"),
+            ParamKind::FormBody(schema) => (schema, "application/x-www-form-urlencoded"),
+            _ => unreachable!("filtered above"),
+        };
+        let schema_id = &schema.ident;
+        writeln!(s, "{indent}  requestBody: {{").unwrap();
+        writeln!(
+            s,
+            "{indent}    content: {{ \"{content_type}\": {{ schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }} }},"
+        )
+        .unwrap();
+        writeln!(s, "{indent}    required: true,").unwrap();
+        writeln!(s, "{indent}  }},").unwrap();
     }
 
     writeln!(s, "{indent}  responses: {{").unwrap();
@@ -687,7 +716,11 @@ fn openapi_status_desc(status: u16) -> &'static str {
 fn collect_schema_refs(route: &Route, out: &mut Vec<String>) {
     for param in &route.params {
         let ident = match &param.kind {
-            ParamKind::Body(s) | ParamKind::Query(s) | ParamKind::Params(s) => &s.ident,
+            ParamKind::Body(s)
+            | ParamKind::Query(s)
+            | ParamKind::Params(s)
+            | ParamKind::FormBody(s)
+            | ParamKind::Headers(s) => &s.ident,
             _ => continue,
         };
         if !out.contains(ident) {
@@ -714,6 +747,33 @@ fn all_params_recognized(route: &Route) -> bool {
         .all(|p| !matches!(p.kind, ParamKind::Unknown))
 }
 
+/// Determine which built-in Express body-parser `bellowsRoutes` should mount
+/// for this route, derived from its params: `FormBody<S>` needs `urlencoded`,
+/// `Body<S>` needs `json`, a bare `RawBody` with neither needs `raw`, and a
+/// route with none of the three needs no body parsing at all.
+fn route_body_parser(route: &Route) -> Option<&'static str> {
+    let mut has_body = false;
+    let mut has_form = false;
+    let mut has_raw = false;
+    for param in &route.params {
+        match &param.kind {
+            ParamKind::Body(_) => has_body = true,
+            ParamKind::FormBody(_) => has_form = true,
+            ParamKind::RawBody => has_raw = true,
+            _ => {}
+        }
+    }
+    if has_form {
+        Some("urlencoded")
+    } else if has_body {
+        Some("json")
+    } else if has_raw {
+        Some("raw")
+    } else {
+        None
+    }
+}
+
 /// Emit the handler expression for a route.
 ///
 /// - All Unknown params → v0.1 passthrough: `(req, res) => ctrl.method(req, res)`
@@ -735,40 +795,27 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
     // Schema validation prologue — one block per schema param.
     let mut call_args: Vec<String> = Vec::new();
     for param in &route.params {
+        let schema_source = match &param.kind {
+            ParamKind::Body(schema) | ParamKind::FormBody(schema) => Some((schema, "req.body")),
+            ParamKind::Query(schema) => Some((schema, "req.query")),
+            ParamKind::Params(schema) => Some((schema, "req.params")),
+            ParamKind::Headers(schema) => Some((schema, "req.headers")),
+            _ => None,
+        };
+        if let Some((schema, source)) = schema_source {
+            let s = &schema.ident;
+            let n = &param.name;
+            writeln!(body, "      const _{n} = {s}.safeParse({source});").unwrap();
+            writeln!(
+                body,
+                "      if (!_{n}.success) {{ throw new BadRequestError(_{n}.error.message); }}"
+            )
+            .unwrap();
+            call_args.push(format!("_{n}.data"));
+            continue;
+        }
         match &param.kind {
-            ParamKind::Body(schema) => {
-                let s = &schema.ident;
-                let n = &param.name;
-                writeln!(body, "      const _{n} = {s}.safeParse(req.body);").unwrap();
-                writeln!(
-                    body,
-                    "      if (!_{n}.success) {{ throw new BadRequestError(_{n}.error.message); }}"
-                )
-                .unwrap();
-                call_args.push(format!("_{n}.data"));
-            }
-            ParamKind::Query(schema) => {
-                let s = &schema.ident;
-                let n = &param.name;
-                writeln!(body, "      const _{n} = {s}.safeParse(req.query);").unwrap();
-                writeln!(
-                    body,
-                    "      if (!_{n}.success) {{ throw new BadRequestError(_{n}.error.message); }}"
-                )
-                .unwrap();
-                call_args.push(format!("_{n}.data"));
-            }
-            ParamKind::Params(schema) => {
-                let s = &schema.ident;
-                let n = &param.name;
-                writeln!(body, "      const _{n} = {s}.safeParse(req.params);").unwrap();
-                writeln!(
-                    body,
-                    "      if (!_{n}.success) {{ throw new BadRequestError(_{n}.error.message); }}"
-                )
-                .unwrap();
-                call_args.push(format!("_{n}.data"));
-            }
+            ParamKind::RawBody => call_args.push("req.rawBody".to_owned()),
             ParamKind::Request => call_args.push("req".to_owned()),
             ParamKind::Response => call_args.push("res".to_owned()),
             // Express types `Response.locals` as `Record<string, any>`, so
@@ -779,6 +826,11 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
             }
             ParamKind::Signal => call_args.push("disconnectSignal(req)".to_owned()),
             ParamKind::Unknown => unreachable!("filtered above"),
+            ParamKind::Body(_)
+            | ParamKind::FormBody(_)
+            | ParamKind::Query(_)
+            | ParamKind::Params(_)
+            | ParamKind::Headers(_) => unreachable!("handled above"),
         }
     }
 
@@ -1112,6 +1164,105 @@ mod tests {
         assert!(result
             .contains("res.type(twimlCodec.contentType).send(twimlCodec.encode(_validated.data))"));
         assert!(!result.contains("res.json(_validated.data)"));
+    }
+
+    #[test]
+    fn emit_typed_adapter_form_body_headers_raw_body() {
+        use crate::parser::{ParamKind, SchemaRef};
+
+        let params = vec![
+            TypedParam {
+                name: "body".into(),
+                kind: ParamKind::FormBody(SchemaRef {
+                    ident: "GatherBody".into(),
+                }),
+            },
+            TypedParam {
+                name: "headers".into(),
+                kind: ParamKind::Headers(SchemaRef {
+                    ident: "SignatureHeaders".into(),
+                }),
+            },
+            TypedParam {
+                name: "raw".into(),
+                kind: ParamKind::RawBody,
+            },
+        ];
+        let return_kind = ReturnKind::Void { is_async: false };
+
+        let files = vec![make_typed_file(
+            "/project/src/webhooks-controller.ts",
+            "WebhooksController",
+            vec![(
+                "/webhooks/gather",
+                HttpMethod::Post,
+                "gather",
+                params,
+                return_kind,
+            )],
+        )];
+        let output_path = Path::new("/project/src/routes.module.ts");
+        let result = emit_routes_module(&files, output_path, "0.0.1").unwrap();
+
+        // Route requests the urlencoded body parser (FormBody wins over a bare RawBody).
+        assert!(result.contains("bodyParser: \"urlencoded\""));
+        assert!(result.contains("GatherBody.safeParse(req.body)"));
+        assert!(result.contains("SignatureHeaders.safeParse(req.headers)"));
+        assert!(result.contains("req.rawBody"));
+    }
+
+    #[test]
+    fn route_body_parser_selects_json_urlencoded_raw_or_none() {
+        use crate::parser::{ParamKind, SchemaRef};
+
+        let route_with = |kinds: Vec<ParamKind>| Route {
+            method: HttpMethod::Post,
+            path: "/x".into(),
+            handler_name: "h".into(),
+            is_sse: false,
+            params: kinds
+                .into_iter()
+                .enumerate()
+                .map(|(i, kind)| TypedParam {
+                    name: format!("p{i}"),
+                    kind,
+                })
+                .collect(),
+            return_kind: ReturnKind::Void { is_async: false },
+            deprecated: false,
+            extra_responses: vec![],
+            middleware: vec![],
+            authn: vec![],
+            authz: vec![],
+        };
+
+        assert_eq!(
+            route_body_parser(&route_with(vec![ParamKind::Body(SchemaRef {
+                ident: "S".into()
+            })])),
+            Some("json")
+        );
+        assert_eq!(
+            route_body_parser(&route_with(vec![ParamKind::FormBody(SchemaRef {
+                ident: "S".into()
+            })])),
+            Some("urlencoded")
+        );
+        assert_eq!(
+            route_body_parser(&route_with(vec![ParamKind::RawBody])),
+            Some("raw")
+        );
+        assert_eq!(
+            route_body_parser(&route_with(vec![
+                ParamKind::FormBody(SchemaRef { ident: "S".into() }),
+                ParamKind::RawBody
+            ])),
+            Some("urlencoded")
+        );
+        assert_eq!(
+            route_body_parser(&route_with(vec![ParamKind::Request])),
+            None
+        );
     }
 
     #[test]

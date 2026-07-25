@@ -289,6 +289,99 @@ describe("bellowsRoutes", () => {
   });
 });
 
+// --- bellowsRoutes: bodyParser (json/urlencoded/raw) + req.rawBody ---
+
+describe("bellowsRoutes bodyParser", () => {
+  it("parses application/json bodies when bodyParser is \"json\"", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "POST",
+        path: "/x",
+        bodyParser: "json",
+        handler: (req, res) => res.json({ body: req.body, rawBody: req.rawBody?.toString() }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "ada" }),
+      });
+      const json = await res.json();
+      expect(json.body).toEqual({ name: "ada" });
+      expect(json.rawBody).toBe(JSON.stringify({ name: "ada" }));
+    } finally {
+      await close();
+    }
+  });
+
+  it("parses application/x-www-form-urlencoded bodies when bodyParser is \"urlencoded\"", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "POST",
+        path: "/x",
+        bodyParser: "urlencoded",
+        handler: (req, res) => res.json({ body: req.body, rawBody: req.rawBody?.toString() }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "name=ada&role=admin",
+      });
+      const json = await res.json();
+      expect(json.body).toEqual({ name: "ada", role: "admin" });
+      expect(json.rawBody).toBe("name=ada&role=admin");
+    } finally {
+      await close();
+    }
+  });
+
+  it("captures raw bytes with no parsing when bodyParser is \"raw\"", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "POST",
+        path: "/x",
+        bodyParser: "raw",
+        handler: (req, res) => res.json({ rawBody: req.rawBody?.toString() }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`, {
+        method: "POST",
+        headers: { "content-type": "application/octet-stream" },
+        body: "not-json-or-form",
+      });
+      const json = await res.json();
+      expect(json.rawBody).toBe("not-json-or-form");
+    } finally {
+      await close();
+    }
+  });
+
+  it("leaves req.body untouched when bodyParser is undeclared", async () => {
+    const routes: RouteDefinition[] = [
+      { method: "POST", path: "/x", handler: (req, res) => res.json({ body: req.body ?? null }) },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "ada" }),
+      });
+      const json = await res.json();
+      expect(json.body).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+});
+
 // --- ResponseCodec / Produces: the handler emitted for a `Produces<S, C>`
 // route, run through a real Express server. This isn't testing anvil-bellows
 // codegen itself (that's Rust-side, covered by its own unit tests) — it's

@@ -8,6 +8,7 @@ export @Module class RoutesModule {
 		return {
 			method: "POST",
 			path: "/webhooks/gather",
+			bodyParser: "json",
 			handler: async (req, res) => {
 				const _body = GatherWebhookBody.safeParse(req.body);
 				if (!_body.success) {
