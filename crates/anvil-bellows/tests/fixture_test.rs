@@ -56,6 +56,7 @@ fn copy_dir(src: &Path, dst: &Path) {
 
 /// Write minimal package stubs so the generated `routes.module.ts` can be
 /// type-checked without pulling in the full monorepo.
+#[allow(clippy::too_many_lines)]
 fn write_stubs(root: &Path) {
     // @anvil-di/anvil — provides Module, Provides, IntoSet decorators
     let anvil = root.join("node_modules/@anvil-di/anvil");
