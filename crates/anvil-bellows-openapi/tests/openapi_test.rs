@@ -152,3 +152,65 @@ fn fixture_01_basic_routes_yaml_format() {
     );
     assert!(yaml.contains("/users"), "YAML should contain /users path");
 }
+
+// ---------------------------------------------------------------------------
+// Fixture 02 — content-type codecs: the two-arg Body<S, C> (request) and
+//              Produces<S, C> (response) end to end through the real CLI,
+//              verifying their codecs' contentType literals make it into the
+//              generated OpenAPI document instead of the application/json
+//              default.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixture_02_content_type_codecs_snapshot() {
+    let run = run_fixture("02_content_type_codecs", &[]);
+    let doc: serde_json::Value = serde_json::from_str(&run.output).expect("valid JSON");
+    assert_eq!(doc["openapi"], "3.1.0");
+    assert!(
+        doc["paths"]["/webhooks/gather"].is_object(),
+        "missing /webhooks/gather path"
+    );
+    bless_or_assert("02_content_type_codecs", "openapi.json", &run.output);
+}
+
+#[test]
+fn fixture_02_plain_body_still_defaults_to_json() {
+    let run = run_fixture("02_content_type_codecs", &[]);
+    let doc: serde_json::Value = serde_json::from_str(&run.output).unwrap();
+    let request_body = &doc["paths"]["/webhooks/greeting"]["post"]["requestBody"];
+    assert!(
+        request_body["content"]["application/json"].is_object(),
+        "single-arg Body<S> should still default to application/json"
+    );
+    assert!(request_body["content"]["application/xml"].is_null());
+}
+
+#[test]
+fn fixture_02_two_arg_body_uses_resolved_request_codec_content_type() {
+    let run = run_fixture("02_content_type_codecs", &[]);
+    let doc: serde_json::Value = serde_json::from_str(&run.output).unwrap();
+    let request_body = &doc["paths"]["/webhooks/gather"]["post"]["requestBody"];
+    assert_eq!(
+        request_body["content"]["application/xml"]["schema"]["$ref"],
+        "#/components/schemas/GatherCallbackSchema"
+    );
+    assert!(
+        request_body["content"]["application/json"].is_null(),
+        "should not also list application/json once the codec's content type is resolved"
+    );
+}
+
+#[test]
+fn fixture_02_produces_uses_resolved_response_codec_content_type() {
+    let run = run_fixture("02_content_type_codecs", &[]);
+    let doc: serde_json::Value = serde_json::from_str(&run.output).unwrap();
+    let response_content = &doc["paths"]["/webhooks/say"]["post"]["responses"]["200"]["content"];
+    assert_eq!(
+        response_content["application/xml"]["schema"]["$ref"],
+        "#/components/schemas/TwimlResponseSchema"
+    );
+    assert!(
+        response_content["application/json"].is_null(),
+        "should not also document application/json once Produces's codec is resolved"
+    );
+}
