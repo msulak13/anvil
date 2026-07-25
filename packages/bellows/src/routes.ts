@@ -178,8 +178,12 @@ export interface BellowsHooks {
    * thrown (or passed to `next`) by any route's auth handler, middleware, or
    * handler is converted to a response — Express 5 forwards rejected
    * promises from async handlers automatically. Defaults to `errorHandler`
-   * from `./errors.js`. Pass `false` to opt out, e.g. when a shared instance
-   * is mounted once on the parent app instead of per-router.
+   * from `./errors.js`, which only ever intercepts its own `HttpError` —
+   * anything else it forwards via `next(err)` rather than responding, so it
+   * composes safely with a consumer's own app-level handler mounted after
+   * `bellowsRoutes()` (e.g. for a separate `HttpError`-like hierarchy) even
+   * without opting out. Pass `false` to disable it entirely, e.g. when a
+   * shared instance is mounted once on the parent app instead of per-router.
    */
   errorHandler?: ErrorRequestHandler | false;
 }

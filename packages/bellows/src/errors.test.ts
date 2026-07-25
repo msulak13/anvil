@@ -109,32 +109,29 @@ describe("errorHandler", () => {
     expect(res.json).toHaveBeenCalledWith({ error: "Forbidden", message: "nope" });
   });
 
-  it("falls back to a generic 500 for unknown errors", () => {
+  it("forwards unrecognized errors via next() instead of responding itself", () => {
+    // Only ever intercepts its own HttpError — see the errorHandler doc
+    // comment. This is what makes it safe to install by default: a
+    // consumer's own error hierarchy passes through untouched to whatever
+    // app-level handler is mounted after bellowsRoutes().
     const res = mockRes();
     const req = {} as Request;
-    errorHandler(new Error("some internal detail"), req, res, vi.fn() as NextFunction);
+    const err = new Error("some internal detail");
+    const next = vi.fn() as NextFunction;
+    errorHandler(err, req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({
-      error: "Internal Server Error",
-      message: "Internal server error",
-    });
+    expect(next).toHaveBeenCalledWith(err);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
   });
 
-  it("logs unknown errors via req.log when present", () => {
+  it("forwards a plain Error via next() rather than responding", () => {
     const res = mockRes();
-    const log = { error: vi.fn() };
-    const req = { log } as unknown as Request;
+    const req = {} as Request;
     const err = new Error("boom");
-    errorHandler(err, req, res, vi.fn() as NextFunction);
-
-    expect(log.error).toHaveBeenCalledWith({ err }, "Unhandled error");
-  });
-
-  it("does not throw when req.log is absent", () => {
-    const res = mockRes();
-    const req = {} as Request;
-    expect(() => errorHandler(new Error("boom"), req, res, vi.fn() as NextFunction)).not.toThrow();
+    const next = vi.fn() as NextFunction;
+    expect(() => errorHandler(err, req, res, next)).not.toThrow();
+    expect(next).toHaveBeenCalledWith(err);
   });
 
   it("ends the response without writing a body if headers are already sent", () => {

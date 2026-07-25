@@ -585,24 +585,37 @@ describe("bellowsRoutes error handling", () => {
     }
   });
 
-  it("falls back to a generic 500 for a non-HttpError", async () => {
+  it("forwards a non-HttpError to a consumer's own app-level handler by default (issue #19)", async () => {
+    // The default errorHandler only ever intercepts its own HttpError — a
+    // consumer's own error hierarchy (a natural thing to build, since
+    // earlier bellows releases had no error-handling primitives) must reach
+    // its own app-level handler mounted after bellowsRoutes(), not get
+    // silently swallowed into bellows' generic 500 first.
+    class MyNotFoundError extends Error {
+      status = 404;
+    }
     const routes: RouteDefinition[] = [
       {
         method: "GET",
         path: "/x",
-        handler: () => { throw new Error("some internal detail"); },
+        handler: () => { throw new MyNotFoundError("consumer-owned"); },
       },
     ];
-    const { url, close } = await serve(routes);
+    const app = express();
+    app.use(bellowsRoutes(routes));
+    app.use(((_err: unknown, _req, res, _next) => {
+      res.status(599).json({ ownHandler: true });
+    }) as express.ErrorRequestHandler);
+
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const { port } = server.address() as AddressInfo;
     try {
-      const res = await fetch(`${url}/x`);
-      expect(res.status).toBe(500);
-      expect(await res.json()).toEqual({
-        error: "Internal Server Error",
-        message: "Internal server error",
-      });
+      const res = await fetch(`http://127.0.0.1:${port}/x`);
+      expect(res.status).toBe(599);
+      expect(await res.json()).toEqual({ ownHandler: true });
     } finally {
-      await close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 
