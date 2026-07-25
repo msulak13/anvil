@@ -56,6 +56,7 @@ fn copy_dir(src: &Path, dst: &Path) {
 
 /// Write minimal package stubs so the generated `routes.module.ts` can be
 /// type-checked without pulling in the full monorepo.
+#[allow(clippy::too_many_lines)]
 fn write_stubs(root: &Path) {
     // @anvil-di/anvil — provides Module, Provides, IntoSet decorators
     let anvil = root.join("node_modules/@anvil-di/anvil");
@@ -115,6 +116,15 @@ fn write_stubs(root: &Path) {
            encode(value: T): string;\n\
          }\n\
          export type Produces<S, C extends ResponseCodec<Responds<S>>> = Responds<S>;\n\
+         export class HttpError extends Error {\n\
+           constructor(readonly status: number, readonly error: string, message?: string) { super(message ?? error); }\n\
+         }\n\
+         export class BadRequestError extends HttpError {\n\
+           constructor(message?: string) { super(400, \"Bad Request\", message); }\n\
+         }\n\
+         export class InternalServerError extends HttpError {\n\
+           constructor(message?: string) { super(500, \"Internal Server Error\", message); }\n\
+         }\n\
          export const Controller = (..._: any[]): any => {};\n\
          export const Get = (..._: any[]): any => {};\n\
          export const Post = (..._: any[]): any => {};\n\

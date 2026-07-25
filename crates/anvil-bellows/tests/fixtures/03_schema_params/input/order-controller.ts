@@ -5,7 +5,9 @@ import type { Body, Query, Params, Responds } from "@anvil-di/bellows";
 type Request = any;
 type Response = any;
 
-type SafeParseResult<T> = { success: true; data: T } | { success: false; error: unknown };
+// `error` mirrors zod's `ZodError` shape closely enough for typecheck purposes: a
+// `.message` string (zod's `ZodError.message` is a JSON-stringified issue list).
+type SafeParseResult<T> = { success: true; data: T } | { success: false; error: { message: string } };
 
 function safeParse<T>(input: unknown): SafeParseResult<T> {
   return { success: true, data: input as T };
