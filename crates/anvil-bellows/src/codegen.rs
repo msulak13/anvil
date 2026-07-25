@@ -90,6 +90,64 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
     writeln!(s, "import {{ {anvil_imports} }} from \"@anvil-di/anvil\";").unwrap();
     s.push_str("import type { RouteDefinition } from \"@anvil-di/bellows\";\n");
 
+    // Value imports for the error classes thrown by generated validation
+    // prologues/epilogues — only emitted when a route actually needs them.
+    let routes_with_validation = files
+        .iter()
+        .flat_map(|f| &f.controllers)
+        .flat_map(|c| &c.routes)
+        .filter(|r| !r.params.is_empty() && all_params_recognized(r));
+    let mut needs_bad_request_error = false;
+    let mut needs_internal_server_error = false;
+    for route in routes_with_validation {
+        needs_bad_request_error |= route.params.iter().any(|p| {
+            matches!(
+                p.kind,
+                ParamKind::Body(_)
+                    | ParamKind::Query(_)
+                    | ParamKind::Params(_)
+                    | ParamKind::FormBody(_)
+                    | ParamKind::Headers(_)
+            )
+        });
+        needs_internal_server_error |= matches!(route.return_kind, ReturnKind::Responds { .. });
+    }
+    // SseStream/disconnectSignal are only referenced from the typed-adapter
+    // path, same gating as the error classes above.
+    let sse_params = files
+        .iter()
+        .flat_map(|f| &f.controllers)
+        .flat_map(|c| &c.routes)
+        .filter(|r| !r.params.is_empty() && all_params_recognized(r))
+        .flat_map(|r| &r.params);
+    let mut needs_sse_stream = false;
+    let mut needs_disconnect_signal = false;
+    for param in sse_params {
+        needs_sse_stream |= matches!(param.kind, ParamKind::Sse);
+        needs_disconnect_signal |= matches!(param.kind, ParamKind::Sse | ParamKind::Signal);
+    }
+    let mut bellows_value_imports: Vec<&str> = Vec::new();
+    if needs_bad_request_error {
+        bellows_value_imports.push("BadRequestError");
+    }
+    if needs_internal_server_error {
+        bellows_value_imports.push("InternalServerError");
+    }
+    if needs_sse_stream {
+        bellows_value_imports.push("SseStream");
+    }
+    if needs_disconnect_signal {
+        bellows_value_imports.push("disconnectSignal");
+    }
+    if !bellows_value_imports.is_empty() {
+        writeln!(
+            s,
+            "import {{ {} }} from \"@anvil-di/bellows\";",
+            bellows_value_imports.join(", ")
+        )
+        .unwrap();
+    }
+
     // One import per controller file — includes controller class + any schema refs.
     // Also collect dep types that need separate imports.
     for file in files {
@@ -750,7 +808,7 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
             writeln!(body, "      const _{n} = {s}.safeParse({source});").unwrap();
             writeln!(
                 body,
-                "      if (!_{n}.success) {{ res.status(400).json(_{n}.error); return; }}"
+                "      if (!_{n}.success) {{ throw new BadRequestError(_{n}.error.message); }}"
             )
             .unwrap();
             call_args.push(format!("_{n}.data"));
@@ -763,6 +821,10 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
             // Express types `Response.locals` as `Record<string, any>`, so
             // this is assignable to `T` in `AuthnUser<T>` without a cast.
             ParamKind::User(_) => call_args.push("res.locals.user".to_owned()),
+            ParamKind::Sse => {
+                call_args.push("new SseStream(res, disconnectSignal(req))".to_owned());
+            }
+            ParamKind::Signal => call_args.push("disconnectSignal(req)".to_owned()),
             ParamKind::Unknown => unreachable!("filtered above"),
             ParamKind::Body(_)
             | ParamKind::FormBody(_)
@@ -784,7 +846,7 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
             )
             .unwrap();
             writeln!(body, "      const _validated = {s}.safeParse(_result);").unwrap();
-            writeln!(body, "      if (!_validated.success) {{ res.status(500).json(_validated.error); return; }}").unwrap();
+            writeln!(body, "      if (!_validated.success) {{ throw new InternalServerError(_validated.error.message); }}").unwrap();
             if let Some(codec) = codec {
                 let c = &codec.ident;
                 write!(
@@ -904,6 +966,7 @@ mod tests {
                         method: m,
                         path: p.to_owned(),
                         handler_name: h.to_owned(),
+                        is_sse: false,
                         params: vec![],
                         return_kind: ReturnKind::Void { is_async: false },
                         deprecated: false,
@@ -935,6 +998,7 @@ mod tests {
                         method: m,
                         path: p.to_owned(),
                         handler_name: h.to_owned(),
+                        is_sse: false,
                         params,
                         return_kind,
                         deprecated: false,
@@ -1045,9 +1109,13 @@ mod tests {
         // safeParse calls.
         assert!(result.contains("CreateBody.safeParse(req.body)"));
         assert!(result.contains("UserSchema.safeParse(_result)"));
-        // Error responses.
-        assert!(result.contains("res.status(400)"));
-        assert!(result.contains("res.status(500)"));
+        // Errors are thrown, not responded to directly, so the shared
+        // errorHandler middleware maps them.
+        assert!(result.contains("throw new BadRequestError(_body.error.message)"));
+        assert!(result.contains("throw new InternalServerError(_validated.error.message)"));
+        assert!(result.contains(
+            "import { BadRequestError, InternalServerError } from \"@anvil-di/bellows\""
+        ));
         // Success response.
         assert!(result.contains("res.json(_validated.data)"));
         // No typeof in generated code.
@@ -1151,6 +1219,7 @@ mod tests {
             method: HttpMethod::Post,
             path: "/x".into(),
             handler_name: "h".into(),
+            is_sse: false,
             params: kinds
                 .into_iter()
                 .enumerate()

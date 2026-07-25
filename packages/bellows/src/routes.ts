@@ -1,5 +1,12 @@
-import express, { Router, type Request, type RequestHandler, type Response } from "express";
+import express, {
+  Router,
+  type ErrorRequestHandler,
+  type Request,
+  type RequestHandler,
+  type Response,
+} from "express";
 import type { AuthnService, AuthzService } from "./authz.js";
+import { errorHandler } from "./errors.js";
 
 declare global {
   namespace Express {
@@ -127,6 +134,15 @@ export interface BellowsHooks {
   onRequest?: RequestHandler;
   /** Runs after the response has been sent, for every request. */
   onResponse?: (req: Request, res: Response) => void;
+  /**
+   * Error-handling middleware registered after all routes, so an `HttpError`
+   * thrown (or passed to `next`) by any route's auth handler, middleware, or
+   * handler is converted to a response — Express 5 forwards rejected
+   * promises from async handlers automatically. Defaults to `errorHandler`
+   * from `./errors.js`. Pass `false` to opt out, e.g. when a shared instance
+   * is mounted once on the parent app instead of per-router.
+   */
+  errorHandler?: ErrorRequestHandler | false;
 }
 
 /** Returns an Express Router with all routes from `routes` registered on it. */
@@ -160,5 +176,10 @@ export function bellowsRoutes(routes: Iterable<RouteDefinition>, hooks: BellowsH
       case "PATCH":  router.patch(route.path, ...handlers);  break;
     }
   }
+
+  if (hooks.errorHandler !== false) {
+    router.use(hooks.errorHandler ?? errorHandler);
+  }
+
   return router;
 }

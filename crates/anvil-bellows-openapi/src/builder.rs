@@ -184,6 +184,10 @@ fn build_responses(
             r.insert("description".into(), json!("Success"));
             json!(r)
         }
+        ReturnKind::Void { .. } if route.is_sse => json!({
+            "content": { "text/event-stream": { "schema": { "type": "string" } } },
+            "description": "Server-sent event stream",
+        }),
         ReturnKind::Void { .. } => json!({ "description": "Success" }),
     };
     responses.insert("200".to_owned(), success);
@@ -413,6 +417,7 @@ mod tests {
                 method: HttpMethod::Get,
                 path: "/admin/stats".into(),
                 handler_name: "stats".into(),
+                is_sse: false,
                 params: vec![],
                 return_kind: RK::Void { is_async: false },
                 deprecated: false,
@@ -472,6 +477,7 @@ mod tests {
                 method: HttpMethod::Post,
                 path: "/webhooks/gather".into(),
                 handler_name: "gather".into(),
+                is_sse: false,
                 params: vec![
                     TypedParam {
                         name: "body".into(),
@@ -523,5 +529,55 @@ mod tests {
         assert!(params.iter().any(|p| p["in"] == "header"
             && p["name"] == "headers"
             && p["schema"]["$ref"] == "#/components/schemas/SignatureHeaders"));
+    }
+
+    #[test]
+    fn sse_route_gets_event_stream_content_type() {
+        use crate::config::InfoConfig;
+        use anvil_bellows::{ReturnKind as RK, Route};
+        use std::path::PathBuf;
+
+        let ctrl = Controller {
+            class_name: "EventsController".into(),
+            ctor_params: vec![],
+            tags: vec![],
+            security: vec![],
+            routes: vec![Route {
+                method: HttpMethod::Get,
+                path: "/events/progress".into(),
+                handler_name: "progress".into(),
+                is_sse: true,
+                params: vec![],
+                return_kind: RK::Void { is_async: true },
+                deprecated: false,
+                extra_responses: vec![],
+                middleware: vec![],
+                authn: vec![],
+                authz: vec![],
+            }],
+        };
+        let files = vec![ControllerFile {
+            source_path: PathBuf::from("/project/src/events-controller.ts"),
+            controllers: vec![ctrl],
+        }];
+
+        let config = OpenApiConfig {
+            info: InfoConfig {
+                title: "API".into(),
+                version: "1.0.0".into(),
+            },
+            servers: vec![],
+            security_schemes: BTreeMap::new(),
+        };
+
+        let mut diagnostics = Vec::new();
+        let doc = build_openapi(&files, &config, &mut diagnostics);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+        let content = &doc["paths"]["/events/progress"]["get"]["responses"]["200"]["content"];
+        assert_eq!(
+            content["text/event-stream"]["schema"]["type"],
+            json!("string")
+        );
     }
 }

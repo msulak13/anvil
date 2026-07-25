@@ -97,6 +97,10 @@ pub enum ParamKind {
     /// `AuthnUser<T>` — inject the identified user (`res.locals.user`),
     /// validated against the route's `@Authn` services' declared user type.
     User(UserTypeRef),
+    /// `SseStream` — inject an `SseStream` wrapping `res`, for `@Sse` routes.
+    Sse,
+    /// `AbortSignal` — inject a signal that fires on client disconnect.
+    Signal,
     /// Unrecognized annotation — triggers v0.1 passthrough for the whole route.
     Unknown,
 }
@@ -176,6 +180,9 @@ pub struct Route {
     pub path: String,
     /// The TypeScript method name on the controller class.
     pub handler_name: String,
+    /// True when declared via `@Sse` rather than `@Get`/`@Post`/etc. — the
+    /// route is registered as `GET` but marked streaming for codegen/OpenAPI.
+    pub is_sse: bool,
     /// Typed parameters of the handler (empty means v0.1 passthrough).
     pub params: Vec<TypedParam>,
     /// Classification of the handler's return type.
@@ -492,7 +499,9 @@ fn parse_source(
                     a.scheme = resolved.scheme;
                     a.user_identity = resolved.user_identity;
                 }
-                if let Some(diag) = validate_authn_user_param(&route, file_path) {
+                if let Some(diag) = validate_sse_route(&route, file_path) {
+                    diagnostics.push(diag);
+                } else if let Some(diag) = validate_authn_user_param(&route, file_path) {
                     diagnostics.push(diag);
                 } else {
                     routes.push(route);
@@ -631,7 +640,11 @@ fn try_extract_route<'a>(
         return None;
     };
     let name = decorator_ident_name(&call.callee)?;
-    let method = HttpMethod::from_decorator_name(&name)?;
+    let (method, is_sse) = if name == "Sse" {
+        (HttpMethod::Get, true)
+    } else {
+        (HttpMethod::from_decorator_name(&name)?, false)
+    };
     let arg = call.arguments.first()?;
     let route_path = extract_string_arg(arg, &name, file_path, diagnostics)?;
     let full_path = join_paths(base_path, &route_path);
@@ -639,6 +652,7 @@ fn try_extract_route<'a>(
         method,
         path: full_path,
         handler_name: handler_name.to_owned(),
+        is_sse,
         params: typed_params.to_vec(),
         return_kind,
         deprecated: false, // filled in by caller after scanning all decorators
@@ -998,6 +1012,28 @@ fn validate_authn_user_param(route: &Route, file_path: &str) -> Option<ParseDiag
     None
 }
 
+/// Validate `@Sse` routes: the handler must return `void`/`Promise<void>` —
+/// there's no buffered value to validate/serialize on a stream, so
+/// `Responds<S>`/`Produces<S, C>` return types are rejected rather than
+/// silently ignored. Returns `Some(diagnostic)` and the caller drops the
+/// route; `None` means either the route isn't `@Sse` or it's valid.
+fn validate_sse_route(route: &Route, file_path: &str) -> Option<ParseDiagnostic> {
+    if !route.is_sse {
+        return None;
+    }
+    if matches!(route.return_kind, ReturnKind::Void { .. }) {
+        return None;
+    }
+    Some(ParseDiagnostic {
+        file: file_path.to_owned(),
+        decorator: "Sse".to_owned(),
+        found: "handler declares a Responds<S>/Produces<S, C> return type".to_owned(),
+        hint: "@Sse handlers must return void — write events with the injected SseStream \
+               instead of returning a value"
+            .to_owned(),
+    })
+}
+
 /// Return true when `@Deprecated` is present (with or without arguments).
 fn is_deprecated_decorator(dec: &Decorator<'_>) -> bool {
     match &dec.expression {
@@ -1068,6 +1104,8 @@ fn classify_ts_type(
         "Request" => return ParamKind::Request,
         "Response" => return ParamKind::Response,
         "RawBody" => return ParamKind::RawBody,
+        "SseStream" => return ParamKind::Sse,
+        "AbortSignal" => return ParamKind::Signal,
         "AuthnUser" => return classify_authn_user(tref, import_map, file_path),
         "Body" | "Query" | "Params" | "FormBody" | "Headers" => {}
         _ => return ParamKind::Unknown,
@@ -1473,6 +1511,49 @@ export class WebhooksController {
         );
         assert_eq!(route.params[2].name, "raw");
         assert_eq!(route.params[2].kind, ParamKind::RawBody);
+    }
+
+    #[test]
+    fn sse_route_injects_stream_and_signal_and_registers_as_get() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Sse } from "@anvil-di/anvil-bellows";
+
+@Controller("/events")
+export class EventsController {
+  @Sse("/progress")
+  async progress(stream: SseStream, signal: AbortSignal): Promise<void> {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert!(route.is_sse);
+        assert_eq!(route.method, HttpMethod::Get);
+        assert_eq!(route.params[0].kind, ParamKind::Sse);
+        assert_eq!(route.params[1].kind, ParamKind::Signal);
+    }
+
+    #[test]
+    fn sse_route_with_responds_return_type_rejected() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Sse } from "@anvil-di/anvil-bellows";
+export const EventSchema = {};
+
+@Controller("/events")
+export class EventsController {
+  @Sse("/progress")
+  progress(stream: SseStream): Responds<typeof EventSchema> { return {} as any; }
+}
+"#,
+        );
+        assert!(
+            file.is_none(),
+            "route with a Responds<S> return type must be dropped, leaving no controllers"
+        );
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].decorator, "Sse");
     }
 
     #[test]

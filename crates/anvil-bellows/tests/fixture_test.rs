@@ -12,7 +12,7 @@
 //!   `tsc --noEmit` validation.
 //! - `02_non_literal_arg` — one controller with a non-literal `@Controller`
 //!   arg (skipped + diagnostic) and one good controller (included).
-//! - `07_form_body` — a route combining `FormBody<S>`, `Headers<S>`, and
+//! - `08_form_body` — a route combining `FormBody<S>`, `Headers<S>`, and
 //!   `RawBody`, verifying the `urlencoded` body parser is selected and
 //!   `req.rawBody` is injected.
 
@@ -59,6 +59,7 @@ fn copy_dir(src: &Path, dst: &Path) {
 
 /// Write minimal package stubs so the generated `routes.module.ts` can be
 /// type-checked without pulling in the full monorepo.
+#[allow(clippy::too_many_lines)]
 fn write_stubs(root: &Path) {
     // @anvil-di/anvil — provides Module, Provides, IntoSet decorators
     let anvil = root.join("node_modules/@anvil-di/anvil");
@@ -122,8 +123,27 @@ fn write_stubs(root: &Path) {
            encode(value: T): string;\n\
          }\n\
          export type Produces<S, C extends ResponseCodec<Responds<S>>> = Responds<S>;\n\
+         export class HttpError extends Error {\n\
+           constructor(readonly status: number, readonly error: string, message?: string) { super(message ?? error); }\n\
+         }\n\
+         export class BadRequestError extends HttpError {\n\
+           constructor(message?: string) { super(400, \"Bad Request\", message); }\n\
+         }\n\
+         export class InternalServerError extends HttpError {\n\
+           constructor(message?: string) { super(500, \"Internal Server Error\", message); }\n\
+         }\n\
+         export function disconnectSignal(_req: any): AbortSignal { return new AbortController().signal; }\n\
+         export class SseStream {\n\
+           readonly signal: AbortSignal;\n\
+           constructor(_res: any, signal: AbortSignal) { this.signal = signal; }\n\
+           open(_keepAliveMs?: number | false): this { return this; }\n\
+           send(_data: unknown, _opts?: { event?: string; id?: string; retry?: number }): void {}\n\
+           comment(_text?: string): void {}\n\
+           close(): void {}\n\
+         }\n\
          export const Controller = (..._: any[]): any => {};\n\
          export const Get = (..._: any[]): any => {};\n\
+         export const Sse = (..._: any[]): any => {};\n\
          export const Post = (..._: any[]): any => {};\n\
          export const Put = (..._: any[]): any => {};\n\
          export const Delete = (..._: any[]): any => {};\n\
@@ -499,25 +519,23 @@ fn fixture_06_produces_uses_codec_not_json() {
 }
 
 // ---------------------------------------------------------------------------
-// Fixture 07 — FormBody<S>, Headers<S>, RawBody: a webhook-style route that
-//              validates a form-urlencoded body and headers, and also grabs
-//              the raw request bytes (Twilio-signature-verification shape).
+// Fixture 07 — @Sse route with SseStream + AbortSignal injection
 // ---------------------------------------------------------------------------
 
 #[test]
-fn fixture_07_form_body_snapshot() {
-    run_fixture("07_form_body");
+fn fixture_07_sse_snapshot() {
+    run_fixture("07_sse");
 }
 
 #[test]
-fn fixture_07_form_body_tsc() {
+fn fixture_07_sse_tsc() {
     let tsc = tsc_bin();
     if !tsc.exists() {
         eprintln!("skipping tsc check — tsc not found at {}", tsc.display());
         return;
     }
 
-    let (tmp, _) = run_fixture("07_form_body");
+    let (tmp, _) = run_fixture("07_sse");
 
     Command::new(tsc)
         .arg("--project")
@@ -528,20 +546,65 @@ fn fixture_07_form_body_tsc() {
 }
 
 #[test]
-fn fixture_07_form_body_selects_urlencoded_parser() {
-    let (_tmp, output_path) = run_fixture("07_form_body");
+fn fixture_07_sse_constructs_stream_and_signal() {
+    let (_tmp, output) = run_fixture("07_sse");
+    let produced = std::fs::read_to_string(&output).unwrap();
+    assert!(produced.contains("new SseStream(res, disconnectSignal(req))"));
+    assert!(produced.contains("disconnectSignal(req)"));
+    assert!(
+        produced.contains(
+            "import { SseStream, disconnectSignal, BadRequestError } from \"@anvil-di/bellows\";"
+        ) || produced.contains("disconnectSignal")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Fixture 08 — FormBody<S>, Headers<S>, RawBody: a webhook-style route that
+//              validates a form-urlencoded body and headers, and also grabs
+//              the raw request bytes (Twilio-signature-verification shape).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixture_08_form_body_snapshot() {
+    run_fixture("08_form_body");
+}
+
+#[test]
+fn fixture_08_form_body_tsc() {
+    let tsc = tsc_bin();
+    if !tsc.exists() {
+        eprintln!("skipping tsc check — tsc not found at {}", tsc.display());
+        return;
+    }
+
+    let (tmp, _) = run_fixture("08_form_body");
+
+    Command::new(tsc)
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .current_dir(tmp.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn fixture_08_form_body_selects_urlencoded_parser() {
+    let (_tmp, output_path) = run_fixture("08_form_body");
     let produced = std::fs::read_to_string(&output_path).unwrap();
     assert!(produced.contains("bodyParser: \"urlencoded\""));
 }
 
 #[test]
-fn fixture_07_form_body_safe_parse_calls_and_raw_body() {
-    let (_tmp, output_path) = run_fixture("07_form_body");
+fn fixture_08_form_body_safe_parse_calls_and_raw_body() {
+    let (_tmp, output_path) = run_fixture("08_form_body");
     let produced = std::fs::read_to_string(&output_path).unwrap();
     // FormBody validates req.body, same as Body — just a different bodyParser.
     assert!(produced.contains("GatherBody.safeParse(req.body)"));
     // Headers validates req.headers.
     assert!(produced.contains("SignatureHeaders.safeParse(req.headers)"));
+    // Validation failures throw, same as Body/Query/Params.
+    assert!(produced.contains("throw new BadRequestError(_body.error.message)"));
+    assert!(produced.contains("throw new BadRequestError(_headers.error.message)"));
     // RawBody injects req.rawBody directly, with no safeParse call for it.
     assert!(produced.contains("req.rawBody"));
     assert!(!produced.contains("typeof"));

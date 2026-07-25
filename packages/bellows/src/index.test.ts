@@ -20,6 +20,7 @@ import {
   Tag,
 } from "./decorators.js";
 import { bellowsRoutes, type RouteDefinition } from "./routes.js";
+import { ForbiddenError, NotFoundError } from "./errors.js";
 import type { AuthnService, AuthzService } from "./authz.js";
 
 // --- Validator<T> structural compatibility ---
@@ -449,6 +450,115 @@ describe("ResponseCodec / Produces (codegen output shape)", () => {
       expect(res.headers.get("content-type")).toMatch(/^application\/json/);
     } finally {
       await close();
+    }
+  });
+});
+
+// --- bellowsRoutes: error handling ---
+
+describe("bellowsRoutes error handling", () => {
+  it("maps an HttpError thrown by a handler to its response", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        handler: () => { throw new NotFoundError("no such thing"); },
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "Not Found", message: "no such thing" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("maps an HttpError rejected by an async handler to its response", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        handler: async () => { throw new ForbiddenError(); },
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "Forbidden" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("falls back to a generic 500 for a non-HttpError", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        handler: () => { throw new Error("some internal detail"); },
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({
+        error: "Internal Server Error",
+        message: "Internal server error",
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it("uses a custom errorHandler when provided", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        handler: () => { throw new NotFoundError(); },
+      },
+    ];
+    const { url, close } = await serve(routes, {
+      errorHandler: (_err, _req, res, _next) => { res.status(418).json({ error: "teapot" }); },
+    });
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(418);
+      expect(await res.json()).toEqual({ error: "teapot" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("skips error handling entirely when errorHandler is false", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        handler: () => { throw new NotFoundError(); },
+      },
+    ];
+    const app = express();
+    app.use(bellowsRoutes(routes, { errorHandler: false }));
+    // Express's own default error handler takes over — still responds, but
+    // not with the shape `errorHandler` from ./errors.js would produce.
+    app.use(((err: unknown, _req, res, _next) => {
+      res.status(599).json({ fallback: true });
+    }) as express.ErrorRequestHandler);
+
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/x`);
+      expect(res.status).toBe(599);
+      expect(await res.json()).toEqual({ fallback: true });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 });
