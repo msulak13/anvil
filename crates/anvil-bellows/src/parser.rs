@@ -132,10 +132,15 @@ pub struct TypedParam {
 /// Classification of a handler method's return type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReturnKind {
-    /// `Responds<typeof S>` or `Promise<Responds<typeof S>>`.
+    /// `Responds<typeof S>`, `Produces<typeof S, typeof C>`, or a `Promise<…>` of either.
     Responds {
-        /// Schema used to validate the return value before calling `res.json()`.
+        /// Schema used to validate the return value before serializing it.
         schema: SchemaRef,
+        /// From `Produces<typeof S, typeof C>` — a `ResponseCodec` identifier
+        /// that serializes the validated value instead of the default
+        /// `res.json()`. `None` (the `Responds<typeof S>` form) keeps today's
+        /// JSON behavior.
+        codec: Option<SchemaRef>,
         /// True when the method is `async` or returns `Promise<…>`.
         is_async: bool,
     },
@@ -1058,7 +1063,7 @@ fn classify_ts_type(
         "Body" | "Query" | "Params" => {}
         _ => return ParamKind::Unknown,
     }
-    let Some(schema) = extract_typeof_schema_from_tref(tref) else {
+    let Some(schema) = extract_typeof_at(tref, 0) else {
         return ParamKind::Unknown;
     };
     match local_name {
@@ -1122,34 +1127,44 @@ fn classify_return(ty: Option<&TSType<'_>>, is_async: bool) -> ReturnKind {
         };
     };
 
-    // Check for Responds<typeof S>.
+    // Check for Responds<typeof S> or Produces<typeof S, typeof C>.
     let TSType::TSTypeReference(tref) = inner else {
         return ReturnKind::Void {
             is_async: resolved_async,
         };
     };
-    if ts_type_name_local(&tref.type_name) != "Responds" {
-        return ReturnKind::Void {
-            is_async: resolved_async,
-        };
-    }
-    if let Some(schema) = extract_typeof_schema_from_tref(tref) {
-        ReturnKind::Responds {
+    let void_kind = ReturnKind::Void {
+        is_async: resolved_async,
+    };
+    match ts_type_name_local(&tref.type_name) {
+        "Responds" => extract_typeof_at(tref, 0).map_or(void_kind, |schema| ReturnKind::Responds {
             schema,
+            codec: None,
             is_async: resolved_async,
+        }),
+        "Produces" => {
+            let schema = extract_typeof_at(tref, 0);
+            let codec = extract_typeof_at(tref, 1);
+            match (schema, codec) {
+                (Some(schema), Some(codec)) => ReturnKind::Responds {
+                    schema,
+                    codec: Some(codec),
+                    is_async: resolved_async,
+                },
+                _ => void_kind,
+            }
         }
-    } else {
-        ReturnKind::Void {
-            is_async: resolved_async,
-        }
+        _ => void_kind,
     }
 }
 
-/// Extract the schema identifier from `Wrapper<typeof S>` (e.g. `Body<typeof CreateUserBody>`).
-fn extract_typeof_schema_from_tref(tref: &oxc_ast::ast::TSTypeReference<'_>) -> Option<SchemaRef> {
+/// Extract the identifier from a `typeof X` type-query at position `index` in
+/// `Wrapper<..., typeof X, ...>` (e.g. the `S` in `Body<typeof CreateUserBody>`,
+/// or the `S`/`C` in `Produces<typeof S, typeof C>`).
+fn extract_typeof_at(tref: &oxc_ast::ast::TSTypeReference<'_>, index: usize) -> Option<SchemaRef> {
     let params = tref.type_arguments.as_ref()?;
-    let first = params.params.first()?;
-    let TSType::TSTypeQuery(query) = first else {
+    let arg = params.params.get(index)?;
+    let TSType::TSTypeQuery(query) = arg else {
         return None;
     };
     let ident = match &query.expr_name {
@@ -1433,7 +1448,70 @@ export class UserController {
                 schema: SchemaRef {
                     ident: "UserSchema".into()
                 },
+                codec: None,
                 is_async: false
+            }
+        );
+    }
+
+    #[test]
+    fn classify_produces_return_type() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Post } from "@anvil-di/anvil-bellows";
+export const TwimlResponseSchema = {};
+export const twimlCodec = { contentType: "application/xml", encode: (v: unknown) => "" };
+
+@Controller("/webhooks")
+export class WebhooksController {
+  @Post("/gather")
+  gather(req: Request): Produces<typeof TwimlResponseSchema, typeof twimlCodec> { return {} as any; }
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert_eq!(
+            route.return_kind,
+            ReturnKind::Responds {
+                schema: SchemaRef {
+                    ident: "TwimlResponseSchema".into()
+                },
+                codec: Some(SchemaRef {
+                    ident: "twimlCodec".into()
+                }),
+                is_async: false
+            }
+        );
+    }
+
+    #[test]
+    fn classify_promise_produces_return_type() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Post } from "@anvil-di/anvil-bellows";
+export const TwimlResponseSchema = {};
+export const twimlCodec = { contentType: "application/xml", encode: (v: unknown) => "" };
+
+@Controller("/webhooks")
+export class WebhooksController {
+  @Post("/gather")
+  async gather(req: Request): Promise<Produces<typeof TwimlResponseSchema, typeof twimlCodec>> { return {} as any; }
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert_eq!(
+            route.return_kind,
+            ReturnKind::Responds {
+                schema: SchemaRef {
+                    ident: "TwimlResponseSchema".into()
+                },
+                codec: Some(SchemaRef {
+                    ident: "twimlCodec".into()
+                }),
+                is_async: true
             }
         );
     }
@@ -1460,6 +1538,7 @@ export class UserController {
                 schema: SchemaRef {
                     ident: "UserSchema".into()
                 },
+                codec: None,
                 is_async: true
             }
         );
