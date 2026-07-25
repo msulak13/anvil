@@ -12,6 +12,9 @@
 //!   `tsc --noEmit` validation.
 //! - `02_non_literal_arg` — one controller with a non-literal `@Controller`
 //!   arg (skipped + diagnostic) and one good controller (included).
+//! - `07_form_body` — a route combining `FormBody<S>`, `Headers<S>`, and
+//!   `RawBody`, verifying the `urlencoded` body parser is selected and
+//!   `req.rawBody` is injected.
 
 use std::path::{Path, PathBuf};
 
@@ -492,5 +495,54 @@ fn fixture_06_produces_uses_codec_not_json() {
         .contains("res.type(twimlCodec.contentType).send(twimlCodec.encode(_validated.data));"));
     assert!(!produced.contains("res.json(_validated.data)"));
     // No typeof in generated code.
+    assert!(!produced.contains("typeof"));
+}
+
+// ---------------------------------------------------------------------------
+// Fixture 07 — FormBody<S>, Headers<S>, RawBody: a webhook-style route that
+//              validates a form-urlencoded body and headers, and also grabs
+//              the raw request bytes (Twilio-signature-verification shape).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixture_07_form_body_snapshot() {
+    run_fixture("07_form_body");
+}
+
+#[test]
+fn fixture_07_form_body_tsc() {
+    let tsc = tsc_bin();
+    if !tsc.exists() {
+        eprintln!("skipping tsc check — tsc not found at {}", tsc.display());
+        return;
+    }
+
+    let (tmp, _) = run_fixture("07_form_body");
+
+    Command::new(tsc)
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .current_dir(tmp.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn fixture_07_form_body_selects_urlencoded_parser() {
+    let (_tmp, output_path) = run_fixture("07_form_body");
+    let produced = std::fs::read_to_string(&output_path).unwrap();
+    assert!(produced.contains("bodyParser: \"urlencoded\""));
+}
+
+#[test]
+fn fixture_07_form_body_safe_parse_calls_and_raw_body() {
+    let (_tmp, output_path) = run_fixture("07_form_body");
+    let produced = std::fs::read_to_string(&output_path).unwrap();
+    // FormBody validates req.body, same as Body — just a different bodyParser.
+    assert!(produced.contains("GatherBody.safeParse(req.body)"));
+    // Headers validates req.headers.
+    assert!(produced.contains("SignatureHeaders.safeParse(req.headers)"));
+    // RawBody injects req.rawBody directly, with no safeParse call for it.
+    assert!(produced.contains("req.rawBody"));
     assert!(!produced.contains("typeof"));
 }
