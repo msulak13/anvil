@@ -132,6 +132,17 @@ fn build_parameters(
             parameters.push(json!(p));
         }
     }
+    for param in params {
+        if let ParamKind::Headers(s) = &param.kind {
+            schemas.insert(s.ident.clone());
+            let mut p: BTreeMap<String, Value> = BTreeMap::new();
+            p.insert("in".into(), json!("header"));
+            p.insert("name".into(), json!(param.name));
+            p.insert("required".into(), json!(false));
+            p.insert("schema".into(), schema_ref(&s.ident));
+            parameters.push(json!(p));
+        }
+    }
     parameters
 }
 
@@ -140,18 +151,19 @@ fn build_request_body(
     schemas: &mut BTreeSet<String>,
 ) -> Option<Value> {
     params.iter().find_map(|p| {
-        if let ParamKind::Body(s) = &p.kind {
-            schemas.insert(s.ident.clone());
-            let mut rb: BTreeMap<String, Value> = BTreeMap::new();
-            rb.insert(
-                "content".into(),
-                json!({ "application/json": { "schema": schema_ref(&s.ident) } }),
-            );
-            rb.insert("required".into(), json!(true));
-            Some(json!(rb))
-        } else {
-            None
-        }
+        let (s, content_type) = match &p.kind {
+            ParamKind::Body(s) => (s, "application/json"),
+            ParamKind::FormBody(s) => (s, "application/x-www-form-urlencoded"),
+            _ => return None,
+        };
+        schemas.insert(s.ident.clone());
+        let mut rb: BTreeMap<String, Value> = BTreeMap::new();
+        rb.insert(
+            "content".into(),
+            json!({ content_type: { "schema": schema_ref(&s.ident) } }),
+        );
+        rb.insert("required".into(), json!(true));
+        Some(json!(rb))
     })
 }
 
@@ -444,5 +456,72 @@ mod tests {
 
         let security = &doc["paths"]["/admin/stats"]["get"]["security"];
         assert_eq!(json!(security), json!([{ "bearerAuth": [] }]));
+    }
+
+    #[test]
+    fn form_body_and_headers_emit_form_content_type_and_header_param() {
+        use anvil_bellows::{ParamKind, ReturnKind as RK, Route, SchemaRef, TypedParam};
+        use std::path::PathBuf;
+
+        let ctrl = Controller {
+            class_name: "WebhooksController".into(),
+            ctor_params: vec![],
+            tags: vec![],
+            security: vec![],
+            routes: vec![Route {
+                method: HttpMethod::Post,
+                path: "/webhooks/gather".into(),
+                handler_name: "gather".into(),
+                params: vec![
+                    TypedParam {
+                        name: "body".into(),
+                        kind: ParamKind::FormBody(SchemaRef {
+                            ident: "GatherBody".into(),
+                        }),
+                    },
+                    TypedParam {
+                        name: "headers".into(),
+                        kind: ParamKind::Headers(SchemaRef {
+                            ident: "SignatureHeaders".into(),
+                        }),
+                    },
+                ],
+                return_kind: RK::Void { is_async: false },
+                deprecated: false,
+                extra_responses: vec![],
+                middleware: vec![],
+                authn: vec![],
+                authz: vec![],
+            }],
+        };
+        let files = vec![ControllerFile {
+            source_path: PathBuf::from("/project/src/webhooks-controller.ts"),
+            controllers: vec![ctrl],
+        }];
+
+        let config = OpenApiConfig {
+            info: crate::config::InfoConfig {
+                title: "API".into(),
+                version: "1.0.0".into(),
+            },
+            servers: vec![],
+            security_schemes: BTreeMap::new(),
+        };
+
+        let mut diagnostics = Vec::new();
+        let doc = build_openapi(&files, &config, &mut diagnostics);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+        let op = &doc["paths"]["/webhooks/gather"]["post"];
+        assert_eq!(
+            op["requestBody"]["content"]["application/x-www-form-urlencoded"]["schema"]["$ref"],
+            json!("#/components/schemas/GatherBody")
+        );
+        assert!(op["requestBody"]["content"]["application/json"].is_null());
+
+        let params = op["parameters"].as_array().expect("parameters array");
+        assert!(params.iter().any(|p| p["in"] == "header"
+            && p["name"] == "headers"
+            && p["schema"]["$ref"] == "#/components/schemas/SignatureHeaders"));
     }
 }

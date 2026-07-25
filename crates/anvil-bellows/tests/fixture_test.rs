@@ -104,12 +104,16 @@ fn write_stubs(root: &Path) {
            authn?: AuthnService[];\n\
            authz?: AuthzService[];\n\
            middleware?: ((req: any, res: any, next: any) => void)[];\n\
+           bodyParser?: \"json\" | \"urlencoded\" | \"raw\";\n\
            handler: (req: any, res: any) => void | Promise<void>;\n\
          }\n\
          export type Body<S> = S extends { safeParse(x: unknown): { success: true; data: infer T } | any } ? T : never;\n\
          export type Query<S> = Body<S>;\n\
          export type Params<S> = Body<S>;\n\
          export type Responds<S> = Body<S>;\n\
+         export type FormBody<S> = Body<S>;\n\
+         export type Headers<S> = Body<S>;\n\
+         export type RawBody = { toString(encoding?: string): string };\n\
          export interface ResponseCodec<T> {\n\
            readonly contentType: string;\n\
            encode(value: T): string;\n\

@@ -83,6 +83,13 @@ pub enum ParamKind {
     Query(SchemaRef),
     /// `Params<typeof S>` — validate `req.params` against schema `S`.
     Params(SchemaRef),
+    /// `FormBody<typeof S>` — validate `req.body` (parsed as
+    /// `application/x-www-form-urlencoded`) against schema `S`.
+    FormBody(SchemaRef),
+    /// `Headers<typeof S>` — validate `req.headers` against schema `S`.
+    Headers(SchemaRef),
+    /// `RawBody` — inject the raw, unparsed request body bytes (`req.rawBody`).
+    RawBody,
     /// `Request` or `express.Request` — inject the raw request object.
     Request,
     /// `Response` or `express.Response` — inject the raw response object.
@@ -574,7 +581,8 @@ fn extract_ctor_param(
     let type_name = ts_type_name_local(&tref.type_name);
     // Skip known wrapper types — they're not injected class deps.
     match type_name {
-        "Body" | "Query" | "Params" | "Responds" | "Request" | "Response" => return None,
+        "Body" | "Query" | "Params" | "Responds" | "Request" | "Response" | "FormBody"
+        | "Headers" | "RawBody" => return None,
         _ => {}
     }
     let type_name = type_name.to_owned();
@@ -1059,8 +1067,9 @@ fn classify_ts_type(
     match local_name {
         "Request" => return ParamKind::Request,
         "Response" => return ParamKind::Response,
+        "RawBody" => return ParamKind::RawBody,
         "AuthnUser" => return classify_authn_user(tref, import_map, file_path),
-        "Body" | "Query" | "Params" => {}
+        "Body" | "Query" | "Params" | "FormBody" | "Headers" => {}
         _ => return ParamKind::Unknown,
     }
     let Some(schema) = extract_typeof_at(tref, 0) else {
@@ -1070,6 +1079,8 @@ fn classify_ts_type(
         "Body" => ParamKind::Body(schema),
         "Query" => ParamKind::Query(schema),
         "Params" => ParamKind::Params(schema),
+        "FormBody" => ParamKind::FormBody(schema),
+        "Headers" => ParamKind::Headers(schema),
         _ => unreachable!(),
     }
 }
@@ -1424,6 +1435,44 @@ export class PingController {
         let route = &file.unwrap().controllers[0].routes[0];
         assert_eq!(route.params[0].kind, ParamKind::Request);
         assert_eq!(route.params[1].kind, ParamKind::Response);
+    }
+
+    #[test]
+    fn classify_form_body_headers_raw_body() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Post } from "@anvil-di/anvil-bellows";
+import type { FormBody, Headers, RawBody } from "@anvil-di/anvil-bellows";
+
+export const GatherBody = {};
+export const SignatureHeaders = {};
+
+@Controller("/webhooks")
+export class WebhooksController {
+  @Post("/gather")
+  gather(body: FormBody<typeof GatherBody>, headers: Headers<typeof SignatureHeaders>, raw: RawBody): void {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert_eq!(route.params.len(), 3);
+        assert_eq!(route.params[0].name, "body");
+        assert_eq!(
+            route.params[0].kind,
+            ParamKind::FormBody(SchemaRef {
+                ident: "GatherBody".into()
+            })
+        );
+        assert_eq!(route.params[1].name, "headers");
+        assert_eq!(
+            route.params[1].kind,
+            ParamKind::Headers(SchemaRef {
+                ident: "SignatureHeaders".into()
+            })
+        );
+        assert_eq!(route.params[2].name, "raw");
+        assert_eq!(route.params[2].kind, ParamKind::RawBody);
     }
 
     #[test]

@@ -1,9 +1,28 @@
-import { Router, type Request, type RequestHandler, type Response } from "express";
+import express, { Router, type Request, type RequestHandler, type Response } from "express";
 import type { AuthnService, AuthzService } from "./authz.js";
+
+declare global {
+  namespace Express {
+    interface Request {
+      /** Raw request body bytes, captured by the body parser `bellowsRoutes`
+       *  mounts for any route declaring a `RawBody` param. */
+      rawBody?: Buffer;
+    }
+  }
+}
 
 export interface RouteDefinition {
   method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
   path: string;
+  /**
+   * Which built-in Express body parser to mount for this route, derived by
+   * codegen from its `Body<S>`/`FormBody<S>`/`RawBody` params: `"json"` or
+   * `"urlencoded"` populate `req.body`, `"raw"` leaves `req.body` as the raw
+   * `Buffer` (no parsed param declared alongside `RawBody`). All three also
+   * capture the exact wire bytes into `req.rawBody`. Absent when the route
+   * declares none of those params — unaffected, as before.
+   */
+  bodyParser?: "json" | "urlencoded" | "raw";
   /**
    * Ordered authentication cascade from `@Authn(...)` decorators (class-level
    * first, then method-level). The first service whose `identify()` returns
@@ -82,6 +101,26 @@ function buildAuthHandler(
   };
 }
 
+/**
+ * Build the body-parser `RequestHandler` for a route's `bodyParser` kind. All
+ * three variants share a `verify` callback that stashes the exact wire bytes
+ * on `req.rawBody`, so `RawBody` params work whether or not the route also
+ * parses `req.body` via `Body<S>`/`FormBody<S>`.
+ */
+function bodyParserMiddleware(kind: NonNullable<RouteDefinition["bodyParser"]>): RequestHandler {
+  const verify = (req: Request, _res: Response, buf: Buffer): void => {
+    req.rawBody = buf;
+  };
+  switch (kind) {
+    case "json":
+      return express.json({ verify });
+    case "urlencoded":
+      return express.urlencoded({ extended: true, verify });
+    case "raw":
+      return express.raw({ type: "*/*", verify });
+  }
+}
+
 /** Request-lifecycle hooks that apply to every route registered via `bellowsRoutes`. */
 export interface BellowsHooks {
   /** Runs before any route's middleware/handler, for every request. */
@@ -108,6 +147,7 @@ export function bellowsRoutes(routes: Iterable<RouteDefinition>, hooks: BellowsH
   for (const route of routes) {
     const authHandler = buildAuthHandler(route.authn, route.authz);
     const handlers: RequestHandler[] = [
+      ...(route.bodyParser ? [bodyParserMiddleware(route.bodyParser)] : []),
       ...(authHandler ? [authHandler] : []),
       ...(route.middleware ?? []),
       route.handler,

@@ -7,6 +7,7 @@ export @Module class RoutesModule {
 		return {
 			method: "POST",
 			path: "/orders",
+			bodyParser: "json",
 			handler: (req, res) => {
 				const _body = CreateOrderBody.safeParse(req.body);
 				if (!_body.success) {

@@ -13,6 +13,27 @@ export type Params<S extends Validator<unknown>> = S extends Validator<infer T> 
 export type Responds<S extends Validator<unknown>> = S extends Validator<infer T> ? T : never;
 
 /**
+ * `application/x-www-form-urlencoded` counterpart to `Body<S>` — validates
+ * `req.body` the same way, but tells codegen/OpenAPI the route expects a form
+ * body instead of JSON, and to mount `express.urlencoded()` for the route.
+ */
+export type FormBody<S extends Validator<unknown>> = S extends Validator<infer T> ? T : never;
+
+/** Validates `req.headers` against `S`. Keys must be lower-case, matching
+ *  Node/Express's own header casing (e.g. `"x-twilio-signature"`). */
+export type Headers<S extends Validator<unknown>> = S extends Validator<infer T> ? T : never;
+
+/**
+ * Injects the raw, unparsed request body bytes captured before any body
+ * parsing. `bellowsRoutes` populates `req.rawBody` for any route that
+ * declares this param, via a `verify` callback on whichever body-parser it
+ * mounts for the route (`express.raw()` if `RawBody` is the only body param
+ * declared, `express.json()`/`express.urlencoded()` if paired with `Body<S>`/
+ * `FormBody<S>`).
+ */
+export type RawBody = Buffer;
+
+/**
  * Serializes a validated `Responds<S>` value into a non-JSON response body.
  * `contentType` must be a literal-initialized property (not a getter) —
  * codegen resolves it statically to build the `OpenAPI` spec, so a computed
