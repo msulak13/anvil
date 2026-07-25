@@ -13,6 +13,7 @@ pub mod parser;
 
 pub use codegen::{emit_openapi_module, emit_routes_module, EmitError};
 pub use parser::{
-    parse_entry, AuthRef, Controller, ControllerFile, ExtraResponse, HttpMethod, ImportOrigin,
-    MiddlewareRef, ParamKind, ParseDiagnostic, ReturnKind, Route, SchemaRef, TypedParam,
+    parse_entry, AuthRef, CodecRef, Controller, ControllerFile, ExtraResponse, HttpMethod,
+    ImportOrigin, MiddlewareRef, ParamKind, ParseDiagnostic, ReturnKind, Route, SchemaRef,
+    TypedParam,
 };

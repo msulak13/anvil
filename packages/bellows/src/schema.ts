@@ -64,6 +64,40 @@ export type Produces<
   C extends ResponseCodec<Responds<S>>,
 > = Responds<S>;
 
+/**
+ * Decodes a non-JSON, non-form request body into the value that `S` then
+ * validates. `contentType` must be a literal-initialized property (not a
+ * getter) — same constraint as `ResponseCodec`, for the same reason: codegen
+ * resolves it statically to build the `OpenAPI` spec (runtime body-parser
+ * selection always reads `contentType`/calls `decode` off the object itself).
+ */
+export interface RequestCodec<T> {
+  readonly contentType: string;
+  decode(raw: Buffer): T;
+}
+
+/**
+ * Like `Body<S>`, but decodes the raw request body with `C` first instead of
+ * assuming JSON — `bellowsRoutes` mounts `express.raw()` scoped to
+ * `C.contentType` for the route and calls `C.decode()` before validation.
+ * `C` must decode into exactly the type `S` validates — this is enforced at
+ * compile time by the `RequestCodec<Body<S>>` bound.
+ *
+ * ```ts
+ * const twimlRequestCodec: RequestCodec<GatherCallback> = {
+ *   contentType: "application/xml",
+ *   decode: parseTwimlRequest,
+ * };
+ *
+ * @Post("/webhooks/gather")
+ * gather(body: Consumes<typeof GatherCallbackSchema, typeof twimlRequestCodec>): void { ... }
+ * ```
+ */
+export type Consumes<
+  S extends Validator<unknown>,
+  C extends RequestCodec<Body<S>>,
+> = Body<S>;
+
 export function withJsonSchema<T>(
   validator: Validator<T>,
   schema: JSONSchema7,
