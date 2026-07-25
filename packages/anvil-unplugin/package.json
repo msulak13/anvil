@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/anvil-unplugin",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Run anvil codegen as part of your bundler's normal pipeline. One plugin, every bundler (Vite, Rollup, Webpack, Rspack, esbuild) via unplugin.",
   "license": "Apache-2.0",
   "type": "module",

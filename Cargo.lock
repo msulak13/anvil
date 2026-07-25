@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "anvil-bellows"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "anvil-bellows-openapi"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anvil-bellows",
  "anyhow",
@@ -134,7 +134,7 @@ dependencies = [
 
 [[package]]
 name = "anvil-cli"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anvil-codegen",
  "anvil-core",
@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "anvil-codegen"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anvil-core",
  "insta",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "anvil-codegen-wasm"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anvil-codegen",
  "anvil-core",
@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "anvil-core"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "miette",
  "petgraph",
@@ -194,7 +194,7 @@ dependencies = [
 
 [[package]]
 name = "anvil-parser"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anvil-core",
  "insta",

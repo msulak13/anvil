@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/anvil",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Runtime stubs and types for the anvil compile-time dependency injection framework.",
   "license": "Apache-2.0",
   "type": "module",
