@@ -71,8 +71,8 @@ fn build_operation(
     };
 
     let parameters = build_parameters(path_param_names, &route.params, schemas);
-    let request_body = build_request_body(&route.params, schemas);
-    let responses = build_responses(route, schemas);
+    let request_body = build_request_body(&route.params, schemas, diagnostics);
+    let responses = build_responses(route, schemas, diagnostics);
     let mut scheme_names = ctrl.security.clone();
     scheme_names.extend(route.authn.iter().filter_map(|a| a.scheme.clone()));
     let security = build_security(&scheme_names, config, diagnostics);
@@ -149,11 +149,27 @@ fn build_parameters(
 fn build_request_body(
     params: &[anvil_bellows::TypedParam],
     schemas: &mut BTreeSet<String>,
+    diagnostics: &mut Vec<BuildDiagnostic>,
 ) -> Option<Value> {
     params.iter().find_map(|p| {
         let (s, content_type) = match &p.kind {
-            ParamKind::Body(s) => (s, "application/json"),
-            ParamKind::FormBody(s) => (s, "application/x-www-form-urlencoded"),
+            ParamKind::Body(s) => (s, "application/json".to_owned()),
+            ParamKind::FormBody(s) => (s, "application/x-www-form-urlencoded".to_owned()),
+            ParamKind::Consumes { schema, codec } => {
+                let content_type = codec.content_type.clone().unwrap_or_else(|| {
+                    diagnostics.push(BuildDiagnostic {
+                        message: format!(
+                            "Body<typeof {}, typeof {}>'s contentType isn't statically \
+                             resolvable (the codec must be a top-level `const` object \
+                             literal in the same file); defaulting to \
+                             application/octet-stream in the OpenAPI spec.",
+                            schema.ident, codec.ident
+                        ),
+                    });
+                    "application/octet-stream".to_owned()
+                });
+                (schema, content_type)
+            }
             _ => return None,
         };
         schemas.insert(s.ident.clone());
@@ -170,16 +186,31 @@ fn build_request_body(
 fn build_responses(
     route: &anvil_bellows::Route,
     schemas: &mut BTreeSet<String>,
+    diagnostics: &mut Vec<BuildDiagnostic>,
 ) -> BTreeMap<String, Value> {
     let mut responses: BTreeMap<String, Value> = BTreeMap::new();
     let success = match &route.return_kind {
-        ReturnKind::Responds { schema, .. } => {
+        ReturnKind::Responds { schema, codec, .. } => {
             schemas.insert(schema.ident.clone());
+            let content_type = codec.as_ref().map_or("application/json", |c| {
+                c.content_type.as_deref().unwrap_or_else(|| {
+                    diagnostics.push(BuildDiagnostic {
+                        message: format!(
+                            "Produces<{}, typeof {}>'s contentType isn't statically \
+                             resolvable (the codec must be a top-level `const` object \
+                             literal in the same file); defaulting to application/json \
+                             in the OpenAPI spec.",
+                            schema.ident, c.ident
+                        ),
+                    });
+                    "application/json"
+                })
+            });
             // BTreeMap keeps "content" before "description" (alphabetical).
             let mut r: BTreeMap<String, Value> = BTreeMap::new();
             r.insert(
                 "content".into(),
-                json!({ "application/json": { "schema": schema_ref(&schema.ident) } }),
+                json!({ content_type: { "schema": schema_ref(&schema.ident) } }),
             );
             r.insert("description".into(), json!("Success"));
             json!(r)
@@ -529,6 +560,187 @@ mod tests {
         assert!(params.iter().any(|p| p["in"] == "header"
             && p["name"] == "headers"
             && p["schema"]["$ref"] == "#/components/schemas/SignatureHeaders"));
+    }
+
+    #[test]
+    fn consumes_emits_codecs_resolved_content_type() {
+        use anvil_bellows::{CodecRef, ParamKind, ReturnKind as RK, Route, SchemaRef, TypedParam};
+        use std::path::PathBuf;
+
+        let ctrl = Controller {
+            class_name: "WebhooksController".into(),
+            ctor_params: vec![],
+            tags: vec![],
+            security: vec![],
+            routes: vec![Route {
+                method: HttpMethod::Post,
+                path: "/webhooks/gather".into(),
+                handler_name: "gather".into(),
+                is_sse: false,
+                params: vec![TypedParam {
+                    name: "body".into(),
+                    kind: ParamKind::Consumes {
+                        schema: SchemaRef {
+                            ident: "GatherCallbackSchema".into(),
+                        },
+                        codec: CodecRef {
+                            ident: "twimlRequestCodec".into(),
+                            content_type: Some("application/xml".into()),
+                        },
+                    },
+                }],
+                return_kind: RK::Void { is_async: false },
+                deprecated: false,
+                extra_responses: vec![],
+                middleware: vec![],
+                authn: vec![],
+                authz: vec![],
+            }],
+        };
+        let files = vec![ControllerFile {
+            source_path: PathBuf::from("/project/src/webhooks-controller.ts"),
+            controllers: vec![ctrl],
+        }];
+
+        let config = OpenApiConfig {
+            info: crate::config::InfoConfig {
+                title: "API".into(),
+                version: "1.0.0".into(),
+            },
+            servers: vec![],
+            security_schemes: BTreeMap::new(),
+        };
+
+        let mut diagnostics = Vec::new();
+        let doc = build_openapi(&files, &config, &mut diagnostics);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+        let op = &doc["paths"]["/webhooks/gather"]["post"];
+        assert_eq!(
+            op["requestBody"]["content"]["application/xml"]["schema"]["$ref"],
+            json!("#/components/schemas/GatherCallbackSchema")
+        );
+        assert!(op["requestBody"]["content"]["application/json"].is_null());
+    }
+
+    #[test]
+    fn consumes_with_unresolved_codec_defaults_and_diagnoses() {
+        use anvil_bellows::{CodecRef, ParamKind, ReturnKind as RK, Route, SchemaRef, TypedParam};
+        use std::path::PathBuf;
+
+        let ctrl = Controller {
+            class_name: "WebhooksController".into(),
+            ctor_params: vec![],
+            tags: vec![],
+            security: vec![],
+            routes: vec![Route {
+                method: HttpMethod::Post,
+                path: "/webhooks/gather".into(),
+                handler_name: "gather".into(),
+                is_sse: false,
+                params: vec![TypedParam {
+                    name: "body".into(),
+                    kind: ParamKind::Consumes {
+                        schema: SchemaRef {
+                            ident: "GatherCallbackSchema".into(),
+                        },
+                        codec: CodecRef {
+                            ident: "importedCodec".into(),
+                            content_type: None,
+                        },
+                    },
+                }],
+                return_kind: RK::Void { is_async: false },
+                deprecated: false,
+                extra_responses: vec![],
+                middleware: vec![],
+                authn: vec![],
+                authz: vec![],
+            }],
+        };
+        let files = vec![ControllerFile {
+            source_path: PathBuf::from("/project/src/webhooks-controller.ts"),
+            controllers: vec![ctrl],
+        }];
+
+        let config = OpenApiConfig {
+            info: crate::config::InfoConfig {
+                title: "API".into(),
+                version: "1.0.0".into(),
+            },
+            servers: vec![],
+            security_schemes: BTreeMap::new(),
+        };
+
+        let mut diagnostics = Vec::new();
+        let doc = build_openapi(&files, &config, &mut diagnostics);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("importedCodec"));
+
+        let op = &doc["paths"]["/webhooks/gather"]["post"];
+        assert_eq!(
+            op["requestBody"]["content"]["application/octet-stream"]["schema"]["$ref"],
+            json!("#/components/schemas/GatherCallbackSchema")
+        );
+    }
+
+    #[test]
+    fn produces_emits_codecs_resolved_content_type() {
+        use anvil_bellows::{CodecRef, ReturnKind as RK, Route, SchemaRef};
+        use std::path::PathBuf;
+
+        let ctrl = Controller {
+            class_name: "WebhooksController".into(),
+            ctor_params: vec![],
+            tags: vec![],
+            security: vec![],
+            routes: vec![Route {
+                method: HttpMethod::Post,
+                path: "/webhooks/gather".into(),
+                handler_name: "gather".into(),
+                is_sse: false,
+                params: vec![],
+                return_kind: RK::Responds {
+                    schema: SchemaRef {
+                        ident: "TwimlResponseSchema".into(),
+                    },
+                    codec: Some(CodecRef {
+                        ident: "twimlCodec".into(),
+                        content_type: Some("application/xml".into()),
+                    }),
+                    is_async: false,
+                },
+                deprecated: false,
+                extra_responses: vec![],
+                middleware: vec![],
+                authn: vec![],
+                authz: vec![],
+            }],
+        };
+        let files = vec![ControllerFile {
+            source_path: PathBuf::from("/project/src/webhooks-controller.ts"),
+            controllers: vec![ctrl],
+        }];
+
+        let config = OpenApiConfig {
+            info: crate::config::InfoConfig {
+                title: "API".into(),
+                version: "1.0.0".into(),
+            },
+            servers: vec![],
+            security_schemes: BTreeMap::new(),
+        };
+
+        let mut diagnostics = Vec::new();
+        let doc = build_openapi(&files, &config, &mut diagnostics);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+        let content = &doc["paths"]["/webhooks/gather"]["post"]["responses"]["200"]["content"];
+        assert_eq!(
+            content["application/xml"]["schema"]["$ref"],
+            json!("#/components/schemas/TwimlResponseSchema")
+        );
+        assert!(content["application/json"].is_null());
     }
 
     #[test]

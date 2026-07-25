@@ -108,6 +108,7 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
                     | ParamKind::Params(_)
                     | ParamKind::FormBody(_)
                     | ParamKind::Headers(_)
+                    | ParamKind::Consumes { .. }
             )
         });
         needs_internal_server_error |= matches!(route.return_kind, ReturnKind::Responds { .. });
@@ -302,7 +303,10 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
                 let authz_field = auth_field("authz", &route.authz);
                 let extra_params_sig = extra_auth_params_sig(route);
                 let body_parser_field = match route_body_parser(route) {
-                    Some(kind) => format!("\n      bodyParser: \"{kind}\","),
+                    Some(BodyParserKind::Named(kind)) => format!("\n      bodyParser: \"{kind}\","),
+                    Some(BodyParserKind::Codec(codec_ident)) => format!(
+                        "\n      bodyParser: {{ kind: \"codec\", contentType: {codec_ident}.contentType, decode: (raw) => {codec_ident}.decode(raw) }},"
+                    ),
                     None => String::new(),
                 };
 
@@ -412,6 +416,9 @@ fn collect_openapi_schema_idents(route: &Route, out: &mut BTreeSet<String>) {
             | ParamKind::FormBody(s)
             | ParamKind::Headers(s) => {
                 out.insert(s.ident.clone());
+            }
+            ParamKind::Consumes { schema, .. } => {
+                out.insert(schema.ident.clone());
             }
             _ => {}
         }
@@ -548,6 +555,7 @@ fn openapi_emit_paths_ts(s: &mut String, files: &[ControllerFile], indent: &str)
     writeln!(s, "{indent}}},").unwrap();
 }
 
+#[allow(clippy::too_many_lines)]
 fn openapi_emit_operation_ts(
     s: &mut String,
     method: &str,
@@ -617,17 +625,24 @@ fn openapi_emit_operation_ts(
         writeln!(s, "{indent}  ],").unwrap();
     }
 
-    if let Some(body_param) = route
-        .params
-        .iter()
-        .find(|p| matches!(p.kind, ParamKind::Body(_) | ParamKind::FormBody(_)))
-    {
-        let (schema, content_type) = match &body_param.kind {
-            ParamKind::Body(schema) => (schema, "application/json"),
-            ParamKind::FormBody(schema) => (schema, "application/x-www-form-urlencoded"),
+    if let Some(body_param) = route.params.iter().find(|p| {
+        matches!(
+            p.kind,
+            ParamKind::Body(_) | ParamKind::FormBody(_) | ParamKind::Consumes { .. }
+        )
+    }) {
+        let (schema_id, content_type): (&str, &str) = match &body_param.kind {
+            ParamKind::Body(schema) => (&schema.ident, "application/json"),
+            ParamKind::FormBody(schema) => (&schema.ident, "application/x-www-form-urlencoded"),
+            ParamKind::Consumes { schema, codec } => (
+                &schema.ident,
+                codec
+                    .content_type
+                    .as_deref()
+                    .unwrap_or("application/octet-stream"),
+            ),
             _ => unreachable!("filtered above"),
         };
-        let schema_id = &schema.ident;
         writeln!(s, "{indent}  requestBody: {{").unwrap();
         writeln!(
             s,
@@ -640,11 +655,15 @@ fn openapi_emit_operation_ts(
 
     writeln!(s, "{indent}  responses: {{").unwrap();
     match &route.return_kind {
-        ReturnKind::Responds { schema, .. } => {
+        ReturnKind::Responds { schema, codec, .. } => {
             let schema_id = &schema.ident;
+            let content_type = codec
+                .as_ref()
+                .and_then(|c| c.content_type.as_deref())
+                .unwrap_or("application/json");
             writeln!(
                 s,
-                "{indent}    \"200\": {{ content: {{ \"application/json\": {{ schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }} }}, description: \"Success\" }},"
+                "{indent}    \"200\": {{ content: {{ \"{content_type}\": {{ schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }} }}, description: \"Success\" }},"
             )
             .unwrap();
         }
@@ -714,27 +733,29 @@ fn openapi_status_desc(status: u16) -> &'static str {
 
 /// Collect schema identifiers from a route's params and return kind into `out`.
 fn collect_schema_refs(route: &Route, out: &mut Vec<String>) {
+    let mut push = |ident: &str| {
+        if !out.contains(&ident.to_owned()) {
+            out.push(ident.to_owned());
+        }
+    };
     for param in &route.params {
-        let ident = match &param.kind {
+        match &param.kind {
             ParamKind::Body(s)
             | ParamKind::Query(s)
             | ParamKind::Params(s)
             | ParamKind::FormBody(s)
-            | ParamKind::Headers(s) => &s.ident,
-            _ => continue,
-        };
-        if !out.contains(ident) {
-            out.push(ident.clone());
+            | ParamKind::Headers(s) => push(&s.ident),
+            ParamKind::Consumes { schema, codec } => {
+                push(&schema.ident);
+                push(&codec.ident);
+            }
+            _ => {}
         }
     }
     if let ReturnKind::Responds { schema, codec, .. } = &route.return_kind {
-        if !out.contains(&schema.ident) {
-            out.push(schema.ident.clone());
-        }
+        push(&schema.ident);
         if let Some(codec) = codec {
-            if !out.contains(&codec.ident) {
-                out.push(codec.ident.clone());
-            }
+            push(&codec.ident);
         }
     }
 }
@@ -747,28 +768,46 @@ fn all_params_recognized(route: &Route) -> bool {
         .all(|p| !matches!(p.kind, ParamKind::Unknown))
 }
 
-/// Determine which built-in Express body-parser `bellowsRoutes` should mount
-/// for this route, derived from its params: `FormBody<S>` needs `urlencoded`,
-/// `Body<S>` needs `json`, a bare `RawBody` with neither needs `raw`, and a
-/// route with none of the three needs no body parsing at all.
-fn route_body_parser(route: &Route) -> Option<&'static str> {
+/// Which body parser `bellowsRoutes` should mount for a route.
+#[derive(Debug, PartialEq, Eq)]
+enum BodyParserKind<'a> {
+    /// One of the three built-in kinds (`RouteDefinition.bodyParser`'s string variants).
+    Named(&'static str),
+    /// The two-arg `Body<S, C>` — mount a per-route codec-driven parser
+    /// scoped to `C.contentType`. Carries the codec's identifier; codegen
+    /// reads `{ident}.contentType`/`{ident}.decode` as runtime JS expressions
+    /// rather than needing the content type resolved statically here.
+    Codec(&'a str),
+}
+
+/// Determine which body parser `bellowsRoutes` should mount for this route,
+/// derived from its params: the two-arg `Body<S, C>` takes priority and
+/// mounts a codec-driven parser scoped to `C`'s content type; otherwise
+/// `FormBody<S>` needs `urlencoded`, `Body<S>` needs `json`, a bare `RawBody`
+/// with none of those needs `raw`, and a route with none of them needs no
+/// body parsing at all.
+fn route_body_parser(route: &Route) -> Option<BodyParserKind<'_>> {
     let mut has_body = false;
     let mut has_form = false;
     let mut has_raw = false;
+    let mut codec_ident: Option<&str> = None;
     for param in &route.params {
         match &param.kind {
             ParamKind::Body(_) => has_body = true,
             ParamKind::FormBody(_) => has_form = true,
             ParamKind::RawBody => has_raw = true,
+            ParamKind::Consumes { codec, .. } => codec_ident = Some(codec.ident.as_str()),
             _ => {}
         }
     }
-    if has_form {
-        Some("urlencoded")
+    if let Some(ident) = codec_ident {
+        Some(BodyParserKind::Codec(ident))
+    } else if has_form {
+        Some(BodyParserKind::Named("urlencoded"))
     } else if has_body {
-        Some("json")
+        Some(BodyParserKind::Named("json"))
     } else if has_raw {
-        Some("raw")
+        Some(BodyParserKind::Named("raw"))
     } else {
         None
     }
@@ -796,7 +835,12 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
     let mut call_args: Vec<String> = Vec::new();
     for param in &route.params {
         let schema_source = match &param.kind {
-            ParamKind::Body(schema) | ParamKind::FormBody(schema) => Some((schema, "req.body")),
+            // The two-arg `Body<S, C>`'s `bodyParser: { kind: "codec", ... }`
+            // mount already replaced `req.body` with the codec's decoded
+            // value before the handler runs, so it validates the same way.
+            ParamKind::Body(schema)
+            | ParamKind::FormBody(schema)
+            | ParamKind::Consumes { schema, .. } => Some((schema, "req.body")),
             ParamKind::Query(schema) => Some((schema, "req.query")),
             ParamKind::Params(schema) => Some((schema, "req.params")),
             ParamKind::Headers(schema) => Some((schema, "req.headers")),
@@ -830,7 +874,8 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
             | ParamKind::FormBody(_)
             | ParamKind::Query(_)
             | ParamKind::Params(_)
-            | ParamKind::Headers(_) => unreachable!("handled above"),
+            | ParamKind::Headers(_)
+            | ParamKind::Consumes { .. } => unreachable!("handled above"),
         }
     }
 
@@ -1124,7 +1169,7 @@ mod tests {
 
     #[test]
     fn emit_typed_adapter_produces_uses_codec_instead_of_json() {
-        use crate::parser::{ParamKind, SchemaRef};
+        use crate::parser::{CodecRef, ParamKind, SchemaRef};
 
         let params = vec![TypedParam {
             name: "body".into(),
@@ -1136,8 +1181,9 @@ mod tests {
             schema: SchemaRef {
                 ident: "TwimlResponseSchema".into(),
             },
-            codec: Some(SchemaRef {
+            codec: Some(CodecRef {
                 ident: "twimlCodec".into(),
+                content_type: Some("application/xml".into()),
             }),
             is_async: true,
         };
@@ -1213,7 +1259,7 @@ mod tests {
 
     #[test]
     fn route_body_parser_selects_json_urlencoded_raw_or_none() {
-        use crate::parser::{ParamKind, SchemaRef};
+        use crate::parser::{CodecRef, ParamKind, SchemaRef};
 
         let route_with = |kinds: Vec<ParamKind>| Route {
             method: HttpMethod::Post,
@@ -1240,28 +1286,51 @@ mod tests {
             route_body_parser(&route_with(vec![ParamKind::Body(SchemaRef {
                 ident: "S".into()
             })])),
-            Some("json")
+            Some(BodyParserKind::Named("json"))
         );
         assert_eq!(
             route_body_parser(&route_with(vec![ParamKind::FormBody(SchemaRef {
                 ident: "S".into()
             })])),
-            Some("urlencoded")
+            Some(BodyParserKind::Named("urlencoded"))
         );
         assert_eq!(
             route_body_parser(&route_with(vec![ParamKind::RawBody])),
-            Some("raw")
+            Some(BodyParserKind::Named("raw"))
         );
         assert_eq!(
             route_body_parser(&route_with(vec![
                 ParamKind::FormBody(SchemaRef { ident: "S".into() }),
                 ParamKind::RawBody
             ])),
-            Some("urlencoded")
+            Some(BodyParserKind::Named("urlencoded"))
         );
         assert_eq!(
             route_body_parser(&route_with(vec![ParamKind::Request])),
             None
+        );
+        assert_eq!(
+            route_body_parser(&route_with(vec![ParamKind::Consumes {
+                schema: SchemaRef { ident: "S".into() },
+                codec: CodecRef {
+                    ident: "myCodec".into(),
+                    content_type: Some("application/xml".into())
+                }
+            }])),
+            Some(BodyParserKind::Codec("myCodec"))
+        );
+        assert_eq!(
+            route_body_parser(&route_with(vec![
+                ParamKind::Consumes {
+                    schema: SchemaRef { ident: "S".into() },
+                    codec: CodecRef {
+                        ident: "myCodec".into(),
+                        content_type: Some("application/xml".into())
+                    }
+                },
+                ParamKind::RawBody
+            ])),
+            Some(BodyParserKind::Codec("myCodec"))
         );
     }
 

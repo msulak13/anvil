@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
     Argument, BindingPattern, ClassElement, Declaration, Decorator, Expression, FormalParameter,
-    ImportDeclarationSpecifier, MethodDefinitionKind, PropertyKey, Statement, TSLiteral, TSType,
-    TSTypeName, TSTypeQueryExprName,
+    ImportDeclarationSpecifier, MethodDefinitionKind, ObjectPropertyKind, PropertyKey, Statement,
+    TSLiteral, TSType, TSTypeName, TSTypeQueryExprName,
 };
 use oxc_parser::Parser;
 use oxc_span::SourceType;
@@ -74,6 +74,23 @@ pub struct SchemaRef {
     pub ident: String,
 }
 
+/// A `ResponseCodec`/`RequestCodec` identifier (the `C` in `Produces<typeof
+/// S, typeof C>` or the two-arg `Body<typeof S, typeof C>`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodecRef {
+    /// The identifier used to read `.contentType`/call `.encode()`/
+    /// `.decode()` at runtime.
+    pub ident: String,
+    /// The codec's `contentType` string literal, resolved statically when
+    /// the codec is declared (or re-exported) as a top-level `const` object
+    /// literal in the same file — used only for `OpenAPI` generation.
+    /// Runtime codegen never needs this: it emits `{ident}.contentType` as a
+    /// JS expression and reads it at request time instead. `None` when the
+    /// codec is imported from elsewhere or its `contentType` isn't a plain
+    /// string-literal property.
+    pub content_type: Option<String>,
+}
+
 /// Classification of a handler parameter's type annotation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParamKind {
@@ -88,6 +105,15 @@ pub enum ParamKind {
     FormBody(SchemaRef),
     /// `Headers<typeof S>` — validate `req.headers` against schema `S`.
     Headers(SchemaRef),
+    /// The two-arg `Body<typeof S, typeof C>` — decode `req.body` with
+    /// `RequestCodec` `C` (whose `contentType` scopes which requests it
+    /// applies to) before validating the decoded value against schema `S`.
+    Consumes {
+        /// Schema used to validate the codec's decoded value.
+        schema: SchemaRef,
+        /// The `RequestCodec` that decodes the raw request body.
+        codec: CodecRef,
+    },
     /// `RawBody` — inject the raw, unparsed request body bytes (`req.rawBody`).
     RawBody,
     /// `Request` or `express.Request` — inject the raw request object.
@@ -151,7 +177,7 @@ pub enum ReturnKind {
         /// that serializes the validated value instead of the default
         /// `res.json()`. `None` (the `Responds<typeof S>` form) keeps today's
         /// JSON behavior.
-        codec: Option<SchemaRef>,
+        codec: Option<CodecRef>,
         /// True when the method is `async` or returns `Promise<…>`.
         is_async: bool,
     },
@@ -370,6 +396,7 @@ fn parse_source(
     // Used to resolve constructor dep types to importable paths.
     let file_dir = abs_path.parent().unwrap_or(Path::new("."));
     let import_map = collect_import_map(&ret.program.body, file_dir);
+    let codec_literals = collect_content_type_literals(&ret.program.body);
 
     let mut controllers: Vec<Controller> = Vec::new();
     let mut diagnostics: Vec<ParseDiagnostic> = Vec::new();
@@ -427,12 +454,13 @@ fn parse_source(
                 .params
                 .items
                 .iter()
-                .map(|p| classify_param(p, &import_map, abs_path))
+                .map(|p| classify_param(p, &import_map, &codec_literals, abs_path))
                 .collect();
 
             let return_kind = classify_return(
                 m.value.return_type.as_ref().map(|a| &a.type_annotation),
                 m.value.r#async,
+                &codec_literals,
             );
 
             // Scan all method decorators: find HTTP method + collect modifiers.
@@ -531,6 +559,63 @@ fn parse_source(
         }),
         diagnostics,
     )
+}
+
+/// Statically resolve each top-level `const <ident> = { ..., contentType:
+/// "<literal>", ... }` declaration in `stmts` (bare or `export`ed) into
+/// `ident -> literal`. Used to recover a `ResponseCodec`/`RequestCodec`'s
+/// `contentType` for `OpenAPI` generation — `Produces`/the two-arg `Body<S,
+/// C>` only capture the codec's identifier at the type level, not its
+/// runtime value.
+/// Codecs declared outside the controller file (only imported) aren't
+/// resolved this way; `OpenAPI` generation falls back to a diagnostic
+/// default in that case. This doesn't affect runtime codegen, which mounts
+/// `{ident}.contentType` as a JS expression and reads it at request time.
+fn collect_content_type_literals(stmts: &[Statement<'_>]) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for stmt in stmts {
+        let decl = match stmt {
+            Statement::VariableDeclaration(d) => Some(d.as_ref()),
+            Statement::ExportNamedDeclaration(export) => match &export.declaration {
+                Some(Declaration::VariableDeclaration(d)) => Some(d.as_ref()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some(decl) = decl else {
+            continue;
+        };
+        for declarator in &decl.declarations {
+            let BindingPattern::BindingIdentifier(id) = &declarator.id else {
+                continue;
+            };
+            let Some(Expression::ObjectExpression(obj)) = &declarator.init else {
+                continue;
+            };
+            for prop in &obj.properties {
+                let ObjectPropertyKind::ObjectProperty(prop) = prop else {
+                    continue;
+                };
+                if property_key_name(&prop.key) != Some("contentType") {
+                    continue;
+                }
+                if let Expression::StringLiteral(lit) = &prop.value {
+                    out.insert(id.name.to_string(), lit.value.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The static name of an object property key, when it's a plain identifier
+/// or string literal (not computed).
+fn property_key_name<'a>(key: &'a PropertyKey<'a>) -> Option<&'a str> {
+    match key {
+        PropertyKey::StaticIdentifier(id) => Some(id.name.as_str()),
+        PropertyKey::StringLiteral(s) => Some(s.value.as_str()),
+        _ => None,
+    }
 }
 
 /// Walk import declarations in `stmts` and build a map from local name to its
@@ -1075,6 +1160,7 @@ fn try_extract_returns(dec: &Decorator<'_>) -> Option<ExtraResponse> {
 fn classify_param(
     param: &FormalParameter<'_>,
     import_map: &HashMap<String, ImportOrigin>,
+    codec_literals: &HashMap<String, String>,
     file_path: &Path,
 ) -> TypedParam {
     let name = match &param.pattern {
@@ -1085,7 +1171,7 @@ fn classify_param(
         .type_annotation
         .as_ref()
         .map_or(ParamKind::Unknown, |ann| {
-            classify_ts_type(&ann.type_annotation, import_map, file_path)
+            classify_ts_type(&ann.type_annotation, import_map, codec_literals, file_path)
         });
     TypedParam { name, kind }
 }
@@ -1094,6 +1180,7 @@ fn classify_param(
 fn classify_ts_type(
     ty: &TSType<'_>,
     import_map: &HashMap<String, ImportOrigin>,
+    codec_literals: &HashMap<String, String>,
     file_path: &Path,
 ) -> ParamKind {
     let TSType::TSTypeReference(tref) = ty else {
@@ -1107,19 +1194,44 @@ fn classify_ts_type(
         "SseStream" => return ParamKind::Sse,
         "AbortSignal" => return ParamKind::Signal,
         "AuthnUser" => return classify_authn_user(tref, import_map, file_path),
-        "Body" | "Query" | "Params" | "FormBody" | "Headers" => {}
+        // The optional second type argument distinguishes the two-arg
+        // `Body<S, C>` form (decode with a `RequestCodec` before validating)
+        // from plain `Body<S>`.
+        "Body" => {
+            let Some(schema) = extract_typeof_at(tref, 0) else {
+                return ParamKind::Unknown;
+            };
+            return match extract_typeof_at(tref, 1) {
+                Some(codec) => ParamKind::Consumes {
+                    schema,
+                    codec: resolve_codec_ref(codec, codec_literals),
+                },
+                None => ParamKind::Body(schema),
+            };
+        }
+        "Query" | "Params" | "FormBody" | "Headers" => {}
         _ => return ParamKind::Unknown,
     }
     let Some(schema) = extract_typeof_at(tref, 0) else {
         return ParamKind::Unknown;
     };
     match local_name {
-        "Body" => ParamKind::Body(schema),
         "Query" => ParamKind::Query(schema),
         "Params" => ParamKind::Params(schema),
         "FormBody" => ParamKind::FormBody(schema),
         "Headers" => ParamKind::Headers(schema),
         _ => unreachable!(),
+    }
+}
+
+/// Resolve a `typeof C` reference into a `CodecRef`, filling in `content_type`
+/// from `codec_literals` when `C`'s `contentType` property was statically
+/// resolvable (see [`collect_content_type_literals`]).
+fn resolve_codec_ref(codec: SchemaRef, codec_literals: &HashMap<String, String>) -> CodecRef {
+    let content_type = codec_literals.get(&codec.ident).cloned();
+    CodecRef {
+        ident: codec.ident,
+        content_type,
     }
 }
 
@@ -1151,7 +1263,11 @@ fn classify_authn_user(
 }
 
 /// Classify the return type annotation into a `ReturnKind`.
-fn classify_return(ty: Option<&TSType<'_>>, is_async: bool) -> ReturnKind {
+fn classify_return(
+    ty: Option<&TSType<'_>>,
+    is_async: bool,
+    codec_literals: &HashMap<String, String>,
+) -> ReturnKind {
     let Some(ty) = ty else {
         return ReturnKind::Void { is_async };
     };
@@ -1197,7 +1313,7 @@ fn classify_return(ty: Option<&TSType<'_>>, is_async: bool) -> ReturnKind {
             match (schema, codec) {
                 (Some(schema), Some(codec)) => ReturnKind::Responds {
                     schema,
-                    codec: Some(codec),
+                    codec: Some(resolve_codec_ref(codec, codec_literals)),
                     is_async: resolved_async,
                 },
                 _ => void_kind,
@@ -1514,6 +1630,71 @@ export class WebhooksController {
     }
 
     #[test]
+    fn classify_two_arg_body_resolves_codec_content_type() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Post } from "@anvil-di/anvil-bellows";
+
+export const GatherCallbackSchema = {};
+export const twimlRequestCodec = { contentType: "application/xml", decode: (raw: Buffer) => ({}) };
+
+@Controller("/webhooks")
+export class WebhooksController {
+  @Post("/gather")
+  gather(body: Body<typeof GatherCallbackSchema, typeof twimlRequestCodec>): void {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert_eq!(route.params.len(), 1);
+        assert_eq!(
+            route.params[0].kind,
+            ParamKind::Consumes {
+                schema: SchemaRef {
+                    ident: "GatherCallbackSchema".into()
+                },
+                codec: CodecRef {
+                    ident: "twimlRequestCodec".into(),
+                    content_type: Some("application/xml".into())
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn classify_two_arg_body_with_unresolvable_codec_leaves_content_type_none() {
+        let (file, diags) = parse(
+            r#"
+import { Controller, Post } from "@anvil-di/anvil-bellows";
+import { importedCodec } from "./codecs";
+
+export const GatherCallbackSchema = {};
+
+@Controller("/webhooks")
+export class WebhooksController {
+  @Post("/gather")
+  gather(body: Body<typeof GatherCallbackSchema, typeof importedCodec>): void {}
+}
+"#,
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let route = &file.unwrap().controllers[0].routes[0];
+        assert_eq!(
+            route.params[0].kind,
+            ParamKind::Consumes {
+                schema: SchemaRef {
+                    ident: "GatherCallbackSchema".into()
+                },
+                codec: CodecRef {
+                    ident: "importedCodec".into(),
+                    content_type: None
+                }
+            }
+        );
+    }
+
+    #[test]
     fn sse_route_injects_stream_and_signal_and_registers_as_get() {
         let (file, diags) = parse(
             r#"
@@ -1607,8 +1788,9 @@ export class WebhooksController {
                 schema: SchemaRef {
                     ident: "TwimlResponseSchema".into()
                 },
-                codec: Some(SchemaRef {
-                    ident: "twimlCodec".into()
+                codec: Some(CodecRef {
+                    ident: "twimlCodec".into(),
+                    content_type: Some("application/xml".into())
                 }),
                 is_async: false
             }
@@ -1638,8 +1820,9 @@ export class WebhooksController {
                 schema: SchemaRef {
                     ident: "TwimlResponseSchema".into()
                 },
-                codec: Some(SchemaRef {
-                    ident: "twimlCodec".into()
+                codec: Some(CodecRef {
+                    ident: "twimlCodec".into(),
+                    content_type: Some("application/xml".into())
                 }),
                 is_async: true
             }

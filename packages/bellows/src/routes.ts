@@ -22,14 +22,26 @@ export interface RouteDefinition {
   method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
   path: string;
   /**
-   * Which built-in Express body parser to mount for this route, derived by
-   * codegen from its `Body<S>`/`FormBody<S>`/`RawBody` params: `"json"` or
-   * `"urlencoded"` populate `req.body`, `"raw"` leaves `req.body` as the raw
-   * `Buffer` (no parsed param declared alongside `RawBody`). All three also
-   * capture the exact wire bytes into `req.rawBody`. Absent when the route
-   * declares none of those params — unaffected, as before.
+   * Which body parser to mount for this route, derived by codegen from its
+   * `Body<S>`/`FormBody<S>`/`RawBody`/two-arg `Body<S, C>` params: `"json"`
+   * or `"urlencoded"` populate `req.body` via Express's built-in parsers,
+   * `"raw"` leaves `req.body` as the raw `Buffer` (no parsed param declared
+   * alongside `RawBody`), and the `{ kind: "codec", ... }` form — from
+   * `Body<S, C>` — mounts `express.raw()` scoped to `contentType` and
+   * replaces `req.body` with `decode()`'s result before the handler's
+   * `S.safeParse(req.body)` runs. All variants also capture the exact wire
+   * bytes into `req.rawBody`. Absent when the route declares none of those
+   * params — unaffected, as before.
    */
-  bodyParser?: "json" | "urlencoded" | "raw";
+  bodyParser?:
+    | "json"
+    | "urlencoded"
+    | "raw"
+    | {
+        kind: "codec";
+        contentType: string;
+        decode: (raw: Buffer) => unknown;
+      };
   /**
    * Ordered authentication cascade from `@Authn(...)` decorators (class-level
    * first, then method-level). The first service whose `identify()` returns
@@ -110,14 +122,41 @@ function buildAuthHandler(
 
 /**
  * Build the body-parser `RequestHandler` for a route's `bodyParser` kind. All
- * three variants share a `verify` callback that stashes the exact wire bytes
- * on `req.rawBody`, so `RawBody` params work whether or not the route also
- * parses `req.body` via `Body<S>`/`FormBody<S>`.
+ * variants share a `verify` callback that stashes the exact wire bytes on
+ * `req.rawBody`, so `RawBody` params work whether or not the route also
+ * parses `req.body` via `Body<S>`/`FormBody<S>`/the two-arg `Body<S, C>` form.
  */
 function bodyParserMiddleware(kind: NonNullable<RouteDefinition["bodyParser"]>): RequestHandler {
   const verify = (req: Request, _res: Response, buf: Buffer): void => {
     req.rawBody = buf;
   };
+  if (typeof kind === "object") {
+    const { contentType, decode } = kind;
+    const rawParser = express.raw({ type: contentType, verify });
+    return (req, res, next) => {
+      rawParser(req, res, (err: unknown) => {
+        if (err) {
+          next(err);
+          return;
+        }
+        // Content-Type didn't match `contentType` — express.raw() left
+        // req.body untouched (no other parser ran), so there's nothing to
+        // decode; the route's S.safeParse(req.body) will reject it as
+        // expected.
+        if (!Buffer.isBuffer(req.body)) {
+          next();
+          return;
+        }
+        try {
+          req.body = decode(req.body);
+        } catch (decodeError) {
+          next(decodeError);
+          return;
+        }
+        next();
+      });
+    };
+  }
   switch (kind) {
     case "json":
       return express.json({ verify });

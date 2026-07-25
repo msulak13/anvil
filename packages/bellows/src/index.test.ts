@@ -382,6 +382,98 @@ describe("bellowsRoutes bodyParser", () => {
   });
 });
 
+// --- bellowsRoutes: bodyParser's { kind: "codec", ... } form — the shape
+// anvil-bellows codegen emits for the two-arg Body<S, C> param. Same
+// relationship to the Rust codegen as the ResponseCodec/Produces block below:
+// not testing codegen itself, just proving the emitted shape behaves
+// correctly against a live server.
+
+describe("bellowsRoutes bodyParser codec", () => {
+  const xmlCodec = {
+    contentType: "application/xml",
+    decode: (raw: Buffer) => ({ digits: /<Digits>(\d+)<\/Digits>/.exec(raw.toString())?.[1] }),
+  };
+
+  it("decodes a matching Content-Type through the codec before the handler runs", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "POST",
+        path: "/x",
+        bodyParser: { kind: "codec", contentType: xmlCodec.contentType, decode: xmlCodec.decode },
+        handler: (req, res) => res.json({ body: req.body, rawBody: req.rawBody?.toString() }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`, {
+        method: "POST",
+        headers: { "content-type": "application/xml" },
+        body: "<Response><Digits>42</Digits></Response>",
+      });
+      const json = await res.json();
+      expect(json.body).toEqual({ digits: "42" });
+      expect(json.rawBody).toBe("<Response><Digits>42</Digits></Response>");
+    } finally {
+      await close();
+    }
+  });
+
+  it("leaves req.body untouched (unmatched Content-Type) without calling decode", async () => {
+    const routes: RouteDefinition[] = [
+      {
+        method: "POST",
+        path: "/x",
+        bodyParser: { kind: "codec", contentType: xmlCodec.contentType, decode: xmlCodec.decode },
+        handler: (req, res) => res.json({ body: req.body }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "ada" }),
+      });
+      const json = await res.json();
+      expect(json.body).toBeUndefined();
+    } finally {
+      await close();
+    }
+  });
+
+  it("forwards a decode() error to the error handler as a 500", async () => {
+    const throwingCodec = {
+      contentType: "application/xml",
+      decode: (): never => {
+        throw new Error("malformed xml");
+      },
+    };
+    const routes: RouteDefinition[] = [
+      {
+        method: "POST",
+        path: "/x",
+        bodyParser: {
+          kind: "codec",
+          contentType: throwingCodec.contentType,
+          decode: throwingCodec.decode,
+        },
+        handler: (_req, res) => res.json({ ok: true }),
+      },
+    ];
+    const { url, close } = await serve(routes);
+    try {
+      const res = await fetch(`${url}/x`, {
+        method: "POST",
+        headers: { "content-type": "application/xml" },
+        body: "<broken>",
+      });
+      expect(res.status).toBe(500);
+    } finally {
+      await close();
+    }
+  });
+});
+
 // --- ResponseCodec / Produces: the handler emitted for a `Produces<S, C>`
 // route, run through a real Express server. This isn't testing anvil-bellows
 // codegen itself (that's Rust-side, covered by its own unit tests) — it's
