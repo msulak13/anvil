@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.3"
+version = "0.0.4"
 edition = "2021"
 rust-version = "1.95"
 license = "Apache-2.0"
@@ -31,10 +31,10 @@ missing_panics_doc = "allow"
 
 [workspace.dependencies]
 # Internal crates
-anvil-core = { path = "crates/anvil-core", version = "0.0.3" }
-anvil-parser = { path = "crates/anvil-parser", version = "0.0.3" }
-anvil-codegen = { path = "crates/anvil-codegen", version = "0.0.3" }
-anvil-bellows = { path = "crates/anvil-bellows", version = "0.0.3" }
+anvil-core = { path = "crates/anvil-core", version = "0.0.4" }
+anvil-parser = { path = "crates/anvil-parser", version = "0.0.4" }
+anvil-codegen = { path = "crates/anvil-codegen", version = "0.0.4" }
+anvil-bellows = { path = "crates/anvil-bellows", version = "0.0.4" }
 
 # External crates pinned at workspace level for consistency
 oxc_allocator = "0.127"
