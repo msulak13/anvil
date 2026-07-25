@@ -75,7 +75,7 @@ pub struct SchemaRef {
 }
 
 /// A `ResponseCodec`/`RequestCodec` identifier (the `C` in `Produces<typeof
-/// S, typeof C>` or `Consumes<typeof S, typeof C>`).
+/// S, typeof C>` or the two-arg `Body<typeof S, typeof C>`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodecRef {
     /// The identifier used to read `.contentType`/call `.encode()`/
@@ -105,9 +105,9 @@ pub enum ParamKind {
     FormBody(SchemaRef),
     /// `Headers<typeof S>` — validate `req.headers` against schema `S`.
     Headers(SchemaRef),
-    /// `Consumes<typeof S, typeof C>` — decode `req.body` with `RequestCodec`
-    /// `C` (whose `contentType` scopes which requests it applies to) before
-    /// validating the decoded value against schema `S`.
+    /// The two-arg `Body<typeof S, typeof C>` — decode `req.body` with
+    /// `RequestCodec` `C` (whose `contentType` scopes which requests it
+    /// applies to) before validating the decoded value against schema `S`.
     Consumes {
         /// Schema used to validate the codec's decoded value.
         schema: SchemaRef,
@@ -564,8 +564,9 @@ fn parse_source(
 /// Statically resolve each top-level `const <ident> = { ..., contentType:
 /// "<literal>", ... }` declaration in `stmts` (bare or `export`ed) into
 /// `ident -> literal`. Used to recover a `ResponseCodec`/`RequestCodec`'s
-/// `contentType` for `OpenAPI` generation — `Produces`/`Consumes` only
-/// capture the codec's identifier at the type level, not its runtime value.
+/// `contentType` for `OpenAPI` generation — `Produces`/the two-arg `Body<S,
+/// C>` only capture the codec's identifier at the type level, not its
+/// runtime value.
 /// Codecs declared outside the controller file (only imported) aren't
 /// resolved this way; `OpenAPI` generation falls back to a diagnostic
 /// default in that case. This doesn't affect runtime codegen, which mounts
@@ -1193,25 +1194,28 @@ fn classify_ts_type(
         "SseStream" => return ParamKind::Sse,
         "AbortSignal" => return ParamKind::Signal,
         "AuthnUser" => return classify_authn_user(tref, import_map, file_path),
-        "Consumes" => {
-            let schema = extract_typeof_at(tref, 0);
-            let codec = extract_typeof_at(tref, 1);
-            return match (schema, codec) {
-                (Some(schema), Some(codec)) => ParamKind::Consumes {
+        // The optional second type argument distinguishes the two-arg
+        // `Body<S, C>` form (decode with a `RequestCodec` before validating)
+        // from plain `Body<S>`.
+        "Body" => {
+            let Some(schema) = extract_typeof_at(tref, 0) else {
+                return ParamKind::Unknown;
+            };
+            return match extract_typeof_at(tref, 1) {
+                Some(codec) => ParamKind::Consumes {
                     schema,
                     codec: resolve_codec_ref(codec, codec_literals),
                 },
-                _ => ParamKind::Unknown,
+                None => ParamKind::Body(schema),
             };
         }
-        "Body" | "Query" | "Params" | "FormBody" | "Headers" => {}
+        "Query" | "Params" | "FormBody" | "Headers" => {}
         _ => return ParamKind::Unknown,
     }
     let Some(schema) = extract_typeof_at(tref, 0) else {
         return ParamKind::Unknown;
     };
     match local_name {
-        "Body" => ParamKind::Body(schema),
         "Query" => ParamKind::Query(schema),
         "Params" => ParamKind::Params(schema),
         "FormBody" => ParamKind::FormBody(schema),
@@ -1626,7 +1630,7 @@ export class WebhooksController {
     }
 
     #[test]
-    fn classify_consumes_param_resolves_codec_content_type() {
+    fn classify_two_arg_body_resolves_codec_content_type() {
         let (file, diags) = parse(
             r#"
 import { Controller, Post } from "@anvil-di/anvil-bellows";
@@ -1637,7 +1641,7 @@ export const twimlRequestCodec = { contentType: "application/xml", decode: (raw:
 @Controller("/webhooks")
 export class WebhooksController {
   @Post("/gather")
-  gather(body: Consumes<typeof GatherCallbackSchema, typeof twimlRequestCodec>): void {}
+  gather(body: Body<typeof GatherCallbackSchema, typeof twimlRequestCodec>): void {}
 }
 "#,
         );
@@ -1659,7 +1663,7 @@ export class WebhooksController {
     }
 
     #[test]
-    fn classify_consumes_param_with_unresolvable_codec_leaves_content_type_none() {
+    fn classify_two_arg_body_with_unresolvable_codec_leaves_content_type_none() {
         let (file, diags) = parse(
             r#"
 import { Controller, Post } from "@anvil-di/anvil-bellows";
@@ -1670,7 +1674,7 @@ export const GatherCallbackSchema = {};
 @Controller("/webhooks")
 export class WebhooksController {
   @Post("/gather")
-  gather(body: Consumes<typeof GatherCallbackSchema, typeof importedCodec>): void {}
+  gather(body: Body<typeof GatherCallbackSchema, typeof importedCodec>): void {}
 }
 "#,
         );

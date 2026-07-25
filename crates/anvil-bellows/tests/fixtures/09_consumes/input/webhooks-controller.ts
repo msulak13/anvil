@@ -1,5 +1,5 @@
 import { Controller, Post } from "@anvil-di/bellows";
-import type { Body, Consumes, RequestCodec } from "@anvil-di/bellows";
+import type { Body, RequestCodec } from "@anvil-di/bellows";
 
 // `error` mirrors zod's `ZodError` shape closely enough for typecheck purposes: a
 // `.message` string (zod's `ZodError.message` is a JSON-stringified issue list).
@@ -19,5 +19,5 @@ export const twimlRequestCodec: RequestCodec<Body<typeof GatherCallbackSchema>> 
 @Controller("/webhooks")
 export class WebhooksController {
   @Post("/gather")
-  gather(body: Consumes<typeof GatherCallbackSchema, typeof twimlRequestCodec>): void {}
+  gather(body: Body<typeof GatherCallbackSchema, typeof twimlRequestCodec>): void {}
 }

@@ -23,11 +23,11 @@ export interface RouteDefinition {
   path: string;
   /**
    * Which body parser to mount for this route, derived by codegen from its
-   * `Body<S>`/`FormBody<S>`/`RawBody`/`Consumes<S, C>` params: `"json"` or
-   * `"urlencoded"` populate `req.body` via Express's built-in parsers,
+   * `Body<S>`/`FormBody<S>`/`RawBody`/two-arg `Body<S, C>` params: `"json"`
+   * or `"urlencoded"` populate `req.body` via Express's built-in parsers,
    * `"raw"` leaves `req.body` as the raw `Buffer` (no parsed param declared
    * alongside `RawBody`), and the `{ kind: "codec", ... }` form — from
-   * `Consumes<S, C>` — mounts `express.raw()` scoped to `contentType` and
+   * `Body<S, C>` — mounts `express.raw()` scoped to `contentType` and
    * replaces `req.body` with `decode()`'s result before the handler's
    * `S.safeParse(req.body)` runs. All variants also capture the exact wire
    * bytes into `req.rawBody`. Absent when the route declares none of those
@@ -124,7 +124,7 @@ function buildAuthHandler(
  * Build the body-parser `RequestHandler` for a route's `bodyParser` kind. All
  * variants share a `verify` callback that stashes the exact wire bytes on
  * `req.rawBody`, so `RawBody` params work whether or not the route also
- * parses `req.body` via `Body<S>`/`FormBody<S>`/`Consumes<S, C>`.
+ * parses `req.body` via `Body<S>`/`FormBody<S>`/the two-arg `Body<S, C>` form.
  */
 function bodyParserMiddleware(kind: NonNullable<RouteDefinition["bodyParser"]>): RequestHandler {
   const verify = (req: Request, _res: Response, buf: Buffer): void => {

@@ -15,9 +15,10 @@
 //! - `08_form_body` — a route combining `FormBody<S>`, `Headers<S>`, and
 //!   `RawBody`, verifying the `urlencoded` body parser is selected and
 //!   `req.rawBody` is injected.
-//! - `09_consumes` — a route using `Consumes<S, C>` with a `RequestCodec` that
-//!   decodes `application/xml`, verifying the generated `bodyParser` mounts a
-//!   codec-driven parser (not `"json"`/`"urlencoded"`/`"raw"`) and that the
+//! - `09_consumes` — a route using the two-arg `Body<S, C>` with a
+//!   `RequestCodec` that decodes `application/xml`, verifying the generated
+//!   `bodyParser` mounts a codec-driven parser (not
+//!   `"json"`/`"urlencoded"`/`"raw"`) and that the
 //!   handler still validates the decoded body with `S.safeParse`.
 
 use std::path::{Path, PathBuf};
@@ -115,7 +116,11 @@ fn write_stubs(root: &Path) {
            bodyParser?: \"json\" | \"urlencoded\" | \"raw\" | { kind: \"codec\"; contentType: string; decode: (raw: any) => unknown };\n\
            handler: (req: any, res: any) => void | Promise<void>;\n\
          }\n\
-         export type Body<S> = S extends { safeParse(x: unknown): { success: true; data: infer T } | any } ? T : never;\n\
+         export interface RequestCodec<T> {\n\
+           readonly contentType: string;\n\
+           decode(raw: any): T;\n\
+         }\n\
+         export type Body<S, C extends RequestCodec<S extends { safeParse(x: unknown): { success: true; data: infer T } | any } ? T : never> = never> = S extends { safeParse(x: unknown): { success: true; data: infer T } | any } ? T : never;\n\
          export type Query<S> = Body<S>;\n\
          export type Params<S> = Body<S>;\n\
          export type Responds<S> = Body<S>;\n\
@@ -127,11 +132,6 @@ fn write_stubs(root: &Path) {
            encode(value: T): string;\n\
          }\n\
          export type Produces<S, C extends ResponseCodec<Responds<S>>> = Responds<S>;\n\
-         export interface RequestCodec<T> {\n\
-           readonly contentType: string;\n\
-           decode(raw: any): T;\n\
-         }\n\
-         export type Consumes<S, C extends RequestCodec<Body<S>>> = Body<S>;\n\
          export class HttpError extends Error {\n\
            constructor(readonly status: number, readonly error: string, message?: string) { super(message ?? error); }\n\
          }\n\
@@ -620,7 +620,7 @@ fn fixture_08_form_body_safe_parse_calls_and_raw_body() {
 }
 
 // ---------------------------------------------------------------------------
-// Fixture 09 — Consumes<S, C>: a non-JSON request body decoded by a
+// Fixture 09 — the two-arg Body<S, C>: a non-JSON request body decoded by a
 //              RequestCodec before validation (mirrors fixture 06's Produces
 //              on the response side).
 // ---------------------------------------------------------------------------

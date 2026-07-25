@@ -383,10 +383,10 @@ describe("bellowsRoutes bodyParser", () => {
 });
 
 // --- bellowsRoutes: bodyParser's { kind: "codec", ... } form — the shape
-// anvil-bellows codegen emits for a Consumes<S, C> param. Same relationship
-// to the Rust codegen as the ResponseCodec/Produces block below: not testing
-// codegen itself, just proving the emitted shape behaves correctly against a
-// live server.
+// anvil-bellows codegen emits for the two-arg Body<S, C> param. Same
+// relationship to the Rust codegen as the ResponseCodec/Produces block below:
+// not testing codegen itself, just proving the emitted shape behaves
+// correctly against a live server.
 
 describe("bellowsRoutes bodyParser codec", () => {
   const xmlCodec = {

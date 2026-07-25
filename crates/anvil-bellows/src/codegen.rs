@@ -773,19 +773,19 @@ fn all_params_recognized(route: &Route) -> bool {
 enum BodyParserKind<'a> {
     /// One of the three built-in kinds (`RouteDefinition.bodyParser`'s string variants).
     Named(&'static str),
-    /// `Consumes<S, C>` — mount a per-route codec-driven parser scoped to
-    /// `C.contentType`. Carries the codec's identifier; codegen reads
-    /// `{ident}.contentType`/`{ident}.decode` as runtime JS expressions
+    /// The two-arg `Body<S, C>` — mount a per-route codec-driven parser
+    /// scoped to `C.contentType`. Carries the codec's identifier; codegen
+    /// reads `{ident}.contentType`/`{ident}.decode` as runtime JS expressions
     /// rather than needing the content type resolved statically here.
     Codec(&'a str),
 }
 
 /// Determine which body parser `bellowsRoutes` should mount for this route,
-/// derived from its params: `Consumes<S, C>` takes priority and mounts a
-/// codec-driven parser scoped to `C`'s content type; otherwise `FormBody<S>`
-/// needs `urlencoded`, `Body<S>` needs `json`, a bare `RawBody` with none of
-/// those needs `raw`, and a route with none of them needs no body parsing at
-/// all.
+/// derived from its params: the two-arg `Body<S, C>` takes priority and
+/// mounts a codec-driven parser scoped to `C`'s content type; otherwise
+/// `FormBody<S>` needs `urlencoded`, `Body<S>` needs `json`, a bare `RawBody`
+/// with none of those needs `raw`, and a route with none of them needs no
+/// body parsing at all.
 fn route_body_parser(route: &Route) -> Option<BodyParserKind<'_>> {
     let mut has_body = false;
     let mut has_form = false;
@@ -835,9 +835,9 @@ fn emit_handler(ctrl_param: &str, handler: &str, route: &Route) -> String {
     let mut call_args: Vec<String> = Vec::new();
     for param in &route.params {
         let schema_source = match &param.kind {
-            // `Consumes<S, C>`'s `bodyParser: { kind: "codec", ... }` mount
-            // already replaced `req.body` with the codec's decoded value
-            // before the handler runs, so it validates exactly like `Body<S>`.
+            // The two-arg `Body<S, C>`'s `bodyParser: { kind: "codec", ... }`
+            // mount already replaced `req.body` with the codec's decoded
+            // value before the handler runs, so it validates the same way.
             ParamKind::Body(schema)
             | ParamKind::FormBody(schema)
             | ParamKind::Consumes { schema, .. } => Some((schema, "req.body")),

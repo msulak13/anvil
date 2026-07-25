@@ -159,7 +159,7 @@ fn build_request_body(
                 let content_type = codec.content_type.clone().unwrap_or_else(|| {
                     diagnostics.push(BuildDiagnostic {
                         message: format!(
-                            "Consumes<{}, typeof {}>'s contentType isn't statically \
+                            "Body<typeof {}, typeof {}>'s contentType isn't statically \
                              resolvable (the codec must be a top-level `const` object \
                              literal in the same file); defaulting to \
                              application/octet-stream in the OpenAPI spec.",
