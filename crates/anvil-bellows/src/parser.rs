@@ -278,10 +278,12 @@ pub struct CtorParam {
     pub name: String,
     /// The TypeScript type name (e.g. `TodoService`).
     pub type_name: String,
-    /// Absolute path to the file that exports `type_name`, if it could be
-    /// resolved from a relative import in the controller file. `None` when the
-    /// dep comes from a package or when the import is unresolvable.
-    pub abs_source: Option<PathBuf>,
+    /// Where `type_name` is imported from, if it could be resolved from an
+    /// import statement in the controller file (relative source path, or a
+    /// bare/scoped package specifier — same as `MiddlewareRef`/`AuthRef`).
+    /// `None` when the import is unresolvable or the type is declared in the
+    /// controller file itself.
+    pub origin: Option<ImportOrigin>,
 }
 
 /// A controller class extracted from a source file.
@@ -680,14 +682,11 @@ fn extract_ctor_param(
         _ => {}
     }
     let type_name = type_name.to_owned();
-    let abs_source = import_map.get(&type_name).and_then(|o| match o {
-        ImportOrigin::Relative(p) => Some(p.clone()),
-        ImportOrigin::Package(_) => None,
-    });
+    let origin = import_map.get(&type_name).cloned();
     Some(CtorParam {
         name,
         type_name,
-        abs_source,
+        origin,
     })
 }
 

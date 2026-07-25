@@ -180,16 +180,21 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
         .unwrap();
     }
 
-    // Emit imports for controller dep types that come from other files.
-    // Group by resolved absolute source path so we emit one import per file.
+    // Emit imports for controller dep types that come from other files —
+    // either a relative source file or a bare/scoped package specifier (same
+    // two origins `@Middleware`/`@Authn`/`@Authz` refs resolve below). Group
+    // by resolved specifier so we emit one import per source.
     let mut dep_imports: std::collections::BTreeMap<String, Vec<String>> =
         std::collections::BTreeMap::new();
     for file in files {
         let ctrl_spec = import_specifier(out_dir, &file.source_path);
         for ctrl in &file.controllers {
             for cp in &ctrl.ctor_params {
-                let Some(abs) = &cp.abs_source else { continue };
-                let spec = import_specifier(out_dir, abs);
+                let spec = match &cp.origin {
+                    Some(ImportOrigin::Relative(abs)) => import_specifier(out_dir, abs),
+                    Some(ImportOrigin::Package(pkg)) => pkg.clone(),
+                    None => continue,
+                };
                 // Skip if the dep type is already imported from the controller file.
                 if spec == ctrl_spec {
                     continue;

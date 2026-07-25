@@ -20,6 +20,9 @@
 //!   `bodyParser` mounts a codec-driven parser (not
 //!   `"json"`/`"urlencoded"`/`"raw"`) and that the
 //!   handler still validates the decoded body with `S.safeParse`.
+//! - `10_ctor_param_package_import` — a controller constructor param whose
+//!   type is imported from a bare package specifier (not a relative path),
+//!   verifying the import is copied into the generated file (issue #18).
 
 use std::path::{Path, PathBuf};
 
@@ -178,6 +181,23 @@ fn write_stubs(root: &Path) {
     std::fs::write(
         zod_json_schema.join("index.ts"),
         "export function zodToJsonSchema(_schema: unknown, _options?: unknown): Record<string, unknown> { return {}; }\n",
+    )
+    .unwrap();
+
+    // acme-sdk — a fake bare-package dependency, used by fixture
+    // 10_ctor_param_package_import to verify a controller constructor param
+    // imported from a package specifier (not a relative path) gets its
+    // import correctly copied into the generated file.
+    let acme_sdk = root.join("node_modules/acme-sdk");
+    std::fs::create_dir_all(&acme_sdk).unwrap();
+    std::fs::write(
+        acme_sdk.join("package.json"),
+        r#"{ "name": "acme-sdk", "main": "index.ts", "types": "index.ts" }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        acme_sdk.join("index.ts"),
+        "export interface AcmeClient {\n  ping(): void;\n}\n",
     )
     .unwrap();
 
@@ -666,4 +686,38 @@ fn fixture_09_consumes_validates_decoded_body() {
     assert!(produced.contains("GatherCallbackSchema.safeParse(req.body)"));
     assert!(produced.contains("throw new BadRequestError(_body.error.message)"));
     assert!(!produced.contains("typeof"));
+}
+
+#[test]
+fn fixture_10_ctor_param_package_import_snapshot() {
+    run_fixture("10_ctor_param_package_import");
+}
+
+#[test]
+fn fixture_10_ctor_param_package_import_tsc() {
+    let tsc = tsc_bin();
+    if !tsc.exists() {
+        eprintln!("skipping tsc check — tsc not found at {}", tsc.display());
+        return;
+    }
+
+    let (tmp, _) = run_fixture("10_ctor_param_package_import");
+
+    Command::new(tsc)
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .current_dir(tmp.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn fixture_10_ctor_param_package_import_copies_bare_specifier_import() {
+    let (_tmp, output_path) = run_fixture("10_ctor_param_package_import");
+    let produced = std::fs::read_to_string(&output_path).unwrap();
+    // Regression test for anvil-di/anvil#18: a constructor dep type imported
+    // from a bare/scoped package specifier (not a relative path) must still
+    // get its import copied into the generated file.
+    assert!(produced.contains("import type { AcmeClient } from \"acme-sdk\";"));
+    assert!(produced.contains("client: AcmeClient"));
 }

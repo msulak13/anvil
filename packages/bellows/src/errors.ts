@@ -140,36 +140,27 @@ export class GatewayTimeoutError extends HttpError {
 }
 
 /**
- * Minimal structural type for a pino-style logger. `errorHandler` looks for
- * `req.log` (as attached by e.g. `pino-http`) but does not depend on pino —
- * anything satisfying this shape works, and unhandled errors are still
- * caught if `req.log` is absent.
- */
-export interface RequestLogger {
-  error(obj: Record<string, unknown>, msg?: string): void;
-}
-
-export interface RequestWithLogger extends Request {
-  log?: RequestLogger;
-}
-
-/**
  * Express error-handling middleware. Maps `HttpError` subclasses to their
- * status and body. Falls back to 500 for anything unexpected, logging the
- * full error via `req.log` (if present) while returning only a generic
- * message to the caller — internal error text should never be echoed back,
- * since it may embed request data the caller isn't entitled to see.
+ * status and body.
+ *
+ * Only handles errors it recognizes as its own — anything that isn't an
+ * instance of this module's `HttpError` is forwarded via `next(err)` rather
+ * than converted to a generic 500. This is what makes it safe for
+ * `bellowsRoutes()` to install by default: a consumer with its own
+ * `HttpError`-like hierarchy (a natural thing to build, since bellows itself
+ * had no error-handling primitives before this class existed) can mount
+ * their own app-level handler after `bellowsRoutes()` and still see every
+ * error that isn't a bellows `HttpError` — this handler only ever intercepts
+ * the ones it can actually map.
  *
  * Must be registered after all routes.
  */
 export function errorHandler(
   err: unknown,
-  req: Request,
+  _req: Request,
   res: Response,
-  _next: NextFunction,
+  next: NextFunction,
 ): void {
-  // `_next` is required so Express recognizes this as error-handling middleware.
-  void _next;
   if (res.headersSent) {
     // Response already streaming (e.g. SSE) — let Express close the socket.
     res.end();
@@ -181,6 +172,5 @@ export function errorHandler(
     return;
   }
 
-  (req as RequestWithLogger).log?.error({ err }, "Unhandled error");
-  res.status(500).json({ error: "Internal Server Error", message: "Internal server error" });
+  next(err);
 }
