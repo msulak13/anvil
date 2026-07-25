@@ -106,8 +106,7 @@ fn build_ts(files: &[ControllerFile], out_dir: &Path) -> String {
                 ParamKind::Body(_) | ParamKind::Query(_) | ParamKind::Params(_)
             )
         });
-        needs_internal_server_error |=
-            matches!(route.return_kind, ReturnKind::Responds { .. });
+        needs_internal_server_error |= matches!(route.return_kind, ReturnKind::Responds { .. });
     }
     let mut bellows_value_imports: Vec<&str> = Vec::new();
     if needs_bad_request_error {
@@ -1036,7 +1035,9 @@ mod tests {
         // errorHandler middleware maps them.
         assert!(result.contains("throw new BadRequestError(_body.error.message)"));
         assert!(result.contains("throw new InternalServerError(_validated.error.message)"));
-        assert!(result.contains("import { BadRequestError, InternalServerError } from \"@anvil-di/bellows\""));
+        assert!(result.contains(
+            "import { BadRequestError, InternalServerError } from \"@anvil-di/bellows\""
+        ));
         // Success response.
         assert!(result.contains("res.json(_validated.data)"));
         // No typeof in generated code.
