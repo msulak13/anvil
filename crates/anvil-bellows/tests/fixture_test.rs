@@ -125,8 +125,18 @@ fn write_stubs(root: &Path) {
          export class InternalServerError extends HttpError {\n\
            constructor(message?: string) { super(500, \"Internal Server Error\", message); }\n\
          }\n\
+         export function disconnectSignal(_req: any): AbortSignal { return new AbortController().signal; }\n\
+         export class SseStream {\n\
+           readonly signal: AbortSignal;\n\
+           constructor(_res: any, signal: AbortSignal) { this.signal = signal; }\n\
+           open(_keepAliveMs?: number | false): this { return this; }\n\
+           send(_data: unknown, _opts?: { event?: string; id?: string; retry?: number }): void {}\n\
+           comment(_text?: string): void {}\n\
+           close(): void {}\n\
+         }\n\
          export const Controller = (..._: any[]): any => {};\n\
          export const Get = (..._: any[]): any => {};\n\
+         export const Sse = (..._: any[]): any => {};\n\
          export const Post = (..._: any[]): any => {};\n\
          export const Put = (..._: any[]): any => {};\n\
          export const Delete = (..._: any[]): any => {};\n\
@@ -499,4 +509,44 @@ fn fixture_06_produces_uses_codec_not_json() {
     assert!(!produced.contains("res.json(_validated.data)"));
     // No typeof in generated code.
     assert!(!produced.contains("typeof"));
+}
+
+// ---------------------------------------------------------------------------
+// Fixture 07 — @Sse route with SseStream + AbortSignal injection
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixture_07_sse_snapshot() {
+    run_fixture("07_sse");
+}
+
+#[test]
+fn fixture_07_sse_tsc() {
+    let tsc = tsc_bin();
+    if !tsc.exists() {
+        eprintln!("skipping tsc check — tsc not found at {}", tsc.display());
+        return;
+    }
+
+    let (tmp, _) = run_fixture("07_sse");
+
+    Command::new(tsc)
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .current_dir(tmp.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn fixture_07_sse_constructs_stream_and_signal() {
+    let (_tmp, output) = run_fixture("07_sse");
+    let produced = std::fs::read_to_string(&output).unwrap();
+    assert!(produced.contains("new SseStream(res, disconnectSignal(req))"));
+    assert!(produced.contains("disconnectSignal(req)"));
+    assert!(
+        produced.contains(
+            "import { SseStream, disconnectSignal, BadRequestError } from \"@anvil-di/bellows\";"
+        ) || produced.contains("disconnectSignal")
+    );
 }

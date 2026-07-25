@@ -61,6 +61,21 @@ export function Patch(
   return (target, _ctx) => target;
 }
 
+/**
+ * Marks a route as a Server-Sent Events stream (`text/event-stream`) rather
+ * than a buffered JSON response. Registered as a `GET` route. The handler
+ * must return `void`/`Promise<void>` and manages the connection itself via
+ * an injected `SseStream` param — see `@anvil-di/bellows`'s `SseStream`.
+ */
+export function Sse(
+  _path: string,
+): <This, Args extends readonly unknown[], Return>(
+  target: (this: This, ...args: Args) => Return,
+  ctx: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,
+) => (this: This, ...args: Args) => Return {
+  return (target, _ctx) => target;
+}
+
 // Class-decorator overload: `@Middleware(fn) class Ctrl {}`
 export function Middleware(
   ...fns: ExpressMiddleware[]
