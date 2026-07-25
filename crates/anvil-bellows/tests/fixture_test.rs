@@ -110,6 +110,11 @@ fn write_stubs(root: &Path) {
          export type Query<S> = Body<S>;\n\
          export type Params<S> = Body<S>;\n\
          export type Responds<S> = Body<S>;\n\
+         export interface ResponseCodec<T> {\n\
+           readonly contentType: string;\n\
+           encode(value: T): string;\n\
+         }\n\
+         export type Produces<S, C extends ResponseCodec<Responds<S>>> = Responds<S>;\n\
          export const Controller = (..._: any[]): any => {};\n\
          export const Get = (..._: any[]): any => {};\n\
          export const Post = (..._: any[]): any => {};\n\
@@ -432,4 +437,56 @@ fn fixture_05_authn_authz_di_params_and_fields() {
     assert!(produced.contains("import type { RoleAuthz, SessionAuthn } from \"./auth-services\";"));
     // `stats`'s AuthnUser<User> param is injected from res.locals.user.
     assert!(produced.contains("adminController.stats(res.locals.user)"));
+}
+
+// ---------------------------------------------------------------------------
+// Fixture 06 — Produces<S, C>: non-JSON response body via a ResponseCodec,
+//              alongside a Body<S> param on the same route.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixture_06_produces_snapshot() {
+    run_fixture("06_produces");
+}
+
+#[test]
+fn fixture_06_produces_tsc() {
+    let tsc = tsc_bin();
+    if !tsc.exists() {
+        eprintln!("skipping tsc check — tsc not found at {}", tsc.display());
+        return;
+    }
+
+    let (tmp, _) = run_fixture("06_produces");
+
+    // Verifies the fixture's ResponseCodec<Responds<typeof TwimlResponseSchema>>
+    // actually satisfies the stubbed Produces<S, C> bound — not just that the
+    // generated glue code type-checks.
+    Command::new(tsc)
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .current_dir(tmp.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn fixture_06_produces_uses_codec_not_json() {
+    let (_tmp, output_path) = run_fixture("06_produces");
+    let produced = std::fs::read_to_string(&output_path).unwrap();
+
+    // Codec import alongside the controller and schemas.
+    assert!(produced.contains(
+        "import { WebhooksController, GatherWebhookBody, TwimlResponseSchema, twimlCodec } from \"./webhooks-controller\";"
+    ));
+    // Body param still validated as usual.
+    assert!(produced.contains("GatherWebhookBody.safeParse(req.body)"));
+    // Return value still validated against the response schema.
+    assert!(produced.contains("TwimlResponseSchema.safeParse(_result)"));
+    // Serialized via the codec, not res.json().
+    assert!(produced
+        .contains("res.type(twimlCodec.contentType).send(twimlCodec.encode(_validated.data));"));
+    assert!(!produced.contains("res.json(_validated.data)"));
+    // No typeof in generated code.
+    assert!(!produced.contains("typeof"));
 }
