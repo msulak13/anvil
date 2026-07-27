@@ -522,7 +522,43 @@ fn build_openapi_ts(
     writeln!(s, "  }};").unwrap();
     writeln!(s, "}}").unwrap();
 
+    if has_any_query_param(files) {
+        s.push('\n');
+        s.push_str(QUERY_PARAMETERS_HELPER);
+    }
+
     s
+}
+
+/// Runtime helper that explodes a Zod-derived object JSON Schema into one
+/// `OpenAPI` query parameter per property (issue #22). Emitted only when at least
+/// one route declares a `Query<S>` param, so `noUnusedLocals` stays happy.
+const QUERY_PARAMETERS_HELPER: &str = "\
+function queryParameters(schema: unknown): Record<string, unknown>[] {
+  const obj = (schema ?? {}) as { properties?: Record<string, unknown>; required?: string[] };
+  const properties = obj.properties ?? {};
+  const required = new Set(obj.required ?? []);
+  return Object.keys(properties).map((name) => ({
+    in: \"query\",
+    name,
+    required: required.has(name),
+    schema: properties[name],
+  }));
+}
+";
+
+/// True if any route in any controller declares a `Query<S>` parameter.
+fn has_any_query_param(files: &[ControllerFile]) -> bool {
+    files.iter().any(|file| {
+        file.controllers.iter().any(|ctrl| {
+            ctrl.routes.iter().any(|route| {
+                route
+                    .params
+                    .iter()
+                    .any(|p| matches!(p.kind, ParamKind::Query(_)))
+            })
+        })
+    })
 }
 
 type PathMap<'a> = BTreeMap<String, BTreeMap<String, (&'a Controller, &'a Route, Vec<String>)>>;
@@ -607,11 +643,16 @@ fn openapi_emit_operation_ts(
         }
         for param in &route.params {
             if let ParamKind::Query(schema) = &param.kind {
+                // Explode the object schema into one query parameter per
+                // property at runtime. The Zod schema is the source of truth for
+                // property names, per-property schemas, and `required` — data the
+                // static IR doesn't carry — so we expand `zodToJsonSchema(...)`
+                // via the `queryParameters` helper rather than emit a single
+                // opaque `query` object param (issue #22).
                 let schema_id = &schema.ident;
-                let name = &param.name;
                 writeln!(
                     s,
-                    "{indent}    {{ in: \"query\", name: \"{name}\", required: false, schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }},"
+                    "{indent}    ...queryParameters(zodToJsonSchema({schema_id}, {{ $refStrategy: \"none\" }})),"
                 )
                 .unwrap();
             }

@@ -406,6 +406,35 @@ fn fixture_03_schema_params_safe_parse_calls() {
     assert!(produced.contains("res.json(_validated.data)"));
 }
 
+#[test]
+fn fixture_03_schema_params_query_params_exploded() {
+    // Issue #22: a `Query<S>` object schema must be exploded into one OpenAPI
+    // query parameter per property (via the runtime `queryParameters` helper),
+    // not emitted as a single opaque `query` object param with a `$ref`.
+    let (_tmp, routes_path) = run_fixture("03_schema_params");
+    let openapi_path = routes_path.with_file_name("schema-route.module.anvil.ts");
+    let openapi = std::fs::read_to_string(&openapi_path)
+        .expect("anvil-bellows should have written schema-route.module.anvil.ts");
+
+    // The query param is expanded at runtime from the Zod schema.
+    assert!(
+        openapi.contains(
+            "...queryParameters(zodToJsonSchema(OrderFilterQuery, { $refStrategy: \"none\" }))"
+        ),
+        "query param should be exploded via queryParameters(...); got:\n{openapi}"
+    );
+    // The runtime expansion helper is emitted.
+    assert!(
+        openapi.contains("function queryParameters("),
+        "queryParameters helper should be defined; got:\n{openapi}"
+    );
+    // The old single opaque `query` object parameter must be gone.
+    assert!(
+        !openapi.contains("name: \"query\""),
+        "should not emit a single opaque `query` object param; got:\n{openapi}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Fixture 04 — @Middleware chains: class-level + method-level, imported from
 //              another file and declared in the controller file itself.
