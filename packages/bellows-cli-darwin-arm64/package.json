@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/bellows-cli-darwin-arm64",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Prebuilt anvil-bellows CLI binary for darwin/arm64. Resolved by `@anvil-di/bellows-cli` at runtime.",
   "license": "Apache-2.0",
   "type": "commonjs",
