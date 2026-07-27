@@ -33,7 +33,7 @@ export type TodoControllerGetListData = {
     body?: never;
     path?: never;
     query?: {
-        query?: TodoQuery;
+        completed?: 'true' | 'false';
     };
     url: '/todos';
 };
