@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/bellows-openapi-cli-linux-x64",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Prebuilt anvil-bellows-openapi CLI binary for linux/x64. Resolved by `@anvil-di/bellows-openapi-cli` at runtime.",
   "license": "Apache-2.0",
   "type": "commonjs",
