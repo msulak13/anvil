@@ -1,5 +1,6 @@
 import { parseSync } from "oxc-parser";
 import MagicString from "magic-string";
+import { createUnplugin, type UnpluginInstance } from "unplugin";
 
 /**
  * Modules whose every export is a decorator with no runtime behaviour.
@@ -210,3 +211,58 @@ export function mayContainNoopDecorators(code: string, options: StripOptions = {
   }
   return false;
 }
+
+/** Options for the standalone decorator-strip plugin. */
+export interface StripDecoratorsPluginOptions extends StripOptions {
+  /**
+   * File extensions the transform applies to. Defaults to `.ts` and `.tsx`.
+   */
+  extensions?: readonly string[];
+}
+
+const DEFAULT_EXTENSIONS = [".ts", ".tsx"] as const;
+
+/**
+ * The decorator strip on its own, without anvil's codegen hooks — for a
+ * project that already runs `anvil build` / `anvil-bellows` its own way
+ * (a `gen` npm script, say) and only needs its bundle to come out
+ * runnable.
+ *
+ * ```ts
+ * // rolldown.config.ts
+ * import { stripDecoratorsUnplugin } from "@anvil-di/anvil-unplugin/strip";
+ *
+ * export default { plugins: [stripDecoratorsUnplugin.rolldown()] };
+ * ```
+ *
+ * Projects using the main `anvilUnplugin` get this already; see its
+ * `stripDecorators` option.
+ */
+export const stripDecoratorsUnplugin: UnpluginInstance<
+  StripDecoratorsPluginOptions | undefined,
+  false
+> = createUnplugin<StripDecoratorsPluginOptions | undefined>((rawOptions) => {
+  const extensions = rawOptions?.extensions ?? DEFAULT_EXTENSIONS;
+  const stripOptions: StripOptions =
+    rawOptions?.additionalModules === undefined
+      ? {}
+      : { additionalModules: rawOptions.additionalModules };
+
+  return {
+    name: "anvil-strip-decorators",
+    // `id` carries a query suffix in some bundlers (`?used`, `?vue&type=...`);
+    // compare against the path portion only.
+    transformInclude(id: string) {
+      const file = id.split("?")[0] ?? id;
+      return extensions.some((ext) => file.endsWith(ext));
+    },
+    transform(code: string, id: string) {
+      if (!mayContainNoopDecorators(code, stripOptions)) return null;
+      const result = stripNoopDecorators(code, id.split("?")[0] ?? id, stripOptions);
+      if (result === null) return null;
+      // Serialized: magic-string types `sourcesContent` as
+      // `(string | null)[]`, which rollup's map type rejects.
+      return { code: result.code, map: result.map.toString() };
+    },
+  };
+});

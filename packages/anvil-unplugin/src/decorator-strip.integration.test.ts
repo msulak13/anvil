@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { rolldown } from "rolldown";
-import { stripDecoratorsUnplugin } from "./plugin.js";
+import { stripDecoratorsUnplugin } from "./decorator-strip.js";
 
 /**
  * The end-to-end claim: a Rolldown bundle of decorated anvil source RUNS.

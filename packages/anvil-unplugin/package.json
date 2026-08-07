@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/anvil-unplugin",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Run anvil codegen as part of your bundler's normal pipeline. One plugin, every bundler (Vite, Rollup, Webpack, Rspack, esbuild) via unplugin.",
   "license": "Apache-2.0",
   "type": "module",
@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./strip": {
+      "types": "./dist/decorator-strip.d.ts",
+      "import": "./dist/decorator-strip.js"
     },
     "./vite": {
       "types": "./dist/vite.d.ts",
@@ -45,11 +49,13 @@
   "dependencies": {
     "@anvil-di/anvil-cli": "workspace:*",
     "@anvil-di/anvil-codegen-wasm": "workspace:*",
-    "@anvil-di/strip-decorators": "workspace:*",
+    "magic-string": "^1.1.0",
+    "oxc-parser": "^0.143.0",
     "unplugin": "^1.16.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "rolldown": "^1.2.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },

@@ -177,9 +177,12 @@ importers:
       '@anvil-di/anvil-codegen-wasm':
         specifier: workspace:*
         version: link:../anvil-codegen-wasm
-      '@anvil-di/strip-decorators':
-        specifier: workspace:*
-        version: link:../strip-decorators
+      magic-string:
+        specifier: ^1.1.0
+        version: 1.1.0
+      oxc-parser:
+        specifier: ^0.143.0
+        version: 0.143.0
       unplugin:
         specifier: ^1.16.0
         version: 1.16.1
@@ -187,6 +190,9 @@ importers:
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
+      rolldown:
+        specifier: ^1.2.0
+        version: 1.2.3
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -298,28 +304,6 @@ importers:
   packages/bellows-openapi-cli-linux-x64: {}
 
   packages/bellows-openapi-cli-win32-x64: {}
-
-  packages/strip-decorators:
-    dependencies:
-      magic-string:
-        specifier: ^1.1.0
-        version: 1.1.0
-      oxc-parser:
-        specifier: ^0.143.0
-        version: 0.143.0
-      unplugin:
-        specifier: ^1.16.0
-        version: 1.16.1
-    devDependencies:
-      rolldown:
-        specifier: ^1.2.3
-        version: 1.2.3
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.17)
 
 packages:
 

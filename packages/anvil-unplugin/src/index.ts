@@ -39,7 +39,7 @@ import {
   mayContainNoopDecorators,
   stripNoopDecorators,
   type StripOptions,
-} from "@anvil-di/strip-decorators";
+} from "./decorator-strip.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -522,3 +522,12 @@ function tsconfigPathsFrom(tsconfigPath: string): {
 }
 
 export default anvilUnplugin;
+
+export {
+  stripNoopDecorators,
+  mayContainNoopDecorators,
+  stripDecoratorsUnplugin,
+  type StripOptions,
+  type StripResult,
+  type StripDecoratorsPluginOptions,
+} from "./decorator-strip.js";

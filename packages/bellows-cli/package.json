@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/bellows-cli",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Native binary launcher for the anvil-bellows codegen CLI. Resolves the right per-platform package at runtime; mirrors esbuild's distribution model.",
   "license": "Apache-2.0",
   "type": "module",

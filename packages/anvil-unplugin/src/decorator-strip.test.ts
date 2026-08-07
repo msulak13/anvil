@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mayContainNoopDecorators, stripNoopDecorators } from "./strip.js";
+import { mayContainNoopDecorators, stripNoopDecorators } from "./decorator-strip.js";
 
 /**
  * The load-bearing property of this package is not "decorators disappear" —
