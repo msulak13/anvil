@@ -1,7 +1,7 @@
 {
-  "name": "@anvil-di/anvil-unplugin",
+  "name": "@anvil-di/strip-decorators",
   "version": "0.0.8",
-  "description": "Run anvil codegen as part of your bundler's normal pipeline. One plugin, every bundler (Vite, Rollup, Webpack, Rspack, esbuild) via unplugin.",
+  "description": "Remove anvil's and bellows' no-op decorators before bundling, so oxc-based bundlers never have to transform a standard decorator.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,6 +19,10 @@
     "./rollup": {
       "types": "./dist/rollup.d.ts",
       "import": "./dist/rollup.js"
+    },
+    "./rolldown": {
+      "types": "./dist/rolldown.d.ts",
+      "import": "./dist/rolldown.js"
     },
     "./webpack": {
       "types": "./dist/webpack.d.ts",
@@ -40,16 +44,16 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@anvil-di/anvil-cli": "workspace:*",
-    "@anvil-di/anvil-codegen-wasm": "workspace:*",
-    "@anvil-di/strip-decorators": "workspace:*",
+    "magic-string": "^1.1.0",
+    "oxc-parser": "^0.143.0",
     "unplugin": "^1.16.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
+    "rolldown": "^1.2.3",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },

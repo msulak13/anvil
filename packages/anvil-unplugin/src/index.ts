@@ -35,6 +35,11 @@ import {
 } from "node:fs";
 import { createUnplugin, type UnpluginInstance } from "unplugin";
 import { resolveBinaryPath, unresolvableBinaryError } from "@anvil-di/anvil-cli";
+import {
+  mayContainNoopDecorators,
+  stripNoopDecorators,
+  type StripOptions,
+} from "@anvil-di/strip-decorators";
 
 const execFileAsync = promisify(execFile);
 
@@ -139,6 +144,30 @@ export interface AnvilPluginOptions {
    */
   rootDir?: string;
   /**
+   * Remove anvil's and bellows' no-op decorators from source before the
+   * bundler transforms it. **On by default**, and you almost certainly want
+   * it on.
+   *
+   * anvil is standard-decorators-only, but oxc — which Rolldown, Vite 6+ and
+   * Rspack transform with — implements only the legacy convention. Left to
+   * it, a standard decorator either survives into the output, where no JS
+   * engine can parse it, or is applied with the legacy calling convention,
+   * which corrupts the class. Because anvil's decorators do nothing at
+   * runtime, deleting them before the bundler ever sees one sidesteps both.
+   *
+   * Pass an object to also strip a project's own marker decorators:
+   *
+   * ```ts
+   * anvil({ stripDecorators: { additionalModules: [/\/public-route$/] } })
+   * ```
+   *
+   * Set `false` only if something else in your pipeline already handles
+   * standard decorators correctly (a `ts-loader` / `tsc` pre-pass, say).
+   *
+   * @default true
+   */
+  stripDecorators?: boolean | StripOptions;
+  /**
    * Hooks that run **before** `anvil build` on every `buildStart`.
    *
    * In watch mode a hook re-runs when `hook.shouldRerun(changedFiles)`
@@ -186,12 +215,19 @@ export const anvilUnplugin: UnpluginInstance<AnvilPluginOptions | undefined, fal
       debounceMs: rawOptions?.debounceMs ?? 100,
       include: rawOptions?.include ?? ["**/*.ts"],
       mode,
+      stripDecorators: rawOptions?.stripDecorators ?? true,
       entries: rawOptions?.entries,
       tsconfig: rawOptions?.tsconfig,
       rootDir: rawOptions?.rootDir,
       preBuild: rawOptions?.preBuild,
       postBuild: rawOptions?.postBuild,
     };
+
+    // `false` disables the transform entirely; `true` means defaults; an
+    // object carries the caller's extra no-op modules.
+    const stripEnabled = options.stripDecorators !== false;
+    const stripOptions: StripOptions =
+      typeof options.stripDecorators === "object" ? options.stripDecorators : {};
 
     let pending: NodeJS.Timeout | undefined;
     let inFlight: Promise<void> | undefined;
@@ -287,6 +323,22 @@ export const anvilUnplugin: UnpluginInstance<AnvilPluginOptions | undefined, fal
           return;
         }
         scheduleRebuild(id);
+      },
+      // Delete anvil's no-op decorators before the bundler's own TypeScript
+      // handling runs. See `stripDecorators` in AnvilPluginOptions for why
+      // this is on by default.
+      transformInclude(id: string) {
+        if (!stripEnabled) return false;
+        const file = id.split("?")[0] ?? id;
+        return file.endsWith(".ts") || file.endsWith(".tsx");
+      },
+      transform(code: string, id: string) {
+        if (!stripEnabled || !mayContainNoopDecorators(code, stripOptions)) return null;
+        const result = stripNoopDecorators(code, id.split("?")[0] ?? id, stripOptions);
+        if (result === null) return null;
+        // Serialized: magic-string types `sourcesContent` as
+        // `(string | null)[]`, which rollup's map type rejects.
+        return { code: result.code, map: result.map.toString() };
       },
     };
   });

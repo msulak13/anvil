@@ -58,8 +58,31 @@ anvil({
   // - "native" (default): spawn the anvil Rust binary
   // - "wasm": run in-process via @anvil-di/anvil-codegen-wasm (no spawn overhead)
   mode: "native",
+
+  // Delete anvil's no-op decorators before the bundler transforms them.
+  // Defaults to true; see "Decorator stripping" below.
+  stripDecorators: true,
 });
 ```
+
+## Decorator stripping
+
+anvil is standard-decorators-only, but oxc — which Vite 6+, Rolldown, and Rspack transform with — implements only the *legacy* convention. Left alone, a standard decorator either reaches the output verbatim (nothing can parse it) or is applied with the wrong calling convention (which corrupts the class).
+
+Because anvil's decorators do nothing at runtime, the plugin deletes them before the bundler sees one. This is on by default, and it is what lets an anvil project bundle correctly on an oxc-based toolchain at all.
+
+```ts
+// Also strip your own compile-time-only markers.
+anvil({
+  stripDecorators: { additionalModules: [/(?:^|\/)http\/public-route(?:\.js)?$/] },
+});
+
+// Or turn it off, if something else in your pipeline already handles
+// standard decorators correctly (a ts-loader / tsc pre-pass, say).
+anvil({ stripDecorators: false });
+```
+
+Only decorators resolving to a known no-op module are removed — one from any other package is left in place. See [`@anvil-di/strip-decorators`](../strip-decorators/README.md), which can also be used on its own if you don't need the codegen hooks.
 
 ## How it works
 
