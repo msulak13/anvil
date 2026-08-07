@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { rolldown } from "rolldown";
 import { stripDecoratorsUnplugin } from "./decorator-strip.js";
 
@@ -12,8 +12,15 @@ import { stripDecoratorsUnplugin } from "./decorator-strip.js";
  * A unit test on the transform cannot show this. oxc's decorator support is
  * legacy-only, so without the plugin the decorators reach the output
  * verbatim and no JS engine will parse them — which is exactly the failure
- * this package exists to prevent, and exactly what the negative case below
- * pins.
+ * this transform exists to prevent, and exactly what the negative case
+ * below pins.
+ *
+ * The bundle is executed by spawning a real `node`, not by `import()`ing it
+ * from the test. That is both a more faithful check of "this ships and
+ * runs" and the only portable one: vitest resolves a dynamic import through
+ * Vite's module loader, and on Windows the runner's temp directory is an
+ * 8.3 short path (`C:\Users\RUNNER~1\...`) whose `~` `pathToFileURL`
+ * percent-encodes to `%7E` and the loader never decodes.
  */
 
 let dir: string;
@@ -36,6 +43,11 @@ export function Inject<T extends abstract new (...a: never[]) => unknown>(
 }
 `;
 
+/**
+ * Self-executing on purpose: the bundle's own top-level statement is what
+ * proves the decorated classes survived and still behave, so `node
+ * index.mjs` is the whole assertion.
+ */
 const SOURCE = `import { Controller, Get, Inject } from "@anvil-di/bellows";
 
 @Inject
@@ -54,6 +66,8 @@ export class CallsController {
     return this.greeter.greet(id);
   }
 }
+
+console.log(new CallsController(new Greeter()).findOne("world"));
 `;
 
 beforeAll(() => {
@@ -70,6 +84,8 @@ afterAll(() => {
 /**
  * Bundle `src/index.ts`, resolving the bare `@anvil-di/bellows` specifier to
  * the local stub file so the fixture needs no installed dependency.
+ *
+ * Emitted as `.mjs` so Node reads it as ESM without a package.json marker.
  */
 async function bundle(withPlugin: boolean, outName: string): Promise<string> {
   const aliasStubs = {
@@ -78,9 +94,7 @@ async function bundle(withPlugin: boolean, outName: string): Promise<string> {
       return source === "@anvil-di/bellows" ? path.join(dir, "src", "stubs.ts") : null;
     },
   };
-  const plugins = withPlugin
-    ? [aliasStubs, stripDecoratorsUnplugin.rolldown()]
-    : [aliasStubs];
+  const plugins = withPlugin ? [aliasStubs, stripDecoratorsUnplugin.rolldown()] : [aliasStubs];
   const build = await rolldown({
     input: path.join(dir, "src", "index.ts"),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,25 +102,30 @@ async function bundle(withPlugin: boolean, outName: string): Promise<string> {
     logLevel: "silent",
   });
   const outDir = path.join(dir, outName);
-  await build.write({ dir: outDir, format: "esm" });
+  await build.write({ dir: outDir, format: "esm", entryFileNames: "index.mjs" });
   await build.close();
-  return path.join(outDir, "index.js");
+  return path.join(outDir, "index.mjs");
+}
+
+/** Execute a bundle with the same Node that is running the tests. */
+function runInNode(entry: string): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [entry], { encoding: "utf8" });
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
 describe("stripDecoratorsUnplugin (rolldown, end to end)", () => {
-  it("produces a bundle that imports and runs", async () => {
+  it("produces a bundle that node runs", async () => {
     const out = await bundle(true, "dist-stripped");
-    const mod = (await import(pathToFileURL(out).href)) as {
-      CallsController: new (g: { greet(n: string): string }) => { findOne(id: string): string };
-      Greeter: new () => { greet(n: string): string };
-    };
-    const controller = new mod.CallsController(new mod.Greeter());
-    expect(controller.findOne("world")).toBe("hello world");
+    const { status, stdout, stderr } = runInNode(out);
+    // stderr rides along as the failure message rather than as its own
+    // assertion, so an unrelated node warning cannot fail the test but a
+    // real crash still shows its stack.
+    expect(status, stderr).toBe(0);
+    expect(stdout.trim()).toBe("hello world");
   });
 
   it("emits no decorator syntax and no decorator helpers", async () => {
     const out = await bundle(true, "dist-clean");
-    const { readFileSync } = await import("node:fs");
     const code = readFileSync(out, "utf8");
     expect(code).not.toMatch(/(?:^|[\s{;(])@[A-Za-z_$]/m);
     expect(code).not.toContain("__esDecorate");
@@ -116,8 +135,10 @@ describe("stripDecoratorsUnplugin (rolldown, end to end)", () => {
     expect(code).not.toContain("function Controller");
   });
 
-  it("WITHOUT the plugin, the same bundle is not even parseable", async () => {
+  it("WITHOUT the plugin, node cannot even parse the same bundle", async () => {
     const out = await bundle(false, "dist-raw");
-    await expect(import(pathToFileURL(out).href)).rejects.toThrowError(SyntaxError);
+    const { status, stderr } = runInNode(out);
+    expect(status).not.toBe(0);
+    expect(stderr).toMatch(/SyntaxError/);
   });
 });
