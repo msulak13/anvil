@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/anvil-cli-linux-arm64",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Prebuilt anvil CLI binary for linux/arm64. Resolved by `@anvil-di/anvil-cli` at runtime.",
   "license": "Apache-2.0",
   "type": "commonjs",

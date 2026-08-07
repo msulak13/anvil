@@ -24,7 +24,7 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 
 ## Invariants
 
-1. **No runtime reflection.** Decorators are no-ops at runtime; all semantics live in the Rust toolchain.
+1. **No runtime reflection.** Decorators are no-ops at runtime; all semantics live in the Rust toolchain. `anvil-unplugin`'s decorator strip now *depends* on this: it deletes anvil/bellows decorators from source rather than emitting them, so giving any decorator real runtime behaviour would silently break every bundled consumer. A decorator that must do something at runtime needs a different mechanism, not a non-identity stub.
 2. **Generated code is plain `.ts`** — never `.js`+`.d.ts`. The user's own `tsc` is the final validator.
 3. **Type identity is `(absolute module path, exported name)`** derived via the import map. We do not invoke a TypeScript type checker.
 4. **One generated file per `@Component`**, co-located as `<name>.anvil.ts`.
@@ -60,7 +60,7 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 | Directory | npm name | Role |
 |---|---|---|
 | `packages/anvil` | `@anvil-di/anvil` | Runtime decorator stubs (`@Inject`, `@Provides`, `@Module`, `@Component`, `@Singleton`, `@Binds`, `@Subcomponent`, `@IntoSet`). All no-ops. `@Singleton` has class + method overloads so `@Singleton @Provides` typechecks. |
-| `packages/anvil-unplugin` | `@anvil-di/anvil-unplugin` | Bundler plugin (vite/rollup/webpack/rspack/esbuild). Runs `anvil build` on `buildStart`; watch mode debounces file changes. `mode: "wasm"` runs codegen in-process via the WASM package. 5 tests, all green. |
+| `packages/anvil-unplugin` | `@anvil-di/anvil-unplugin` | Bundler plugin (vite/rollup/webpack/rspack/esbuild). Runs `anvil build` on `buildStart`; watch mode debounces file changes. `mode: "wasm"` runs codegen in-process via the WASM package. Also deletes anvil/bellows no-op decorators from source before the bundler transforms them (`stripDecorators`, default on) — binding-based, not name-based, so a decorator from anywhere else is left alone. Exposed standalone at the `/strip` subpath. 33 tests, all green. |
 | `packages/anvil-cli` | `@anvil-di/anvil-cli` | Launcher shim. Resolves the native binary via `optionalDependencies` or the `TSDI_CLI_BIN` env var. |
 | `packages/anvil-cli-<platform>-<arch>` | `@anvil-di/anvil-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Only win32-x64 committed; others filled by `release-cli.yml`. |
 | `packages/anvil-codegen-wasm` | `@anvil-di/anvil-codegen-wasm` | WASM build of `crates/tsdi-codegen-wasm`. `wasm-opt = false` — oxc emits `memory.copy` that bundled wasm-opt rejects. 1.4 MB unoptimized is fine. |
