@@ -700,6 +700,24 @@ fn openapi_emit_operation_ts(
     }
 
     writeln!(s, "{indent}  responses: {{").unwrap();
+    // A `Responds<S>` handler documents its success under "200" by default,
+    // but a bare `@Returns(status)` — no schema of its own, since `Responds<S>`
+    // already declares one — means the handler sets `status` on `res` itself
+    // before returning, so the real wire status is `status`, not 200. File
+    // the schema under the declared status instead of always hardcoding
+    // "200": swift-openapi-generator (unlike hey-api, which tolerates any
+    // 2xx) switches on the exact status code, so a live 201 filed under
+    // "200" leaves it with no case that both matches the real status and
+    // decodes a body. Keep in sync with `build_responses` in
+    // `anvil-bellows-openapi/src/builder.rs`.
+    let status_override = match &route.return_kind {
+        ReturnKind::Responds { .. } => route
+            .extra_responses
+            .iter()
+            .position(|er| er.schema.is_none()),
+        ReturnKind::Void { .. } => None,
+    };
+    let success_status = status_override.map_or(200, |i| route.extra_responses[i].status);
     match &route.return_kind {
         ReturnKind::Responds { schema, codec, .. } => {
             let schema_id = &schema.ident;
@@ -707,9 +725,10 @@ fn openapi_emit_operation_ts(
                 .as_ref()
                 .and_then(|c| c.content_type.as_deref())
                 .unwrap_or("application/json");
+            let desc = openapi_status_desc(success_status);
             writeln!(
                 s,
-                "{indent}    \"200\": {{ content: {{ \"{content_type}\": {{ schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }} }}, description: \"Success\" }},"
+                "{indent}    \"{success_status}\": {{ content: {{ \"{content_type}\": {{ schema: {{ \"$ref\": \"#/components/schemas/{schema_id}\" }} }} }}, description: \"{desc}\" }},"
             )
             .unwrap();
         }
@@ -717,7 +736,11 @@ fn openapi_emit_operation_ts(
             writeln!(s, "{indent}    \"200\": {{ description: \"Success\" }},").unwrap();
         }
     }
-    for er in &route.extra_responses {
+    for (i, er) in route.extra_responses.iter().enumerate() {
+        // Skip the entry already consumed above as the success-status override.
+        if Some(i) == status_override {
+            continue;
+        }
         let code = er.status;
         let desc = openapi_status_desc(code);
         writeln!(s, "{indent}    \"{code}\": {{ description: \"{desc}\" }},").unwrap();
@@ -1256,6 +1279,74 @@ mod tests {
         assert!(result
             .contains("res.type(twimlCodec.contentType).send(twimlCodec.encode(_validated.data))"));
         assert!(!result.contains("res.json(_validated.data)"));
+    }
+
+    /// A `Responds<S>` route paired with a bare `@Returns(201)` (no schema of
+    /// its own) documents the handler setting `res.status(201)` before
+    /// returning — the real wire status is 201, not 200. The generated
+    /// `buildSpec()` must file the schema under "201" with no phantom "200"
+    /// entry left behind: `swift-openapi-generator` switches on the exact
+    /// status code, so a mismatch leaves it with no case that both matches
+    /// the real status and decodes a body. Keep in sync with the equivalent
+    /// test in `anvil-bellows-openapi/src/builder.rs`.
+    #[test]
+    fn openapi_module_responds_with_returns_override_files_schema_under_declared_status() {
+        use crate::parser::{ExtraResponse, SchemaRef};
+
+        let ctrl = Controller {
+            class_name: "DeviceSessionsController".into(),
+            ctor_params: vec![],
+            tags: vec![],
+            security: vec![],
+            routes: vec![Route {
+                method: HttpMethod::Post,
+                path: "/device-sessions".into(),
+                handler_name: "mint".into(),
+                is_sse: false,
+                params: vec![],
+                return_kind: ReturnKind::Responds {
+                    schema: SchemaRef {
+                        ident: "MintDeviceSessionResponseSchema".into(),
+                    },
+                    codec: None,
+                    is_async: true,
+                },
+                deprecated: false,
+                extra_responses: vec![ExtraResponse {
+                    status: 201,
+                    schema: None,
+                }],
+                middleware: vec![],
+                authn: vec![],
+                authz: vec![],
+            }],
+        };
+        let files = vec![ControllerFile {
+            source_path: PathBuf::from("/project/src/device-sessions-controller.ts"),
+            controllers: vec![ctrl],
+        }];
+
+        let output_path = Path::new("/project/src/schema-route.module.anvil.ts");
+        let result = emit_openapi_module(&files, output_path, "0.0.1", "API", "1.0.0").unwrap();
+
+        assert!(
+            result.contains("responses: { \"201\": {"),
+            "expected the schema filed under \"201\":\n{result}"
+        );
+        assert!(
+            result.contains(
+                "content: { \"application/json\": { schema: { \"$ref\": \"#/components/schemas/MintDeviceSessionResponseSchema\" } } }"
+            ),
+            "expected the Responds<> schema $ref:\n{result}"
+        );
+        assert!(
+            result.contains("description: \"Created\""),
+            "expected the 201 description to follow the declared status, not \"Success\":\n{result}"
+        );
+        assert!(
+            !result.contains("\"200\":"),
+            "no phantom \"200\" entry should remain once the schema moves to \"201\":\n{result}"
+        );
     }
 
     #[test]
