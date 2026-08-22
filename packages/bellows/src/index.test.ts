@@ -913,3 +913,134 @@ describe("bellowsRoutes authn/authz", () => {
     }
   });
 });
+
+// --- bellowsRoutes: postAuthn global middleware ---
+
+describe("bellowsRoutes postAuthn", () => {
+  it("runs after the authn cascade, in order, before route middleware", async () => {
+    const calls: string[] = [];
+    let seenUser: unknown;
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        authn: [
+          {
+            identify: () => {
+              calls.push("authn");
+              return { identified: true, user: { id: "u1" } };
+            },
+          },
+        ],
+        middleware: [
+          (_req, _res, next) => {
+            calls.push("middleware");
+            next();
+          },
+        ],
+        handler: (_req, res) => {
+          calls.push("handler");
+          res.json({ ok: true });
+        },
+      },
+    ];
+    const { url, close } = await serve(routes, {
+      postAuthn: [
+        (_req, res, next) => {
+          calls.push("postAuthn:1");
+          seenUser = res.locals.user;
+          next();
+        },
+        (_req, _res, next) => {
+          calls.push("postAuthn:2");
+          next();
+        },
+      ],
+    });
+    try {
+      await fetch(`${url}/x`);
+      expect(calls).toEqual(["authn", "postAuthn:1", "postAuthn:2", "middleware", "handler"]);
+      expect(seenUser).toEqual({ id: "u1" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("never runs when authn rejects the request", async () => {
+    let postAuthnCalled = false;
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        authn: [{ identify: () => ({ identified: false }) }],
+        handler: (_req, res) => res.json({ ok: true }),
+      },
+    ];
+    const { url, close } = await serve(routes, {
+      postAuthn: (_req, _res, next) => {
+        postAuthnCalled = true;
+        next();
+      },
+    });
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(401);
+      expect(postAuthnCalled).toBe(false);
+    } finally {
+      await close();
+    }
+  });
+
+  it("runs on routes declaring no authn/authz", async () => {
+    const calls: string[] = [];
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        handler: (_req, res) => {
+          calls.push("handler");
+          res.json({ ok: true });
+        },
+      },
+    ];
+    const { url, close } = await serve(routes, {
+      postAuthn: (_req, _res, next) => {
+        calls.push("postAuthn");
+        next();
+      },
+    });
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(200);
+      expect(calls).toEqual(["postAuthn", "handler"]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("short-circuits the route when it doesn't call next()", async () => {
+    let handlerCalled = false;
+    const routes: RouteDefinition[] = [
+      {
+        method: "GET",
+        path: "/x",
+        handler: (_req, res) => {
+          handlerCalled = true;
+          res.json({ ok: true });
+        },
+      },
+    ];
+    const { url, close } = await serve(routes, {
+      postAuthn: (_req, res) => {
+        res.status(429).json({ error: "too_many_requests" });
+      },
+    });
+    try {
+      const res = await fetch(`${url}/x`);
+      expect(res.status).toBe(429);
+      expect(handlerCalled).toBe(false);
+    } finally {
+      await close();
+    }
+  });
+});

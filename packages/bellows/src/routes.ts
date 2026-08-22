@@ -174,6 +174,15 @@ export interface BellowsHooks {
   /** Runs after the response has been sent, for every request. */
   onResponse?: (req: Request, res: Response) => void;
   /**
+   * Global middleware injected into every route's chain after its authn/authz
+   * cascade and before its own `middleware` and handler, so it can read the
+   * identified `res.locals.user`. Routes declaring no `authn`/`authz` run it
+   * too — `res.locals.user` is simply unset there. Unlike `onRequest` this
+   * can't be a `router.use`: router-level middleware runs ahead of every
+   * route's auth handler, not after it.
+   */
+  postAuthn?: RequestHandler | RequestHandler[];
+  /**
    * Error-handling middleware registered after all routes, so an `HttpError`
    * thrown (or passed to `next`) by any route's auth handler, middleware, or
    * handler is converted to a response — Express 5 forwards rejected
@@ -203,11 +212,18 @@ export function bellowsRoutes(routes: Iterable<RouteDefinition>, hooks: BellowsH
     });
   }
 
+  const postAuthn = hooks.postAuthn
+    ? Array.isArray(hooks.postAuthn)
+      ? hooks.postAuthn
+      : [hooks.postAuthn]
+    : [];
+
   for (const route of routes) {
     const authHandler = buildAuthHandler(route.authn, route.authz);
     const handlers: RequestHandler[] = [
       ...(route.bodyParser ? [bodyParserMiddleware(route.bodyParser)] : []),
       ...(authHandler ? [authHandler] : []),
+      ...postAuthn,
       ...(route.middleware ?? []),
       route.handler,
     ];
