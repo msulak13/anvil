@@ -1,6 +1,6 @@
 {
   "name": "@anvil-di/anvil-cli-win32-x64",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Prebuilt anvil CLI binary for win32/x64. Resolved by `@anvil-di/anvil-cli` at runtime.",
   "license": "Apache-2.0",
   "type": "commonjs",
