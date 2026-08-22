@@ -914,9 +914,9 @@ describe("bellowsRoutes authn/authz", () => {
   });
 });
 
-// --- bellowsRoutes: postAuthn global middleware ---
+// --- bellowsRoutes: postAuth global middleware ---
 
-describe("bellowsRoutes postAuthn", () => {
+describe("bellowsRoutes postAuth", () => {
   it("runs after the authn cascade, in order, before route middleware", async () => {
     const calls: string[] = [];
     let seenUser: unknown;
@@ -945,21 +945,21 @@ describe("bellowsRoutes postAuthn", () => {
       },
     ];
     const { url, close } = await serve(routes, {
-      postAuthn: [
+      postAuth: [
         (_req, res, next) => {
-          calls.push("postAuthn:1");
+          calls.push("postAuth:1");
           seenUser = res.locals.user;
           next();
         },
         (_req, _res, next) => {
-          calls.push("postAuthn:2");
+          calls.push("postAuth:2");
           next();
         },
       ],
     });
     try {
       await fetch(`${url}/x`);
-      expect(calls).toEqual(["authn", "postAuthn:1", "postAuthn:2", "middleware", "handler"]);
+      expect(calls).toEqual(["authn", "postAuth:1", "postAuth:2", "middleware", "handler"]);
       expect(seenUser).toEqual({ id: "u1" });
     } finally {
       await close();
@@ -967,7 +967,7 @@ describe("bellowsRoutes postAuthn", () => {
   });
 
   it("never runs when authn rejects the request", async () => {
-    let postAuthnCalled = false;
+    let postAuthCalled = false;
     const routes: RouteDefinition[] = [
       {
         method: "GET",
@@ -977,15 +977,15 @@ describe("bellowsRoutes postAuthn", () => {
       },
     ];
     const { url, close } = await serve(routes, {
-      postAuthn: (_req, _res, next) => {
-        postAuthnCalled = true;
+      postAuth: (_req, _res, next) => {
+        postAuthCalled = true;
         next();
       },
     });
     try {
       const res = await fetch(`${url}/x`);
       expect(res.status).toBe(401);
-      expect(postAuthnCalled).toBe(false);
+      expect(postAuthCalled).toBe(false);
     } finally {
       await close();
     }
@@ -1004,15 +1004,15 @@ describe("bellowsRoutes postAuthn", () => {
       },
     ];
     const { url, close } = await serve(routes, {
-      postAuthn: (_req, _res, next) => {
-        calls.push("postAuthn");
+      postAuth: (_req, _res, next) => {
+        calls.push("postAuth");
         next();
       },
     });
     try {
       const res = await fetch(`${url}/x`);
       expect(res.status).toBe(200);
-      expect(calls).toEqual(["postAuthn", "handler"]);
+      expect(calls).toEqual(["postAuth", "handler"]);
     } finally {
       await close();
     }
@@ -1031,7 +1031,7 @@ describe("bellowsRoutes postAuthn", () => {
       },
     ];
     const { url, close } = await serve(routes, {
-      postAuthn: (_req, res) => {
+      postAuth: (_req, res) => {
         res.status(429).json({ error: "too_many_requests" });
       },
     });

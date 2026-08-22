@@ -181,7 +181,7 @@ export interface BellowsHooks {
    * can't be a `router.use`: router-level middleware runs ahead of every
    * route's auth handler, not after it.
    */
-  postAuthn?: RequestHandler | RequestHandler[];
+  postAuth?: RequestHandler | RequestHandler[];
   /**
    * Error-handling middleware registered after all routes, so an `HttpError`
    * thrown (or passed to `next`) by any route's auth handler, middleware, or
@@ -212,10 +212,10 @@ export function bellowsRoutes(routes: Iterable<RouteDefinition>, hooks: BellowsH
     });
   }
 
-  const postAuthn = hooks.postAuthn
-    ? Array.isArray(hooks.postAuthn)
-      ? hooks.postAuthn
-      : [hooks.postAuthn]
+  const postAuth = hooks.postAuth
+    ? Array.isArray(hooks.postAuth)
+      ? hooks.postAuth
+      : [hooks.postAuth]
     : [];
 
   for (const route of routes) {
@@ -223,7 +223,7 @@ export function bellowsRoutes(routes: Iterable<RouteDefinition>, hooks: BellowsH
     const handlers: RequestHandler[] = [
       ...(route.bodyParser ? [bodyParserMiddleware(route.bodyParser)] : []),
       ...(authHandler ? [authHandler] : []),
-      ...postAuthn,
+      ...postAuth,
       ...(route.middleware ?? []),
       route.handler,
     ];
