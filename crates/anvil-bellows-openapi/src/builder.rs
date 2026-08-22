@@ -189,6 +189,25 @@ fn build_responses(
     diagnostics: &mut Vec<BuildDiagnostic>,
 ) -> BTreeMap<String, Value> {
     let mut responses: BTreeMap<String, Value> = BTreeMap::new();
+
+    // A `Responds<S>` handler documents its success under "200" by default,
+    // but a bare `@Returns(status)` — no schema of its own, since `Responds<S>`
+    // already declares one — means the handler sets `status` on `res` itself
+    // before returning, so the real wire status is `status`, not 200. File
+    // the schema under the declared status instead of always hardcoding
+    // "200": swift-openapi-generator (unlike hey-api, which tolerates any
+    // 2xx) switches on the exact status code, so a live 201 filed under
+    // "200" leaves it with no case that both matches the real status and
+    // decodes a body.
+    let status_override = match &route.return_kind {
+        ReturnKind::Responds { .. } => route
+            .extra_responses
+            .iter()
+            .position(|er| er.schema.is_none()),
+        ReturnKind::Void { .. } => None,
+    };
+    let success_status = status_override.map_or(200, |i| route.extra_responses[i].status);
+
     let success = match &route.return_kind {
         ReturnKind::Responds { schema, codec, .. } => {
             schemas.insert(schema.ident.clone());
@@ -212,7 +231,10 @@ fn build_responses(
                 "content".into(),
                 json!({ content_type: { "schema": schema_ref(&schema.ident) } }),
             );
-            r.insert("description".into(), json!("Success"));
+            r.insert(
+                "description".into(),
+                json!(http_status_description(success_status)),
+            );
             json!(r)
         }
         ReturnKind::Void { .. } if route.is_sse => json!({
@@ -221,8 +243,12 @@ fn build_responses(
         }),
         ReturnKind::Void { .. } => json!({ "description": "Success" }),
     };
-    responses.insert("200".to_owned(), success);
-    for er in &route.extra_responses {
+    responses.insert(success_status.to_string(), success);
+    for (i, er) in route.extra_responses.iter().enumerate() {
+        // Skip the entry already consumed above as the success-status override.
+        if Some(i) == status_override {
+            continue;
+        }
         responses.insert(
             er.status.to_string(),
             json!({ "description": http_status_description(er.status) }),
@@ -791,5 +817,140 @@ mod tests {
             content["text/event-stream"]["schema"]["type"],
             json!("string")
         );
+    }
+
+    /// A `Responds<S>` route paired with a bare `@Returns(201)` (no schema of
+    /// its own) documents its handler setting `res.status(201)` before
+    /// returning — the real wire status is 201, not 200. The success schema
+    /// must be filed under "201", with no phantom "200" entry left behind:
+    /// `swift-openapi-generator` switches on the exact status code, so a
+    /// mismatch leaves it with no case that both matches the real status and
+    /// decodes a body.
+    #[test]
+    fn responds_with_returns_override_files_schema_under_declared_status() {
+        use anvil_bellows::{ExtraResponse, ReturnKind as RK, Route, SchemaRef};
+        use std::path::PathBuf;
+
+        let ctrl = Controller {
+            class_name: "DeviceSessionsController".into(),
+            ctor_params: vec![],
+            tags: vec![],
+            security: vec![],
+            routes: vec![Route {
+                method: HttpMethod::Post,
+                path: "/device-sessions".into(),
+                handler_name: "mint".into(),
+                is_sse: false,
+                params: vec![],
+                return_kind: RK::Responds {
+                    schema: SchemaRef {
+                        ident: "MintDeviceSessionResponseSchema".into(),
+                    },
+                    codec: None,
+                    is_async: true,
+                },
+                deprecated: false,
+                extra_responses: vec![ExtraResponse {
+                    status: 201,
+                    schema: None,
+                }],
+                middleware: vec![],
+                authn: vec![],
+                authz: vec![],
+            }],
+        };
+        let files = vec![ControllerFile {
+            source_path: PathBuf::from("/project/src/device-sessions-controller.ts"),
+            controllers: vec![ctrl],
+        }];
+
+        let config = OpenApiConfig {
+            info: crate::config::InfoConfig {
+                title: "API".into(),
+                version: "1.0.0".into(),
+            },
+            servers: vec![],
+            security_schemes: BTreeMap::new(),
+        };
+
+        let mut diagnostics = Vec::new();
+        let doc = build_openapi(&files, &config, &mut diagnostics);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+        let responses = &doc["paths"]["/device-sessions"]["post"]["responses"];
+        assert_eq!(
+            responses["201"]["content"]["application/json"]["schema"]["$ref"],
+            json!("#/components/schemas/MintDeviceSessionResponseSchema")
+        );
+        assert_eq!(responses["201"]["description"], json!("Created"));
+        assert!(
+            responses["200"].is_null(),
+            "no phantom \"200\" entry should remain once the schema moves to \"201\": {responses}"
+        );
+    }
+
+    /// `@Returns(status, schema)` with an actual schema argument is a
+    /// genuinely distinct additional response (e.g. a documented error body),
+    /// not a status override for the `Responds<S>` success — the override
+    /// only ever applies to a bare, schema-less `@Returns(status)`.
+    #[test]
+    fn returns_with_own_schema_does_not_override_success_status() {
+        use anvil_bellows::{ExtraResponse, ReturnKind as RK, Route, SchemaRef};
+        use std::path::PathBuf;
+
+        let ctrl = Controller {
+            class_name: "WidgetController".into(),
+            ctor_params: vec![],
+            tags: vec![],
+            security: vec![],
+            routes: vec![Route {
+                method: HttpMethod::Post,
+                path: "/widgets".into(),
+                handler_name: "create".into(),
+                is_sse: false,
+                params: vec![],
+                return_kind: RK::Responds {
+                    schema: SchemaRef {
+                        ident: "WidgetSchema".into(),
+                    },
+                    codec: None,
+                    is_async: false,
+                },
+                deprecated: false,
+                extra_responses: vec![ExtraResponse {
+                    status: 409,
+                    schema: Some(SchemaRef {
+                        ident: "ConflictSchema".into(),
+                    }),
+                }],
+                middleware: vec![],
+                authn: vec![],
+                authz: vec![],
+            }],
+        };
+        let files = vec![ControllerFile {
+            source_path: PathBuf::from("/project/src/widget-controller.ts"),
+            controllers: vec![ctrl],
+        }];
+
+        let config = OpenApiConfig {
+            info: crate::config::InfoConfig {
+                title: "API".into(),
+                version: "1.0.0".into(),
+            },
+            servers: vec![],
+            security_schemes: BTreeMap::new(),
+        };
+
+        let mut diagnostics = Vec::new();
+        let doc = build_openapi(&files, &config, &mut diagnostics);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+        let responses = &doc["paths"]["/widgets"]["post"]["responses"];
+        assert_eq!(
+            responses["200"]["content"]["application/json"]["schema"]["$ref"],
+            json!("#/components/schemas/WidgetSchema")
+        );
+        assert_eq!(responses["409"]["description"], json!("Response"));
     }
 }
