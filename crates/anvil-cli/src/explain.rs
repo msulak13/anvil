@@ -76,6 +76,7 @@ fn key_name_of(k: &Key) -> String {
         }
         Key::Token { name } => format!("Token({name})"),
         Key::Set { element } => format!("Set<{}>", key_name_of(element)),
+        Key::Lazy { inner } => format!("Lazy<{}>", key_name_of(inner)),
     }
 }
 
@@ -84,6 +85,7 @@ fn key_module(k: &Key) -> &str {
         Key::Class { module, .. } => module.abs.as_str(),
         Key::Token { .. } => "<token>",
         Key::Set { element } => key_module(element),
+        Key::Lazy { inner } => key_module(inner),
     }
 }
 
@@ -94,6 +96,7 @@ fn provider_label(p: &Provider) -> &'static str {
         Provider::Binds { .. } => "Binds",
         Provider::SetMultibinding { .. } => "SetMultibinding",
         Provider::FactoryParam { .. } => "FactoryParam",
+        Provider::Lazy => "Lazy",
     }
 }
 

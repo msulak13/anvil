@@ -78,6 +78,8 @@ error: dependency cycle
 ### Detection
 Tarjan's strongly-connected-components algorithm via `petgraph::algo::tarjan_scc`, run after the graph is fully populated. Any SCC of size > 1 (or a self-loop) yields a `Cycle` diagnostic containing the keys in traversal order. Implemented in `anvil-core::graph::detect_cycles`.
 
+A synthesized `Lazy<T>` binding (M17) contributes no edge to `T`, so a cycle closed through `Lazy` is not reported. `MissingBinding` still applies to `T`.
+
 ## `Duplicate`
 
 > Two or more bindings declare the same `Key`.

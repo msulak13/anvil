@@ -47,6 +47,13 @@ pub enum Key {
         /// The element type being collected. Always a [`Key::Class`] in v0.1.
         element: Box<Key>,
     },
+    /// `Lazy<T>` from `@anvil-di/anvil` (M17): a deferred handle to `T`'s
+    /// binding. Never declared by the user; the graph layer synthesizes a
+    /// [`Provider::Lazy`] binding for every one requested.
+    Lazy {
+        /// The deferred key.
+        inner: Box<Key>,
+    },
 }
 
 impl Key {
@@ -268,6 +275,9 @@ pub enum Provider {
         /// (taken verbatim from the parent factory's parameter name).
         name: String,
     },
+    /// A `Lazy<T>` handle over the binding in `deps[0]` (M17). Synthesized by
+    /// the graph layer. Its edge to `T` does not count toward cycles.
+    Lazy,
 }
 
 /// One `@IntoSet @Provides` contribution to a [`Provider::SetMultibinding`].

@@ -4,6 +4,7 @@
 //! snapshots the resulting [`anvil_core::ir::ParsedFile`] via `insta`. Update
 //! snapshots after intentional IR changes with `cargo insta review`.
 
+use anvil_core::ir::Key;
 use anvil_parser::parse_source;
 use anvil_parser::{decorators::ExtractError, ParseError};
 use insta::assert_debug_snapshot;
@@ -401,6 +402,31 @@ fn component_with_constructor_params() {
     "#;
     let parsed = parse_source(src, "app.ts").unwrap();
     assert_debug_snapshot!(parsed);
+}
+
+#[test]
+fn lazy_from_anvil_lowers_to_lazy_key_under_any_alias() {
+    let src = r#"
+        import { Inject, Lazy as Deferred } from "@anvil-di/anvil";
+        import { Lazy } from "./my-lazy";
+
+        @Inject
+        export class Consumer {
+            constructor(heavy: Deferred<Heavy>, own: Lazy<Heavy>) {}
+        }
+
+        export class Heavy {}
+    "#;
+    let parsed = parse_source(src, "consumer.ts").unwrap();
+    let deps = &parsed.inject_classes[0].deps;
+    assert!(
+        matches!(&deps[0], Key::Lazy { inner } if matches!(inner.as_ref(), Key::Class { name, .. } if name == "Heavy")),
+        "{deps:?}",
+    );
+    assert!(
+        matches!(&deps[1], Key::Class { name, type_args, .. } if name == "Lazy" && type_args.len() == 1),
+        "{deps:?}",
+    );
 }
 
 #[test]

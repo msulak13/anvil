@@ -220,6 +220,24 @@ export function createAppComponent(config: Config, clock: Clock): AppComponent {
 - In an async graph, `create(...)` and `createX(...)` keep the same parameters and return `Promise<X>`.
 - Parameter types are imported type-only even when no binding reads them.
 
+## `Lazy<T>` (M17)
+
+```ts
+// User: @Inject export class ReportService { constructor(private exporter: Lazy<PdfExporter>) {} }
+import { Lazy } from "@anvil-di/anvil";
+
+private getLazyOfPdfExporter(): Lazy<PdfExporter> {
+  return new Lazy(() => this.getPdfExporter());
+}
+private getReportService(): ReportService {
+  return new ReportService(this.getLazyOfPdfExporter());
+}
+```
+
+- Factory `getLazyOf<T>`. Unscoped, so each injection site gets its own handle; the handle memoizes its first `get()`.
+- The arrow captures the dagger. In a subcomponent, an inherited `T` routes through `this.parent.getT()`.
+- `Lazy` bindings are leaves in the topo order. In an async graph, a singleton holding `Lazy<B>` is assigned in `_resolve` before a singleton `B` that reads it eagerly.
+
 ## `@IntoSet` multibindings (M9)
 
 For a component that includes one or more `@IntoSet @Provides` contributions to the same element type, the emitter aggregates them into a single factory method:

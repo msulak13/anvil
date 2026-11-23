@@ -463,7 +463,7 @@ fn rewrite_binding(
                 }
             }
         }
-        anvil_core::ir::Provider::FactoryParam { .. } => {
+        anvil_core::ir::Provider::FactoryParam { .. } | anvil_core::ir::Provider::Lazy => {
             // FactoryParam bindings are graph-synthesized — the parser
             // never produces one and thus never feeds it through
             // resolution. Match arm exists for completeness against
@@ -494,6 +494,7 @@ fn rewrite_key(
         }
         Key::Token { .. } => Ok(()), // token names are stable string literals, no rewriting needed
         Key::Set { element } => rewrite_key(element, resolve_one, discovered),
+        Key::Lazy { inner } => rewrite_key(inner, resolve_one, discovered),
     }
 }
 

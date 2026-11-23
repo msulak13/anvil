@@ -123,6 +123,7 @@ fn key_module(key: &Key) -> &str {
         Key::Class { module, .. } => &module.abs,
         Key::Token { .. } => "<token>",
         Key::Set { element } => key_module(element),
+        Key::Lazy { inner } => key_module(inner),
     }
 }
 
@@ -142,6 +143,7 @@ fn type_string_of(key: &Key) -> String {
         }
         Key::Token { .. } => "unknown".to_owned(),
         Key::Set { element } => format!("Set<{}>", type_string_of(element)),
+        Key::Lazy { inner } => format!("Lazy<{}>", type_string_of(inner)),
     }
 }
 
@@ -171,6 +173,7 @@ fn factory_name_for(key: &Key) -> String {
         }
         Key::Token { name } => format!("get{}", token_pascal_case(name)),
         Key::Set { element } => format!("getSetOf{}", element_label(element)),
+        Key::Lazy { inner } => format!("getLazyOf{}", element_label(inner)),
     }
 }
 
@@ -187,6 +190,7 @@ fn cache_field_for(key: &Key) -> String {
         }
         Key::Token { name } => format!("_{}", lower_first(&token_pascal_case(name))),
         Key::Set { element } => format!("_setOf{}", element_label(element)),
+        Key::Lazy { inner } => format!("_lazyOf{}", element_label(inner)),
     }
 }
 
@@ -205,6 +209,7 @@ fn element_label(key: &Key) -> String {
         }
         Key::Token { name } => token_pascal_case(name),
         Key::Set { element } => format!("SetOf{}", element_label(element)),
+        Key::Lazy { inner } => format!("LazyOf{}", element_label(inner)),
     }
 }
 
@@ -272,7 +277,14 @@ fn dfs(k: &Key, graph: &DependencyGraph, visited: &mut HashSet<Key>, out: &mut V
         return;
     }
     if let Some(b) = graph.bindings.get(k) {
-        let mut deps: Vec<&Key> = b.deps.iter().collect();
+        // A `Lazy<T>` reads `T` only on `get()`, so it does not order after
+        // `T`. Descending would let a cycle broken by `Lazy` resolve a
+        // singleton before the one it reads.
+        let mut deps: Vec<&Key> = if matches!(b.provider, Provider::Lazy) {
+            Vec::new()
+        } else {
+            b.deps.iter().collect()
+        };
         deps.sort_by_key(|d| lex_key(d));
         for d in deps {
             dfs(d, graph, visited, out);
@@ -288,6 +300,8 @@ fn dfs(k: &Key, graph: &DependencyGraph, visited: &mut HashSet<Key>, out: &mut V
 
 /// Tracks which imported names are used as runtime values vs. type annotations only.
 ///
+const RUNTIME_PACKAGE: &str = "@anvil-di/anvil";
+
 /// Symbols used as values (e.g. `new X()`, `X.method()`, `extends X`) need a
 /// regular `import { X }`. Symbols used only in type positions (return types,
 /// field types, generic args) must use `import type { X }` when the consumer's
@@ -307,6 +321,13 @@ impl Imports {
             .entry(spec)
             .or_default()
             .insert(cref.name.clone());
+    }
+
+    fn add_runtime_value(&mut self, name: &str) {
+        self.value
+            .entry(RUNTIME_PACKAGE.to_owned())
+            .or_default()
+            .insert(name.to_owned());
     }
 
     fn add_type(&mut self, out_dir: &Path, cref: &ClassRef) {
@@ -368,6 +389,10 @@ fn populate_imports(imports: &mut Imports, out_dir: &Path, graph: &DependencyGra
                 // The inner type is surfaced through the TS cast; its import
                 // comes via the binding's deps (the actual implementation class).
             }
+            Key::Lazy { inner } => {
+                imports.add_runtime_value("Lazy");
+                import_key_args(imports, out_dir, std::slice::from_ref(inner.as_ref()));
+            }
         }
         match &b.provider {
             Provider::InjectCtor { class } => {
@@ -385,7 +410,7 @@ fn populate_imports(imports: &mut Imports, out_dir: &Path, graph: &DependencyGra
             // - `FactoryParam`'s type class is already imported when
             //   the binding's outer key was processed above. The
             //   binding's value comes from a stored ctor field.
-            Provider::Binds { .. } | Provider::FactoryParam { .. } => {}
+            Provider::Binds { .. } | Provider::FactoryParam { .. } | Provider::Lazy => {}
             Provider::SetMultibinding { contributors } => {
                 for c in contributors {
                     // `ContribModule.method(deps)` — value import.
@@ -413,6 +438,10 @@ fn import_key_args(imports: &mut Imports, out_dir: &Path, args: &[Key]) {
                     },
                 );
                 import_key_args(imports, out_dir, type_args);
+            }
+            Key::Lazy { inner } => {
+                imports.add_runtime_value("Lazy");
+                import_key_args(imports, out_dir, std::slice::from_ref(inner.as_ref()));
             }
             Key::Token { .. } | Key::Set { .. } => {}
         }
@@ -717,6 +746,10 @@ fn emit_class_body(
             }
             Provider::FactoryParam { name } if parent_dagger.is_none() => format!("this.#{name}"),
             Provider::FactoryParam { name } => format!("this.{name}"),
+            Provider::Lazy => format!(
+                "new Lazy(() => {})",
+                dep_call(&b.deps[0], graph, parent_dagger)
+            ),
         };
         // M14: Token bindings need a cast so the generated code is type-safe.
         // The @Provides method returns the raw value (e.g. a string or Database

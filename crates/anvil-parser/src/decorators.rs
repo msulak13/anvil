@@ -881,6 +881,13 @@ fn type_annotation_to_key(
                 element: Box::new(element),
             });
         }
+        if args.params.len() == 1 && is_anvil_lazy(name, imports) {
+            let inner = args.params.first().expect("len 1");
+            let inner = ts_type_to_key(inner, context, imports, local_classes, ann.span)?;
+            return Ok(Key::Lazy {
+                inner: Box::new(inner),
+            });
+        }
 
         // M14: `Token<T, "name">` → Key::Token { name }.
         // Check Token BEFORE doing resolve_name_to_key to allow a user-defined class
@@ -980,6 +987,13 @@ fn ts_type_to_key(
                 element: Box::new(element),
             });
         }
+        if args.params.len() == 1 && is_anvil_lazy(name, imports) {
+            let inner = args.params.first().expect("len 1");
+            let inner = ts_type_to_key(inner, context, imports, local_classes, fallback_span)?;
+            return Ok(Key::Lazy {
+                inner: Box::new(inner),
+            });
+        }
         // M14: Token<T, "name"> inside a type arg position.
         if name == "Token" && args.params.len() >= 2 {
             let is_anvil_token = if let Some(ImportSource { specifier, .. }) = imports.get(name) {
@@ -1074,6 +1088,14 @@ fn extract_token_inner_type(ann: &TSTypeAnnotation<'_>) -> Option<String> {
         return None;
     }
     ts_type_to_string(&args.params[0])
+}
+
+/// Whether `name` is `Lazy` imported from `@anvil-di/anvil`, under any local
+/// alias. A user's own `Lazy` class stays an ordinary generic key.
+fn is_anvil_lazy(name: &str, imports: &ImportMap) -> bool {
+    imports
+        .get(name)
+        .is_some_and(|src| src.exported_name == "Lazy" && src.specifier.contains("@anvil-di/anvil"))
 }
 
 /// Look up a referenced identifier in the import map, falling back to the
@@ -1178,7 +1200,7 @@ fn parse_component_modules(
                     module,
                     name: exported,
                 }),
-                Key::Set { .. } | Key::Token { .. } => {
+                Key::Set { .. } | Key::Token { .. } | Key::Lazy { .. } => {
                     return Err(ExtractError::ComponentBadModules {
                         kind,
                         class: class_name.to_owned(),

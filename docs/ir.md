@@ -12,6 +12,7 @@ Stable identity for a TypeScript type without a full type checker. Two values ar
 pub enum Key {
     Class { module: ModulePath, name: String },
     Set   { element: Box<Key> },                  // M9 — Set<T> multibinding aggregate
+    Lazy  { inner: Box<Key> },                    // M17 — Lazy<T> from @anvil-di/anvil
     // Token { module: ModulePath, name: String },  // v0.2
 }
 
@@ -26,6 +27,8 @@ pub struct ModulePath {
 The parser populates `original = Some(spec)` whenever a `Key` is minted from an import-map entry. The M2 resolver rewrites `abs` to the canonical filesystem path while leaving `original` alone. For same-file references and tooling-built paths (graph tests, golden fixtures), `original` is `None` and codegen falls back to a relative-path computation.
 
 `Key::Set` represents a `Set<T>` aggregate produced from one or more `@IntoSet @Provides` contributions. The `element` is always a `Key::Class` in v0.1 (no `Set<Set<T>>`-of-`Set` chains in user code). The graph aggregator synthesizes one `Provider::SetMultibinding` binding per element key from the raw `MultibindRole::IntoSet` bindings the parser emits (see [Multibindings](#multibindings) below).
+
+`Key::Lazy` represents `Lazy<T>` imported from `@anvil-di/anvil`, under any local alias. A class named `Lazy` from anywhere else stays a generic `Key::Class`. See [`Lazy<T>`](#lazyt-m17) below.
 
 In **M1** the parser stores the *raw import specifier* in `ModulePath` (e.g. `"./heater"`, `"@anvil-di/anvil"`, `"my-pkg/sub"`). M2's cross-file resolver rewrites these to absolute paths so equivalent imports compare equal. For type identifiers declared in the same file as their reference, the parser uses the sentinel `ModulePath::SAME_FILE` (`"<self>"`); M2 swaps it for the file's actual absolute path.
 
@@ -80,6 +83,7 @@ pub enum Provider {
     Binds           { target: Key },
     SetMultibinding { contributors: Vec<SetContributor> },  // M9 — synthesized
     FactoryParam   { name: String },                         // M11 — synthesized
+    Lazy,                                                    // M17 — synthesized
 }
 
 pub struct SetContributor {
@@ -97,6 +101,8 @@ pub struct SetContributor {
   TC39 Stage-3 decorators cannot decorate abstract methods (TS error 1249), so `@Binds` methods are `static` with a body. `anvil-codegen` ignores the body and emits the delegate; the body still has to compile (e.g. `return impl;`) so the user's `tsc` accepts the source file.
 
 - **`FactoryParam`** (M11) — synthesized virtual binding for a runtime value supplied to a `@Subcomponent` factory's parameter list. The graph layer injects one `Provider::FactoryParam { name }` binding per parameter into the child's binding map; codegen materializes that as a `private <name>: T` field on the child dagger plus a trivial `private get<T>(): T { return this.<name>; }` getter so dep-call sites stay uniform. See [Subcomponent factory parameters](#subcomponent-factory-parameters-m11) below.
+
+- **`Lazy`** (M17) — synthesized handle over `deps[0]`. See [`Lazy<T>`](#lazyt-m17) below.
 
 - **`SetMultibinding`** (M9) — synthesized aggregate. Never produced by the parser directly. The graph aggregator walks every `@IntoSet @Provides` raw binding (carrying `role: MultibindRole::IntoSet`), groups them by element type, and emits one `Provider::SetMultibinding` under `Key::Set { element }`. Each `SetContributor` records the originating `@Module` class, method name, and that contributor's own deps. Codegen emits `return new Set([Mod1.foo(...), Mod2.bar(...)])` — one call per contributor with its own dep argument list.
 
@@ -223,6 +229,22 @@ const app = await createAppComponent(process.env);
 2. The M2 resolver normalizes each key.
 3. `build_and_validate` injects one `Provider::FactoryParam` binding per parameter right after `aggregate_bindings`, before child graphs are built, so subcomponents inherit them like any parent binding. A parameter shadows an implicit `@Inject` constructor binding for the same key; colliding with an explicit module binding is a `Duplicate`. `DuplicateFactoryParam` applies to the parameter list.
 4. Codegen forwards the parameters through `createX(...)`, `static create(...)` and the dagger constructor to `super(...)`, and stores each one a binding reads in an ES private field (`#env`). See [codegen.md](./codegen.md#component-parameters-m16).
+
+## `Lazy<T>` (M17)
+
+Injecting `Lazy<T>` instead of `T` defers constructing `T` until the first `get()`, and lets a dependency cycle close:
+
+```ts
+@Inject @Singleton export class Parent { constructor(readonly child: Lazy<Child>) {} }
+@Inject @Singleton export class Child  { constructor(readonly parent: Parent) {} }
+```
+
+1. The parser lowers `Lazy<T>` to `Key::Lazy { inner: T }` when `Lazy` is imported from `@anvil-di/anvil`.
+2. `synthesize_lazy_bindings` adds a `Provider::Lazy` binding (`Unscoped`, `deps: [T]`) for every `Key::Lazy` a binding or entry point requests. It runs in both the root and child graphs, so a child's `Lazy<T>` over a parent binding inherits `T`. Each binding takes the span of the first site that requested it, so a missing `T` points there.
+3. `build_petgraph` still checks that `T` is bound, but adds no edge from a `Lazy` binding. A cycle that passes through a `Lazy` is therefore not reported.
+4. Codegen emits `new Lazy(() => this.getT())`, imports `Lazy` from `@anvil-di/anvil`, and treats `Lazy` bindings as leaves in the topo order so an async `_resolve` assigns the holder before the singleton that reads it.
+
+`Lazy<T>` defers synchronous construction only. An async `T` is resolved by `createX()` like every other async binding.
 
 ## Async `@Provides` (M12)
 

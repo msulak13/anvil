@@ -59,7 +59,7 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 
 | Directory | npm name | Role |
 |---|---|---|
-| `packages/anvil` | `@anvil-di/anvil` | Runtime decorator stubs (`@Inject`, `@Provides`, `@Module`, `@Component`, `@Singleton`, `@Binds`, `@Subcomponent`, `@IntoSet`). All no-ops. `@Singleton` has class + method overloads so `@Singleton @Provides` typechecks. |
+| `packages/anvil` | `@anvil-di/anvil` | Runtime decorator stubs (`@Inject`, `@Provides`, `@Module`, `@Component`, `@Singleton`, `@Binds`, `@Subcomponent`, `@IntoSet`). All no-ops. `@Singleton` has class + method overloads so `@Singleton @Provides` typechecks. Also the two runtime classes generated code uses: `Token<T>` and `Lazy<T>`. |
 | `packages/anvil-unplugin` | `@anvil-di/anvil-unplugin` | Bundler plugin (vite/rollup/webpack/rspack/esbuild). Runs `anvil build` on `buildStart`; watch mode debounces file changes. `mode: "wasm"` runs codegen in-process via the WASM package. Also deletes anvil/bellows no-op decorators from source before the bundler transforms them (`stripDecorators`, default on) — binding-based, not name-based, so a decorator from anywhere else is left alone. Exposed standalone at the `/strip` subpath. 33 tests, all green. |
 | `packages/anvil-cli` | `@anvil-di/anvil-cli` | Launcher shim. Resolves the native binary via `optionalDependencies` or the `TSDI_CLI_BIN` env var. |
 | `packages/anvil-cli-<platform>-<arch>` | `@anvil-di/anvil-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Only win32-x64 committed; others filled by `release-cli.yml`. |
@@ -90,6 +90,7 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 | M12 | Async `@Provides`: `Promise<T>` return, `_resolve` phase, async `create()` |
 | M13 | WASM build: `tsdi-codegen-wasm` crate + npm package, `MapResolver`, `anvil-unplugin` wasm mode |
 | M16 | Component constructor parameters: `ComponentDecl.factory_params`, root `FactoryParam` bindings, `createX(...)` forwards them |
+| M17 | `Lazy<T>`: `Key::Lazy`, synthesized `Provider::Lazy`, runtime `Lazy` class in `@anvil-di/anvil` |
 | Bellows M1 | `packages/bellows`: runtime types, `Validator<T>` interface, wrapper types, `withJsonSchema`, `RouteDefinition`, Stage-3 decorator stubs (Controller, Get, Post, Put, Delete, Patch, Middleware, Tag, Returns, Security, Deprecated) |
 | Bellows M2 | `crates/anvil-bellows`: Rust crate + `anvil-bellows` binary — static Oxc parser for `@Controller`/`@Get`/etc., `routes.module.ts` emitter, `PreBuildHook` interface, `bellowsCodegen()` factory. `packages/bellows-cli` + platform stubs mirror the `anvil-cli` distribution model. |
 | Bellows M3 | Type-driven adapter generation in `crates/anvil-bellows`. Parser detects `Body<typeof S>`, `Query<typeof S>`, `Params<typeof S>`, `Request`, `Response`, `Responds<typeof S>`, `Promise<Responds<typeof S>>` from the Oxc AST. Codegen emits `safeParse` validation prologues; routes with any `Unknown` param fall back to v0.1 passthrough. Fixture `03_schema_params` with tsc validation. |
@@ -135,6 +136,7 @@ Gotchas that cause silent misbehavior or subtle bugs if forgotten.
 - Multibinding contributions map is keyed on the synthesized `Key::Set { element }`, not the raw element key.
 - Parent factories exposed to a child class **must not be `private`** (TS2341). Track `parent_keys_exposed = ⋃ child.inherited_keys` and omit the `private` modifier for those.
 - Component constructor parameters (M16) are bound **before** child graphs are built, so subcomponents inherit them. They shadow `InjectCtor` bindings but are a `Duplicate` against module bindings.
+- `Provider::Lazy` is synthesized by `synthesize_lazy_bindings` (root and child) — the parser never produces it. `build_petgraph` adds **no edge** from a `Lazy` binding (that is what breaks cycles) but still reports a missing `T`.
 - Async `@Provides` is rejected on non-`@Singleton` components but **not** on Unscoped subcomponents (per-call awaits match per-call subcomponent factory pattern).
 
 ### Codegen (`tsdi-codegen`)
@@ -146,6 +148,7 @@ Gotchas that cause silent misbehavior or subtle bugs if forgotten.
 - `static async _resolve(d: DaggerX)` — **not** `d: this` — TS2526 forbids `this` types on static methods. Pass `self_dagger: &str` (the literal class name) into codegen.
 - The `_resolve` body rewrites `this.` → `d.` in each binding's body expression. This is a closed transform that works because all dep-calls use `this.<getX>()`. If a future provider uses `this.` for anything else, re-examine.
 - Root `FactoryParam` bodies are `this.#name` (ES private field); child ones are `this.name`. `parent_dagger.is_none()` is what distinguishes the root. Only parameters a surviving binding reads get a `#` field (`noUnusedLocals`).
+- `dfs` treats `Provider::Lazy` as a leaf. Descending would let a cycle broken by `Lazy` order the eagerly-reading singleton before its holder in `_resolve`, which then reads `undefined`.
 - `binding_is_async(&Key)` detects async per-binding; don't treat every binding in an async graph as async.
 
 ### CLI (`tsdi-cli`)

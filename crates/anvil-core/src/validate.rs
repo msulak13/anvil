@@ -208,6 +208,7 @@ pub fn key_display(key: &Key) -> String {
         }
         Key::Token { name } => format!("Token({name})"),
         Key::Set { element } => format!("Set<{}>", key_display(element)),
+        Key::Lazy { inner } => format!("Lazy<{}>", key_display(inner)),
     }
 }
 
