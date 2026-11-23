@@ -359,7 +359,7 @@ pub struct EntryPoint {
 }
 
 /// A runtime-supplied value that becomes a virtual binding: a parameter on a
-/// subcomponent factory method (M11), or on a component's constructor (M15).
+/// subcomponent factory method (M11), or on a component's constructor (M16).
 ///
 /// Captured by the parser from the parameter's identifier and type
 /// annotation. The graph layer rewrites each `FactoryParam` into a
@@ -386,7 +386,7 @@ pub struct ComponentDecl {
     pub scope: Scope,
     /// Abstract methods exposing the graph to user code.
     pub entry_points: Vec<EntryPoint>,
-    /// Constructor parameters on the abstract component class (M15). Each
+    /// Constructor parameters on the abstract component class (M16). Each
     /// becomes a [`Provider::FactoryParam`] binding in the root graph and a
     /// parameter on the generated `create(...)` / `createX(...)`.
     pub factory_params: Vec<FactoryParam>,

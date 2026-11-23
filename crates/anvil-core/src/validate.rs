@@ -154,7 +154,7 @@ pub enum DiagnosticKind {
     /// parameters (M11). Entry points are getters on the built graph, so
     /// the params would have nowhere to go. Factory parameters are only
     /// valid on abstract methods that resolve to `@Subcomponent` factories;
-    /// the root takes runtime values through its constructor (M15).
+    /// the root takes runtime values through its constructor (M16).
     FactoryParamsOnNonSubcomponentEntry {
         /// The owning component class.
         component: ClassRef,

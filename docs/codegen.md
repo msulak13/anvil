@@ -191,7 +191,7 @@ class DaggerRequestComponent extends RequestComponent {
 
 The factory-param values are **fresh per call** — calling `dagger.requestComponent(reqA, resA)` and `dagger.requestComponent(reqB, resB)` yields two independent child daggers with their own `req` / `res` fields. `@Singleton @Subcomponent` is rejected at validation time when factory params are declared, since the cache would freeze the first call's args.
 
-## Component parameters (M15)
+## Component parameters (M16)
 
 Constructor parameters on the abstract `@Component` become parameters of `createX(...)` and `static create(...)`, and are forwarded to `super(...)`:
 

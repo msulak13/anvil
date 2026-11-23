@@ -516,7 +516,7 @@ fn build_ts_source(
     // `createX()` returns `Promise<X>`.
     let parent_is_async = graph.is_async();
 
-    // M15: constructor parameters. Stored in ES private fields so they cannot
+    // M16: constructor parameters. Stored in ES private fields so they cannot
     // collide with the user's own parameter properties or the `_x` cache fields.
     let root_params_sig = component
         .factory_params

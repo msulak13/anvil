@@ -173,7 +173,7 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full pipeline and [
 | Bellows M3 | Type-driven `safeParse` validation prologues | done |
 | Bellows M4 | `anvil-unplugin` `PreBuildHook`/`PostBuildHook` pipeline | done |
 | Bellows M5 | `anvil-bellows-openapi` CLI — OpenAPI spec generation | done |
-| M15 | Component constructor parameters → `createX(...)` | done |
+| M16 | Component constructor parameters → `createX(...)` | done |
 | M14+ | Token bindings, `@Named`, optional injection, v0.1 stable | planned |
 
 ## Building from source

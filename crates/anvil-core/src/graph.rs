@@ -168,7 +168,7 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         input.component.scope,
     );
 
-    // M15: bound before child graphs are built so subcomponents inherit them.
+    // M16: bound before child graphs are built so subcomponents inherit them.
     // A supplied value shadows an implicit `@Inject` constructor, but not an
     // explicit module binding.
     diagnostics.extend(detect_duplicate_factory_params(
@@ -309,7 +309,7 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         }
 
         // Entry-point parameters only make sense on subcomponent factories;
-        // runtime values for the root arrive through its constructor (M15).
+        // runtime values for the root arrive through its constructor (M16).
         if !ep.factory_params.is_empty() {
             diagnostics.push(Diagnostic {
                 kind: DiagnosticKind::FactoryParamsOnNonSubcomponentEntry {

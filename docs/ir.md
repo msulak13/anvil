@@ -154,7 +154,7 @@ pub struct ComponentDecl {
     pub modules: Vec<ClassRef>,
     pub scope: Scope,
     pub entry_points: Vec<EntryPoint>,
-    pub factory_params: Vec<FactoryParam>, // M15: constructor parameters
+    pub factory_params: Vec<FactoryParam>, // M16: constructor parameters
     pub source: SourceSpan,
 }
 
@@ -165,7 +165,7 @@ pub struct EntryPoint {
 }
 ```
 
-The root of an object graph. Each abstract method on the user's `@Component` class becomes an `EntryPoint`. Each constructor parameter becomes a `FactoryParam`; see [Component parameters](#component-parameters-m15).
+The root of an object graph. Each abstract method on the user's `@Component` class becomes an `EntryPoint`. Each constructor parameter becomes a `FactoryParam`; see [Component parameters](#component-parameters-m16).
 
 ## `SubcomponentDecl`
 
@@ -204,7 +204,7 @@ Pipeline:
 
 Reachability pruning was added alongside M11: the graph builder now does a BFS from non-subcomponent entry points and drops any binding (including project-wide `@Inject` self-bindings) not transitively reached. Without this, a subcomponent-only `@Inject` class would leak onto the parent dagger as a non-private factory and trigger spurious missing-dep diagnostics for its child-only deps.
 
-## Component parameters (M15)
+## Component parameters (M16)
 
 Constructor parameters on the abstract `@Component` class supply runtime values to the root graph, the way M11 factory parameters supply them to a child:
 
@@ -222,7 +222,7 @@ const app = await createAppComponent(process.env);
 1. The parser lowers the constructor's parameters into `ComponentDecl.factory_params`, using the same rules as entry-point factory parameters (explicit type annotation required; destructured names fall back to `_argN`).
 2. The M2 resolver normalizes each key.
 3. `build_and_validate` injects one `Provider::FactoryParam` binding per parameter right after `aggregate_bindings`, before child graphs are built, so subcomponents inherit them like any parent binding. A parameter shadows an implicit `@Inject` constructor binding for the same key; colliding with an explicit module binding is a `Duplicate`. `DuplicateFactoryParam` applies to the parameter list.
-4. Codegen forwards the parameters through `createX(...)`, `static create(...)` and the dagger constructor to `super(...)`, and stores each one a binding reads in an ES private field (`#env`). See [codegen.md](./codegen.md#component-parameters-m15).
+4. Codegen forwards the parameters through `createX(...)`, `static create(...)` and the dagger constructor to `super(...)`, and stores each one a binding reads in an ES private field (`#env`). See [codegen.md](./codegen.md#component-parameters-m16).
 
 ## Async `@Provides` (M12)
 
