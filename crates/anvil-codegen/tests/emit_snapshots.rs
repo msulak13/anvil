@@ -80,6 +80,7 @@ fn emit_simple_provides_module() {
     };
 
     let component = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "CoffeeShop"),
         modules: vec![class_ref(&mod_path, "CoffeeModule")],
         scope: Scope::Unscoped,
@@ -145,6 +146,7 @@ fn emit_inject_ctor_chain() {
     ];
 
     let component = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "Shop"),
         modules: vec![],
         scope: Scope::Unscoped,
@@ -204,6 +206,7 @@ fn emit_singleton_caches_via_lazy_field() {
     ];
 
     let component = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "Shop"),
         modules: vec![],
         scope: Scope::Singleton,
@@ -278,6 +281,7 @@ fn emit_binds_alias_delegates_to_target() {
     }];
 
     let component = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "Shop"),
         modules: vec![class_ref(&mod_path, "HeaterModule")],
         scope: Scope::Unscoped,
@@ -356,6 +360,7 @@ fn emit_subcomponent_with_inherited_dep_and_local_factory() {
     };
 
     let app = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "App"),
         modules: vec![],
         scope: Scope::Singleton,
@@ -433,6 +438,7 @@ fn emit_into_set_aggregates_contributions() {
     };
 
     let component = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "App"),
         modules: vec![class_ref(&mod_path, "PluginsModule")],
         scope: Scope::Unscoped,
@@ -510,6 +516,7 @@ fn emit_subcomponent_factory_with_runtime_parameters() {
     };
 
     let app = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&app_path, "App"),
         modules: vec![],
         scope: Scope::Unscoped,
@@ -592,6 +599,7 @@ fn emit_async_provides_uses_resolve_phase() {
     };
 
     let component = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "App"),
         modules: vec![class_ref(&mod_path, "DatabaseModule")],
         scope: Scope::Singleton,
@@ -660,6 +668,7 @@ fn emit_preserves_node_modules_specifier() {
     }];
 
     let component = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "App"),
         modules: vec![],
         scope: Scope::Unscoped,
@@ -694,6 +703,7 @@ fn validation_failure_short_circuits() {
     let pump_key = class_key(&pump_path, "Pump");
 
     let component = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "Shop"),
         modules: vec![],
         scope: Scope::Unscoped,
@@ -747,6 +757,7 @@ fn emit_token_binding_uses_inner_type_and_cast() {
     };
 
     let component = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "App"),
         modules: vec![class_ref(&mod_path, "DbModule")],
         scope: Scope::Singleton,
@@ -802,6 +813,7 @@ fn emit_generic_key_produces_typed_factory() {
     };
 
     let component = ComponentDecl {
+        factory_params: vec![],
         class: class_ref(&comp_path, "App"),
         modules: vec![class_ref(&mod_path, "UserModule")],
         scope: Scope::Unscoped,

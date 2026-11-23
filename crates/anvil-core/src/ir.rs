@@ -358,14 +358,13 @@ pub struct EntryPoint {
     pub factory_params: Vec<FactoryParam>,
 }
 
-/// A formal parameter on an entry-point method that becomes a virtual
-/// binding inside the child graph (M11).
+/// A runtime-supplied value that becomes a virtual binding: a parameter on a
+/// subcomponent factory method (M11), or on a component's constructor (M15).
 ///
 /// Captured by the parser from the parameter's identifier and type
 /// annotation. The graph layer rewrites each `FactoryParam` into a
 /// [`Binding`] with [`Provider::FactoryParam`]; the codegen materializes
-/// that as a constructor argument plus a private field on the child
-/// dagger.
+/// that as a constructor argument plus a field on the dagger.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FactoryParam {
     /// The parameter identifier (used as the field name on the dagger).
@@ -387,6 +386,10 @@ pub struct ComponentDecl {
     pub scope: Scope,
     /// Abstract methods exposing the graph to user code.
     pub entry_points: Vec<EntryPoint>,
+    /// Constructor parameters on the abstract component class (M15). Each
+    /// becomes a [`Provider::FactoryParam`] binding in the root graph and a
+    /// parameter on the generated `create(...)` / `createX(...)`.
+    pub factory_params: Vec<FactoryParam>,
     /// Where the `@Component` class appears in source.
     pub source: SourceSpan,
 }

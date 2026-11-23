@@ -311,6 +311,10 @@ fn normalize_parsed(
         for cm in &mut c.modules {
             rewrite_classref(cm, &mut resolve_one, discovered)?;
         }
+        for fp in &mut c.factory_params {
+            rewrite_key(&mut fp.key, &mut resolve_one, discovered)?;
+            fp.source.path.clone_from(&self_path_string);
+        }
         for ep in &mut c.entry_points {
             rewrite_key(&mut ep.key, &mut resolve_one, discovered)?;
             ep.source.path.clone_from(&self_path_string);
@@ -401,6 +405,10 @@ fn normalize_parsed_with_map(
         c.source.path.clone_from(&self_path_string);
         for cm in &mut c.modules {
             rewrite_classref(cm, &mut resolve_one, discovered)?;
+        }
+        for fp in &mut c.factory_params {
+            rewrite_key(&mut fp.key, &mut resolve_one, discovered)?;
+            fp.source.path.clone_from(&self_path_string);
         }
         for ep in &mut c.entry_points {
             rewrite_key(&mut ep.key, &mut resolve_one, discovered)?;

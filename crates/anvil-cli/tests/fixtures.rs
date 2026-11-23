@@ -163,3 +163,13 @@ fn fixture_10_factory_params() {
 fn fixture_11_async_provides() {
     run_fixture("11_async_provides", "app-component.ts");
 }
+
+#[test]
+fn fixture_12_component_params() {
+    run_fixture("12_component_params", "app-component.ts");
+}
+
+#[test]
+fn fixture_13_component_params_async() {
+    run_fixture("13_component_params_async", "app-component.ts");
+}

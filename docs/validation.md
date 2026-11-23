@@ -103,6 +103,8 @@ error: duplicate binding for Heater
 ```
 
 ### Detection
+A component constructor parameter (M15) whose key an explicit module binding also provides is reported as a `Duplicate` against both sites. It shadows an implicit `@Inject` constructor binding without a diagnostic.
+
 While collecting bindings into the graph (`aggregate_bindings`), each `Key` records the spans of every contributor in a `HashMap<Key, Vec<SourceSpan>>`. Any key with > 1 source produces one `Duplicate` diagnostic listing all sites. **Multibindings (`@IntoSet`) bypass this rule** (M9): raw bindings carrying `MultibindRole::IntoSet` are routed through a separate aggregation map and never enter the duplicate-tracking `sources_for_key`. Multiple `@IntoSet` contributions to the same element type are intentional, not duplicates.
 
 ## `ScopeMismatch`

@@ -168,6 +168,35 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         input.component.scope,
     );
 
+    // M15: bound before child graphs are built so subcomponents inherit them.
+    // A supplied value shadows an implicit `@Inject` constructor, but not an
+    // explicit module binding.
+    diagnostics.extend(detect_duplicate_factory_params(
+        &input.component.factory_params,
+        &input.component.source,
+    ));
+    for fp in &input.component.factory_params {
+        if let Some(existing) = bindings.get(&fp.key) {
+            if !matches!(existing.provider, Provider::InjectCtor { .. }) {
+                diagnostics.push(Diagnostic {
+                    kind: DiagnosticKind::Duplicate {
+                        key: fp.key.clone(),
+                    },
+                    primary: Label {
+                        span: fp.source.clone(),
+                        message: "component constructor parameter".to_owned(),
+                    },
+                    related: vec![Label {
+                        span: existing.source.clone(),
+                        message: "also provided here".to_owned(),
+                    }],
+                });
+                continue;
+            }
+        }
+        bindings.insert(fp.key.clone(), factory_param_binding(fp));
+    }
+
     // Index subcomponent class refs so we can recognize factory entry points.
     let mut sub_by_classref: HashMap<&ClassRef, &SubcomponentDecl> = HashMap::new();
     for sub in input.subcomponents {
@@ -279,8 +308,8 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
             continue;
         }
 
-        // M11: factory parameters on a regular @Component entry point
-        // would have nowhere to come from â€” `createApp()` is zero-arg.
+        // Entry-point parameters only make sense on subcomponent factories;
+        // runtime values for the root arrive through its constructor (M15).
         if !ep.factory_params.is_empty() {
             diagnostics.push(Diagnostic {
                 kind: DiagnosticKind::FactoryParamsOnNonSubcomponentEntry {
@@ -366,20 +395,7 @@ fn build_child_graph(
     // module/inject bindings and parent-inherited bindings â€” the runtime
     // value supplied at the factory call site is authoritative.
     for fp in factory_params {
-        bindings.insert(
-            fp.key.clone(),
-            Binding {
-                key: fp.key.clone(),
-                provider: Provider::FactoryParam {
-                    name: fp.name.clone(),
-                },
-                scope: Scope::Unscoped,
-                deps: vec![],
-                source: fp.source.clone(),
-                role: MultibindRole::None,
-                token_inner_type: None,
-            },
-        );
+        bindings.insert(fp.key.clone(), factory_param_binding(fp));
     }
 
     // M11: prune to bindings reachable from the subcomponent's entry
@@ -787,6 +803,20 @@ fn detect_async_needs_singleton(
         .collect()
 }
 
+fn factory_param_binding(fp: &FactoryParam) -> Binding {
+    Binding {
+        key: fp.key.clone(),
+        provider: Provider::FactoryParam {
+            name: fp.name.clone(),
+        },
+        scope: Scope::Unscoped,
+        deps: vec![],
+        source: fp.source.clone(),
+        role: MultibindRole::None,
+        token_inner_type: None,
+    }
+}
+
 /// Report `DuplicateFactoryParam` if the same key appears more than
 /// once in a single factory's parameter list (M11). Two `Request` params
 /// would make `req: Request` ambiguous for any child binding asking for
@@ -831,7 +861,7 @@ fn missing_for_dep(missing: Key, requested_by: Key, binding: &Binding) -> Diagno
         Provider::ProvidesMethod { .. } => "@Provides method",
         Provider::Binds { .. } => "@Binds method",
         Provider::SetMultibinding { .. } => "@IntoSet aggregate",
-        Provider::FactoryParam { .. } => "subcomponent factory parameter",
+        Provider::FactoryParam { .. } => "factory parameter",
     };
     Diagnostic {
         kind: DiagnosticKind::MissingBinding {
@@ -901,6 +931,7 @@ mod tests {
 
     fn empty_component(name: &str, modules: Vec<ClassRef>, scope: Scope) -> ComponentDecl {
         ComponentDecl {
+            factory_params: vec![],
             class: class_ref(name),
             modules,
             scope,
@@ -1401,5 +1432,141 @@ mod tests {
         });
         assert!(ds.is_empty());
         assert_eq!(g.node_count(), 0);
+    }
+
+    fn component_with_params(name: &str, scope: Scope, params: Vec<FactoryParam>) -> ComponentDecl {
+        ComponentDecl {
+            factory_params: params,
+            ..empty_component(name, vec![], scope)
+        }
+    }
+
+    #[test]
+    fn component_params_become_root_bindings() {
+        let mut comp = component_with_params(
+            "App",
+            Scope::Singleton,
+            vec![factory_param("env", key("Env"))],
+        );
+        comp.entry_points.push(ep("service", key("Service")));
+        let service = inject("Service", vec![key("Env")], Scope::Unscoped);
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[service],
+            subcomponents: &[],
+        });
+        assert!(ds.is_empty(), "{ds:?}");
+        assert!(matches!(
+            g.bindings.get(&key("Env")).map(|b| &b.provider),
+            Some(Provider::FactoryParam { name }) if name == "env"
+        ));
+    }
+
+    #[test]
+    fn component_param_shadows_inject_ctor() {
+        let mut comp = component_with_params(
+            "App",
+            Scope::Unscoped,
+            vec![factory_param("clock", key("Clock"))],
+        );
+        comp.entry_points.push(ep("clock", key("Clock")));
+        let clock = inject("Clock", vec![], Scope::Unscoped);
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[clock],
+            subcomponents: &[],
+        });
+        assert!(ds.is_empty(), "{ds:?}");
+        assert!(matches!(
+            g.bindings.get(&key("Clock")).map(|b| &b.provider),
+            Some(Provider::FactoryParam { .. })
+        ));
+    }
+
+    #[test]
+    fn component_param_colliding_with_module_binding_is_duplicate() {
+        let module = ModuleDecl {
+            class: class_ref("EnvModule"),
+            provides: vec![provides("EnvModule", "Env", vec![], Scope::Unscoped)],
+            source: span("EnvModule", 0),
+        };
+        let mut comp = component_with_params(
+            "App",
+            Scope::Unscoped,
+            vec![factory_param("env", key("Env"))],
+        );
+        comp.modules.push(class_ref("EnvModule"));
+        comp.entry_points.push(ep("env", key("Env")));
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[module],
+            inject_classes: &[],
+            subcomponents: &[],
+        });
+        assert!(
+            ds.iter().any(
+                |d| matches!(&d.kind, DiagnosticKind::Duplicate { key: k } if *k == key("Env"))
+            ),
+            "expected Duplicate, got {ds:?}",
+        );
+    }
+
+    #[test]
+    fn duplicate_component_param_types_are_rejected() {
+        let comp = component_with_params(
+            "App",
+            Scope::Unscoped,
+            vec![
+                factory_param("a", key("Env")),
+                factory_param("b", key("Env")),
+            ],
+        );
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[],
+            subcomponents: &[],
+        });
+        assert!(
+            ds.iter()
+                .any(|d| matches!(d.kind, DiagnosticKind::DuplicateFactoryParam { .. })),
+            "expected DuplicateFactoryParam, got {ds:?}",
+        );
+    }
+
+    #[test]
+    fn subcomponent_inherits_component_param() {
+        let sub_key = Key::class(
+            ModulePath::from_abs("/p/RequestComponent.ts"),
+            "RequestComponent",
+        );
+        let sub = SubcomponentDecl {
+            class: class_ref("RequestComponent"),
+            modules: vec![],
+            scope: Scope::Unscoped,
+            entry_points: vec![ep("handler", key("Handler"))],
+            source: span("RequestComponent", 0),
+        };
+        let mut comp = component_with_params(
+            "App",
+            Scope::Singleton,
+            vec![factory_param("env", key("Env"))],
+        );
+        comp.entry_points.push(ep("requestComponent", sub_key));
+        let handler = inject("Handler", vec![key("Env")], Scope::Unscoped);
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[handler],
+            subcomponents: &[sub],
+        });
+        assert!(ds.is_empty(), "{ds:?}");
+        assert!(g.bindings.contains_key(&key("Env")));
+        assert!(g.subcomponent_factories[0]
+            .child_graph
+            .inherited_keys
+            .contains(&key("Env")));
     }
 }

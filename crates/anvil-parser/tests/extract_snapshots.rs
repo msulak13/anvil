@@ -383,6 +383,27 @@ fn subcomponent_factory_with_typed_parameters() {
 }
 
 #[test]
+fn component_with_constructor_params() {
+    let src = r#"
+        import { Component, Singleton } from "@anvil-di/anvil";
+
+        export interface Env { url: string }
+        export interface Clock { now(): number }
+
+        @Singleton
+        @Component({ modules: [] })
+        export abstract class App {
+            constructor(readonly env: Env, clock: Clock) {}
+            abstract service(): Service;
+        }
+
+        export class Service {}
+    "#;
+    let parsed = parse_source(src, "app.ts").unwrap();
+    assert_debug_snapshot!(parsed);
+}
+
+#[test]
 fn subcomponent_with_modules_and_entry_points() {
     let src = r#"
         import { Component, Subcomponent } from "@anvil-di/anvil";

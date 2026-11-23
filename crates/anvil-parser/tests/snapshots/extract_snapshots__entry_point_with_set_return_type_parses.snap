@@ -39,6 +39,7 @@ ParsedFile {
                     factory_params: [],
                 },
             ],
+            factory_params: [],
             source: SourceSpan {
                 path: "app.ts",
                 start: 149,

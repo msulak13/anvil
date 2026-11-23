@@ -89,6 +89,7 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 | M11 | Subcomponent factory params; `prune_unreachable_bindings`; DFS topo guard fix |
 | M12 | Async `@Provides`: `Promise<T>` return, `_resolve` phase, async `create()` |
 | M13 | WASM build: `tsdi-codegen-wasm` crate + npm package, `MapResolver`, `anvil-unplugin` wasm mode |
+| M15 | Component constructor parameters: `ComponentDecl.factory_params`, root `FactoryParam` bindings, `createX(...)` forwards them |
 | Bellows M1 | `packages/bellows`: runtime types, `Validator<T>` interface, wrapper types, `withJsonSchema`, `RouteDefinition`, Stage-3 decorator stubs (Controller, Get, Post, Put, Delete, Patch, Middleware, Tag, Returns, Security, Deprecated) |
 | Bellows M2 | `crates/anvil-bellows`: Rust crate + `anvil-bellows` binary — static Oxc parser for `@Controller`/`@Get`/etc., `routes.module.ts` emitter, `PreBuildHook` interface, `bellowsCodegen()` factory. `packages/bellows-cli` + platform stubs mirror the `anvil-cli` distribution model. |
 | Bellows M3 | Type-driven adapter generation in `crates/anvil-bellows`. Parser detects `Body<typeof S>`, `Query<typeof S>`, `Params<typeof S>`, `Request`, `Response`, `Responds<typeof S>`, `Promise<Responds<typeof S>>` from the Oxc AST. Codegen emits `safeParse` validation prologues; routes with any `Unknown` param fall back to v0.1 passthrough. Fixture `03_schema_params` with tsc validation. |
@@ -133,6 +134,7 @@ Gotchas that cause silent misbehavior or subtle bugs if forgotten.
 - **DFS topo guard:** only push a key to the topo array when it has a local binding (`if let Some(b) = graph.bindings.get(k)`). Inherited keys in the topo cause panics when code indexes into `graph.bindings`. Load-bearing in both M11 and M12's `_resolve` body.
 - Multibinding contributions map is keyed on the synthesized `Key::Set { element }`, not the raw element key.
 - Parent factories exposed to a child class **must not be `private`** (TS2341). Track `parent_keys_exposed = ⋃ child.inherited_keys` and omit the `private` modifier for those.
+- Component constructor parameters (M15) are bound **before** child graphs are built, so subcomponents inherit them. They shadow `InjectCtor` bindings but are a `Duplicate` against module bindings.
 - Async `@Provides` is rejected on non-`@Singleton` components but **not** on Unscoped subcomponents (per-call awaits match per-call subcomponent factory pattern).
 
 ### Codegen (`tsdi-codegen`)
@@ -143,6 +145,7 @@ Gotchas that cause silent misbehavior or subtle bugs if forgotten.
 - `??=` is the correct primitive for singleton caching — don't expand to a 3-line if/assign/return.
 - `static async _resolve(d: DaggerX)` — **not** `d: this` — TS2526 forbids `this` types on static methods. Pass `self_dagger: &str` (the literal class name) into codegen.
 - The `_resolve` body rewrites `this.` → `d.` in each binding's body expression. This is a closed transform that works because all dep-calls use `this.<getX>()`. If a future provider uses `this.` for anything else, re-examine.
+- Root `FactoryParam` bodies are `this.#name` (ES private field); child ones are `this.name`. `parent_dagger.is_none()` is what distinguishes the root. Only parameters a surviving binding reads get a `#` field (`noUnusedLocals`).
 - `binding_is_async(&Key)` detects async per-binding; don't treat every binding in an async graph as async.
 
 ### CLI (`tsdi-cli`)

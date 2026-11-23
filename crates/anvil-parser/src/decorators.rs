@@ -294,11 +294,23 @@ pub fn extract(
             )?;
             let entry_points =
                 extract_entry_points(&class.body.body, class_name, imports, &local_set, file_path)?;
+            let factory_params = match find_constructor(&class.body.body) {
+                Some((_, params)) => factory_params_from(
+                    params,
+                    class_name,
+                    "constructor",
+                    imports,
+                    &local_set,
+                    file_path,
+                )?,
+                None => Vec::new(),
+            };
             out.components.push(ComponentDecl {
                 class: class_ref.clone(),
                 modules,
                 scope,
                 entry_points,
+                factory_params,
                 source: class_span.clone(),
             });
         }
@@ -689,8 +701,8 @@ fn extract_entry_points(
         // the graph layer rejects non-empty lists with a diagnostic).
         // For @Subcomponent factory methods, each parameter becomes a
         // virtual binding inside the child graph.
-        let factory_params = extract_entry_factory_params(
-            m,
+        let factory_params = factory_params_from(
+            m.value.params.items.as_slice(),
             class_name,
             &method_name,
             imports,
@@ -707,7 +719,8 @@ fn extract_entry_points(
     Ok(out)
 }
 
-/// Lower an entry-point method's formal parameters into [`FactoryParam`]s.
+/// Lower an entry-point method's or a component constructor's formal
+/// parameters into [`FactoryParam`]s.
 ///
 /// Each parameter must carry an explicit type annotation; an annotation
 /// is required everywhere else in anvil (no inference from a TS type
@@ -715,15 +728,14 @@ fn extract_entry_points(
 /// missing annotation as [`ExtractError::UnsupportedType`] via the
 /// existing `params_to_keys` plumbing — repurposing that error keeps the
 /// surface area small.
-fn extract_entry_factory_params(
-    m: &oxc_ast::ast::MethodDefinition<'_>,
+fn factory_params_from(
+    params: &[FormalParameter<'_>],
     class_name: &str,
     method_name: &str,
     imports: &ImportMap,
     local_classes: &HashSet<&str>,
     file_path: &str,
 ) -> Result<Vec<anvil_core::ir::FactoryParam>> {
-    let params = m.value.params.items.as_slice();
     if params.is_empty() {
         return Ok(Vec::new());
     }
@@ -743,7 +755,7 @@ fn extract_entry_factory_params(
 /// Extract the bare identifier name of a formal parameter
 /// (`(req: Request) => …` → `"req"`). Destructuring patterns and
 /// rest/array bindings are not supported on entry-point methods in v0.1
-/// and surface as `None`, which `extract_entry_factory_params` falls
+/// and surface as `None`, which `factory_params_from` falls
 /// back to a synthetic `_argN` for.
 fn formal_param_name<'a>(p: &'a FormalParameter<'a>) -> Option<&'a str> {
     use oxc_ast::ast::BindingPattern;

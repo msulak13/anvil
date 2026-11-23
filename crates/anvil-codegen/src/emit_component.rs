@@ -31,7 +31,7 @@ use oxc_span::SourceType;
 
 use anvil_core::graph::{build_and_validate, DependencyGraph, GraphInput, SubcomponentFactory};
 use anvil_core::ir::{
-    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, Provider, Scope,
+    Binding, ClassRef, ComponentDecl, EntryPoint, FactoryParam, Key, ModuleDecl, Provider, Scope,
     SubcomponentDecl,
 };
 
@@ -78,6 +78,14 @@ pub fn emit_component(
     // The component class is used in `extends ComponentName` — a value position.
     imports.add_value(&out_dir, &component.class);
     populate_imports(&mut imports, &out_dir, &graph, &parent_topo);
+    // Constructor parameter types appear in the dagger's signatures even
+    // when no binding consumes them.
+    let root_param_keys: Vec<Key> = component
+        .factory_params
+        .iter()
+        .map(|fp| fp.key.clone())
+        .collect();
+    import_key_args(&mut imports, &out_dir, &root_param_keys);
     // Imports for each child subcomponent's bindings + the subcomponent class itself.
     let mut child_topos: Vec<(usize, Vec<Key>)> =
         Vec::with_capacity(graph.subcomponent_factories.len());
@@ -508,7 +516,46 @@ fn build_ts_source(
     // `createX()` returns `Promise<X>`.
     let parent_is_async = graph.is_async();
 
+    // M15: constructor parameters. Stored in ES private fields so they cannot
+    // collide with the user's own parameter properties or the `_x` cache fields.
+    let root_params_sig = component
+        .factory_params
+        .iter()
+        .map(|fp| format!("{}: {}", fp.name, type_string_of(&fp.key)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let root_param_names = component
+        .factory_params
+        .iter()
+        .map(|fp| fp.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
     writeln!(s, "export class {dagger_name} extends {comp_name} {{").expect("write to String");
+    if !component.factory_params.is_empty() {
+        // Only parameters a binding still reads get a field; an unread
+        // private field fails `noUnusedLocals`.
+        let stored: Vec<&FactoryParam> = component
+            .factory_params
+            .iter()
+            .filter(|fp| {
+                matches!(
+                    graph.bindings.get(&fp.key).map(|b| &b.provider),
+                    Some(Provider::FactoryParam { name }) if *name == fp.name
+                )
+            })
+            .collect();
+        let mut assignments = String::new();
+        for fp in &stored {
+            writeln!(s, "  #{}: {};", fp.name, type_string_of(&fp.key)).expect("write to String");
+            write!(assignments, " this.#{0} = {0};", fp.name).expect("write to String");
+        }
+        writeln!(
+            s,
+            "  constructor({root_params_sig}) {{ super({root_param_names});{assignments} }}"
+        )
+        .expect("write to String");
+    }
     emit_class_body(
         &mut s,
         graph,
@@ -524,13 +571,13 @@ fn build_ts_source(
     if parent_is_async {
         writeln!(
             s,
-            "  static async create(): Promise<{comp_name}> {{ const d = new {dagger_name}(); await {dagger_name}._resolve(d); return d; }}"
+            "  static async create({root_params_sig}): Promise<{comp_name}> {{ const d = new {dagger_name}({root_param_names}); await {dagger_name}._resolve(d); return d; }}"
         )
         .expect("write to String");
     } else {
         writeln!(
             s,
-            "  static create(): {comp_name} {{ return new {dagger_name}(); }}"
+            "  static create({root_params_sig}): {comp_name} {{ return new {dagger_name}({root_param_names}); }}"
         )
         .expect("write to String");
     }
@@ -538,13 +585,13 @@ fn build_ts_source(
     if parent_is_async {
         writeln!(
             s,
-            "export async function create{comp_name}(): Promise<{comp_name}> {{ return {dagger_name}.create(); }}"
+            "export async function create{comp_name}({root_params_sig}): Promise<{comp_name}> {{ return {dagger_name}.create({root_param_names}); }}"
         )
         .expect("write to String");
     } else {
         writeln!(
             s,
-            "export function create{comp_name}(): {comp_name} {{ return {dagger_name}.create(); }}"
+            "export function create{comp_name}({root_params_sig}): {comp_name} {{ return {dagger_name}.create({root_param_names}); }}"
         )
         .expect("write to String");
     }
@@ -668,6 +715,7 @@ fn emit_class_body(
                     .collect();
                 format!("new Set([{}])", parts.join(", "))
             }
+            Provider::FactoryParam { name } if parent_dagger.is_none() => format!("this.#{name}"),
             Provider::FactoryParam { name } => format!("this.{name}"),
         };
         // M14: Token bindings need a cast so the generated code is type-safe.

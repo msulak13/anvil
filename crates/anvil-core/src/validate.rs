@@ -91,11 +91,11 @@ impl Diagnostic {
                 component_scope,
             ),
             DiagnosticKind::FactoryParamsOnNonSubcomponentEntry { component, method } => format!(
-                "@Component entry point `{}.{}` cannot take factory parameters",
+                "@Component entry point `{}.{}` cannot take factory parameters; declare runtime values as constructor parameters on the component instead",
                 component.name, method,
             ),
             DiagnosticKind::DuplicateFactoryParam { key } => format!(
-                "duplicate factory parameter type {} on a single subcomponent factory",
+                "duplicate factory parameter type {} on a single factory",
                 key_display(key),
             ),
             DiagnosticKind::SingletonSubcomponentWithFactoryParams { subcomponent } => format!(
@@ -151,9 +151,10 @@ pub enum DiagnosticKind {
         component_scope: Scope,
     },
     /// A regular `@Component` entry-point method declared with formal
-    /// parameters (M11). `createX()` is zero-arg, so the params would
-    /// have nowhere to come from. Factory parameters are only valid on
-    /// abstract methods that resolve to `@Subcomponent` factories.
+    /// parameters (M11). Entry points are getters on the built graph, so
+    /// the params would have nowhere to go. Factory parameters are only
+    /// valid on abstract methods that resolve to `@Subcomponent` factories;
+    /// the root takes runtime values through its constructor (M15).
     FactoryParamsOnNonSubcomponentEntry {
         /// The owning component class.
         component: ClassRef,

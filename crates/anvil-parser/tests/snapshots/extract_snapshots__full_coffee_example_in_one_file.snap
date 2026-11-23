@@ -90,6 +90,7 @@ ParsedFile {
                     factory_params: [],
                 },
             ],
+            factory_params: [],
             source: SourceSpan {
                 path: "coffee.ts",
                 start: 506,
