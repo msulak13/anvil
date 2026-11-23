@@ -762,19 +762,18 @@ fn emit_class_body(
         raw_expr
     };
 
-    // M12: in async-resolving graphs, all Singleton values are eagerly
-    // populated by `_resolve` before any factory or entry point is
-    // called. Sync getters then just return the cached value
-    // (`return this._x!`) — no `??=`, no per-call await, no virality.
-    // Unscoped factories stay sync-fresh (an Unscoped binding can't be
-    // async because `AsyncBindingNeedsSingletonComponent` rejects that
-    // shape at validation time).
+    // M12: `_resolve` awaits only the async singletons, so their getters
+    // return the cached value (`return this._x!`). Every other singleton is
+    // built on first use with `??=`, as in a sync graph; topo order has
+    // already resolved any async value it reads. Building them eagerly in
+    // `_resolve` would defeat `Lazy<T>` and hand a `get()` made during
+    // resolution an unassigned field.
     for k in topo {
         let b = &graph.bindings[k];
         let type_string = type_string_for_binding(b);
         let factory = factory_name_for(k);
         let return_stmt = if matches!(b.scope, Scope::Singleton) {
-            if graph_is_async {
+            if graph.binding_is_async(k) {
                 let field = cache_field_for(k);
                 format!("return this.{field}!")
             } else {
@@ -799,12 +798,8 @@ fn emit_class_body(
         .expect("write to String");
     }
 
-    // M12: emit the async resolution phase. Walks the topo array in
-    // dep order and assigns each Singleton's resolved value to its
-    // cache field. Async @Provides methods are awaited; sync factories
-    // produce their value directly. Unscoped bindings and factory-param
-    // bindings are NOT resolved here — they're either fresh-per-call
-    // (Unscoped) or already supplied via the constructor (FactoryParam).
+    // M12: emit the async resolution phase. Walks the topo array in dep
+    // order and awaits each async singleton into its cache field.
     if graph_is_async {
         writeln!(
             s,
@@ -813,7 +808,7 @@ fn emit_class_body(
         .expect("write to String");
         for k in topo {
             let b = &graph.bindings[k];
-            if !matches!(b.scope, Scope::Singleton) {
+            if !matches!(b.scope, Scope::Singleton) || !graph.binding_is_async(k) {
                 continue;
             }
             let field = cache_field_for(k);
@@ -823,12 +818,7 @@ fn emit_class_body(
             // `d.` — every dep call goes through `this.<get>()` so
             // this is a closed transform.
             let raw = body_expr_for(k).replace("this.", "d.");
-            let prefix = if graph.binding_is_async(k) {
-                "await "
-            } else {
-                ""
-            };
-            writeln!(s, "    d.{field} = {prefix}{raw};").expect("write to String");
+            writeln!(s, "    d.{field} = await {raw};").expect("write to String");
         }
         s.push_str("  }\n");
     }

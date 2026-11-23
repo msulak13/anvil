@@ -236,7 +236,8 @@ private getReportService(): ReportService {
 
 - Factory `getLazyOf<T>`. Unscoped, so each injection site gets its own handle; the handle memoizes its first `get()`.
 - The arrow captures the dagger. In a subcomponent, an inherited `T` routes through `this.parent.getT()`.
-- `Lazy` bindings are leaves in the topo order. In an async graph, a singleton holding `Lazy<B>` is assigned in `_resolve` before a singleton `B` that reads it eagerly.
+- `Lazy` bindings are leaves in the topo order, so `_resolve` awaits an async singleton holding `Lazy<B>` before an async `B` that reads it.
+- In an async graph only async singletons are built in `_resolve`; a sync `T` behind `Lazy` is built on the first `get()`.
 
 ## `@IntoSet` multibindings (M9)
 

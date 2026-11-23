@@ -2,7 +2,7 @@ import { Inject, Lazy, Singleton } from "@anvil-di/anvil";
 import { Database } from "./database";
 import { Payments } from "./payments";
 
-// `_resolve` must assign Orders before Payments, which reads it eagerly.
+// Payments is built on the first `payments.get()`, not by `createAppComponent()`.
 @Inject
 @Singleton
 export class Orders {

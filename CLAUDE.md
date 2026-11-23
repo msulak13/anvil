@@ -148,7 +148,8 @@ Gotchas that cause silent misbehavior or subtle bugs if forgotten.
 - `static async _resolve(d: DaggerX)` — **not** `d: this` — TS2526 forbids `this` types on static methods. Pass `self_dagger: &str` (the literal class name) into codegen.
 - The `_resolve` body rewrites `this.` → `d.` in each binding's body expression. This is a closed transform that works because all dep-calls use `this.<getX>()`. If a future provider uses `this.` for anything else, re-examine.
 - Root `FactoryParam` bodies are `this.#name` (ES private field); child ones are `this.name`. `parent_dagger.is_none()` is what distinguishes the root. Only parameters a surviving binding reads get a `#` field (`noUnusedLocals`).
-- `dfs` treats `Provider::Lazy` as a leaf. Descending would let a cycle broken by `Lazy` order the eagerly-reading singleton before its holder in `_resolve`, which then reads `undefined`.
+- `_resolve` awaits **only async** singletons. Sync singletons in an async graph keep `??=` getters; building them in `_resolve` would defeat `Lazy<T>` and return an unassigned field to a `get()` made during resolution.
+- `dfs` treats `Provider::Lazy` as a leaf. Descending would let a cycle broken by `Lazy` order an async singleton that reads its holder before the holder in `_resolve`, which then reads `undefined`.
 - `binding_is_async(&Key)` detects async per-binding; don't treat every binding in an async graph as async.
 
 ### CLI (`tsdi-cli`)
