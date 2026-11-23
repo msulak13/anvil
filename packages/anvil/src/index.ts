@@ -10,3 +10,4 @@
 
 export * from "./decorators.js";
 export * from "./token.js";
+export * from "./lazy.js";

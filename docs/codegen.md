@@ -191,6 +191,54 @@ class DaggerRequestComponent extends RequestComponent {
 
 The factory-param values are **fresh per call** — calling `dagger.requestComponent(reqA, resA)` and `dagger.requestComponent(reqB, resB)` yields two independent child daggers with their own `req` / `res` fields. `@Singleton @Subcomponent` is rejected at validation time when factory params are declared, since the cache would freeze the first call's args.
 
+## Component parameters (M16)
+
+Constructor parameters on the abstract `@Component` become parameters of `createX(...)` and `static create(...)`, and are forwarded to `super(...)`:
+
+```ts
+// User
+@Singleton
+@Component({ modules: [] })
+export abstract class AppComponent {
+  constructor(readonly config: Config, protected readonly clock: Clock) {}
+  abstract greeter(): Greeter;
+}
+
+// Generated
+export class AnvilAppComponent extends AppComponent {
+  #config: Config;
+  constructor(config: Config, clock: Clock) { super(config, clock); this.#config = config; }
+  private getConfig(): Config { return this.#config; }
+  // ...
+  static create(config: Config, clock: Clock): AppComponent { return new AnvilAppComponent(config, clock); }
+}
+export function createAppComponent(config: Config, clock: Clock): AppComponent { /* ... */ }
+```
+
+- Values live in ES private fields, so they cannot collide with the user's own parameter properties (`readonly config` above) or with `_x` cache fields.
+- A parameter no binding reads (`clock`) gets no field, because an unread private field fails `noUnusedLocals`. It is still forwarded to `super`.
+- In an async graph, `create(...)` and `createX(...)` keep the same parameters and return `Promise<X>`.
+- Parameter types are imported type-only even when no binding reads them.
+
+## `Lazy<T>` (M17)
+
+```ts
+// User: @Inject export class ReportService { constructor(private exporter: Lazy<PdfExporter>) {} }
+import { Lazy } from "@anvil-di/anvil";
+
+private getLazyOfPdfExporter(): Lazy<PdfExporter> {
+  return new Lazy(() => this.getPdfExporter());
+}
+private getReportService(): ReportService {
+  return new ReportService(this.getLazyOfPdfExporter());
+}
+```
+
+- Factory `getLazyOf<T>`. Unscoped, so each injection site gets its own handle; the handle memoizes its first `get()`.
+- The arrow captures the dagger. In a subcomponent, an inherited `T` routes through `this.parent.getT()`.
+- `Lazy` bindings are leaves in the topo order, so `_resolve` awaits an async singleton holding `Lazy<B>` before an async `B` that reads it.
+- In an async graph only async singletons are built in `_resolve`; a sync `T` behind `Lazy` is built on the first `get()`.
+
 ## `@IntoSet` multibindings (M9)
 
 For a component that includes one or more `@IntoSet @Provides` contributions to the same element type, the emitter aggregates them into a single factory method:

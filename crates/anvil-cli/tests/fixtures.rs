@@ -64,7 +64,8 @@ fn write_anvil_stub(root: &Path) {
          export const Singleton = (..._: any[]) => {};\n\
          export const Binds = (..._: any[]) => {};\n\
          export const Subcomponent = (..._: any[]) => {};\n\
-         export const IntoSet = (..._: any[]) => {};\n",
+         export const IntoSet = (..._: any[]) => {};\n\
+         export class Lazy<T> { constructor(private f: () => T) {} get(): T { return this.f(); } }\n",
     )
     .unwrap();
 }
@@ -162,4 +163,24 @@ fn fixture_10_factory_params() {
 #[test]
 fn fixture_11_async_provides() {
     run_fixture("11_async_provides", "app-component.ts");
+}
+
+#[test]
+fn fixture_12_component_params() {
+    run_fixture("12_component_params", "app-component.ts");
+}
+
+#[test]
+fn fixture_13_component_params_async() {
+    run_fixture("13_component_params_async", "app-component.ts");
+}
+
+#[test]
+fn fixture_14_lazy() {
+    run_fixture("14_lazy", "app-component.ts");
+}
+
+#[test]
+fn fixture_15_lazy_async() {
+    run_fixture("15_lazy_async", "app-component.ts");
 }

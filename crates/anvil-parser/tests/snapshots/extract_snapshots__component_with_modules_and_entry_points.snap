@@ -66,6 +66,7 @@ ParsedFile {
                     factory_params: [],
                 },
             ],
+            factory_params: [],
             source: SourceSpan {
                 path: "coffee_shop.ts",
                 start: 286,

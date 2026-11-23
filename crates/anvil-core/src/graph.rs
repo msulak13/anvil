@@ -168,6 +168,42 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
         input.component.scope,
     );
 
+    // M16: bound before child graphs are built so subcomponents inherit them.
+    // A supplied value shadows an implicit `@Inject` constructor, but not an
+    // explicit module binding.
+    diagnostics.extend(detect_duplicate_factory_params(
+        &input.component.factory_params,
+        &input.component.source,
+    ));
+    for fp in &input.component.factory_params {
+        if let Some(existing) = bindings.get(&fp.key) {
+            if !matches!(existing.provider, Provider::InjectCtor { .. }) {
+                diagnostics.push(Diagnostic {
+                    kind: DiagnosticKind::Duplicate {
+                        key: fp.key.clone(),
+                    },
+                    primary: Label {
+                        span: fp.source.clone(),
+                        message: "component constructor parameter".to_owned(),
+                    },
+                    related: vec![Label {
+                        span: existing.source.clone(),
+                        message: "also provided here".to_owned(),
+                    }],
+                });
+                continue;
+            }
+        }
+        bindings.insert(fp.key.clone(), factory_param_binding(fp));
+    }
+    let root_keys: Vec<Key> = input
+        .component
+        .entry_points
+        .iter()
+        .map(|ep| ep.key.clone())
+        .collect();
+    synthesize_lazy_bindings(&mut bindings, &root_keys, &input.component.source);
+
     // Index subcomponent class refs so we can recognize factory entry points.
     let mut sub_by_classref: HashMap<&ClassRef, &SubcomponentDecl> = HashMap::new();
     for sub in input.subcomponents {
@@ -279,8 +315,8 @@ pub fn build_and_validate(input: GraphInput<'_>) -> (DependencyGraph, Vec<Diagno
             continue;
         }
 
-        // M11: factory parameters on a regular @Component entry point
-        // would have nowhere to come from â€” `createApp()` is zero-arg.
+        // Entry-point parameters only make sense on subcomponent factories;
+        // runtime values for the root arrive through its constructor (M16).
         if !ep.factory_params.is_empty() {
             diagnostics.push(Diagnostic {
                 kind: DiagnosticKind::FactoryParamsOnNonSubcomponentEntry {
@@ -366,21 +402,10 @@ fn build_child_graph(
     // module/inject bindings and parent-inherited bindings â€” the runtime
     // value supplied at the factory call site is authoritative.
     for fp in factory_params {
-        bindings.insert(
-            fp.key.clone(),
-            Binding {
-                key: fp.key.clone(),
-                provider: Provider::FactoryParam {
-                    name: fp.name.clone(),
-                },
-                scope: Scope::Unscoped,
-                deps: vec![],
-                source: fp.source.clone(),
-                role: MultibindRole::None,
-                token_inner_type: None,
-            },
-        );
+        bindings.insert(fp.key.clone(), factory_param_binding(fp));
     }
+    let entry_keys: Vec<Key> = sub.entry_points.iter().map(|ep| ep.key.clone()).collect();
+    synthesize_lazy_bindings(&mut bindings, &entry_keys, &sub.source);
 
     // M11: prune to bindings reachable from the subcomponent's entry
     // points. Same rationale as the parent path â€” keeps spurious
@@ -621,9 +646,13 @@ fn build_petgraph(
     let mut missing = Vec::new();
     for (key, binding) in bindings {
         let from = node_for[key];
+        // A `Lazy<T>` defers `T` until first `get()`, so it may close a cycle.
+        let defers = matches!(binding.provider, Provider::Lazy);
         for dep in &binding.deps {
             if let Some(&to) = node_for.get(dep) {
-                graph.add_edge(from, to, ());
+                if !defers {
+                    graph.add_edge(from, to, ());
+                }
             } else if !parent_bindings.is_some_and(|p| p.contains_key(dep)) {
                 missing.push(missing_for_dep(dep.clone(), key.clone(), binding));
             }
@@ -787,6 +816,61 @@ fn detect_async_needs_singleton(
         .collect()
 }
 
+/// Add a [`Provider::Lazy`] binding for every `Lazy<T>` key requested by a
+/// binding's deps or by `roots` that nothing else binds. Each takes the span
+/// of the first site that requested it, so a missing `T` points there.
+fn synthesize_lazy_bindings(
+    bindings: &mut HashMap<Key, Binding>,
+    roots: &[Key],
+    owner_source: &SourceSpan,
+) {
+    loop {
+        let mut wanted: Vec<(Key, SourceSpan)> = roots
+            .iter()
+            .map(|k| (k.clone(), owner_source.clone()))
+            .chain(
+                bindings
+                    .values()
+                    .flat_map(|b| b.deps.iter().map(move |d| (d.clone(), b.source.clone()))),
+            )
+            .filter(|(k, _)| matches!(k, Key::Lazy { .. }) && !bindings.contains_key(k))
+            .collect();
+        if wanted.is_empty() {
+            return;
+        }
+        wanted.sort_by(|a, b| (a.1.path.as_str(), a.1.start).cmp(&(b.1.path.as_str(), b.1.start)));
+        for (key, source) in wanted {
+            let Key::Lazy { inner } = &key else {
+                unreachable!("filtered to Key::Lazy")
+            };
+            let inner = inner.as_ref().clone();
+            bindings.entry(key.clone()).or_insert(Binding {
+                key,
+                provider: Provider::Lazy,
+                scope: Scope::Unscoped,
+                deps: vec![inner],
+                source,
+                role: MultibindRole::None,
+                token_inner_type: None,
+            });
+        }
+    }
+}
+
+fn factory_param_binding(fp: &FactoryParam) -> Binding {
+    Binding {
+        key: fp.key.clone(),
+        provider: Provider::FactoryParam {
+            name: fp.name.clone(),
+        },
+        scope: Scope::Unscoped,
+        deps: vec![],
+        source: fp.source.clone(),
+        role: MultibindRole::None,
+        token_inner_type: None,
+    }
+}
+
 /// Report `DuplicateFactoryParam` if the same key appears more than
 /// once in a single factory's parameter list (M11). Two `Request` params
 /// would make `req: Request` ambiguous for any child binding asking for
@@ -831,7 +915,8 @@ fn missing_for_dep(missing: Key, requested_by: Key, binding: &Binding) -> Diagno
         Provider::ProvidesMethod { .. } => "@Provides method",
         Provider::Binds { .. } => "@Binds method",
         Provider::SetMultibinding { .. } => "@IntoSet aggregate",
-        Provider::FactoryParam { .. } => "subcomponent factory parameter",
+        Provider::FactoryParam { .. } => "factory parameter",
+        Provider::Lazy => "Lazy<T> request",
     };
     Diagnostic {
         kind: DiagnosticKind::MissingBinding {
@@ -901,6 +986,7 @@ mod tests {
 
     fn empty_component(name: &str, modules: Vec<ClassRef>, scope: Scope) -> ComponentDecl {
         ComponentDecl {
+            factory_params: vec![],
             class: class_ref(name),
             modules,
             scope,
@@ -1401,5 +1487,245 @@ mod tests {
         });
         assert!(ds.is_empty());
         assert_eq!(g.node_count(), 0);
+    }
+
+    fn component_with_params(name: &str, scope: Scope, params: Vec<FactoryParam>) -> ComponentDecl {
+        ComponentDecl {
+            factory_params: params,
+            ..empty_component(name, vec![], scope)
+        }
+    }
+
+    #[test]
+    fn component_params_become_root_bindings() {
+        let mut comp = component_with_params(
+            "App",
+            Scope::Singleton,
+            vec![factory_param("env", key("Env"))],
+        );
+        comp.entry_points.push(ep("service", key("Service")));
+        let service = inject("Service", vec![key("Env")], Scope::Unscoped);
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[service],
+            subcomponents: &[],
+        });
+        assert!(ds.is_empty(), "{ds:?}");
+        assert!(matches!(
+            g.bindings.get(&key("Env")).map(|b| &b.provider),
+            Some(Provider::FactoryParam { name }) if name == "env"
+        ));
+    }
+
+    #[test]
+    fn component_param_shadows_inject_ctor() {
+        let mut comp = component_with_params(
+            "App",
+            Scope::Unscoped,
+            vec![factory_param("clock", key("Clock"))],
+        );
+        comp.entry_points.push(ep("clock", key("Clock")));
+        let clock = inject("Clock", vec![], Scope::Unscoped);
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[clock],
+            subcomponents: &[],
+        });
+        assert!(ds.is_empty(), "{ds:?}");
+        assert!(matches!(
+            g.bindings.get(&key("Clock")).map(|b| &b.provider),
+            Some(Provider::FactoryParam { .. })
+        ));
+    }
+
+    #[test]
+    fn component_param_colliding_with_module_binding_is_duplicate() {
+        let module = ModuleDecl {
+            class: class_ref("EnvModule"),
+            provides: vec![provides("EnvModule", "Env", vec![], Scope::Unscoped)],
+            source: span("EnvModule", 0),
+        };
+        let mut comp = component_with_params(
+            "App",
+            Scope::Unscoped,
+            vec![factory_param("env", key("Env"))],
+        );
+        comp.modules.push(class_ref("EnvModule"));
+        comp.entry_points.push(ep("env", key("Env")));
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[module],
+            inject_classes: &[],
+            subcomponents: &[],
+        });
+        assert!(
+            ds.iter().any(
+                |d| matches!(&d.kind, DiagnosticKind::Duplicate { key: k } if *k == key("Env"))
+            ),
+            "expected Duplicate, got {ds:?}",
+        );
+    }
+
+    #[test]
+    fn duplicate_component_param_types_are_rejected() {
+        let comp = component_with_params(
+            "App",
+            Scope::Unscoped,
+            vec![
+                factory_param("a", key("Env")),
+                factory_param("b", key("Env")),
+            ],
+        );
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[],
+            subcomponents: &[],
+        });
+        assert!(
+            ds.iter()
+                .any(|d| matches!(d.kind, DiagnosticKind::DuplicateFactoryParam { .. })),
+            "expected DuplicateFactoryParam, got {ds:?}",
+        );
+    }
+
+    #[test]
+    fn subcomponent_inherits_component_param() {
+        let sub_key = Key::class(
+            ModulePath::from_abs("/p/RequestComponent.ts"),
+            "RequestComponent",
+        );
+        let sub = SubcomponentDecl {
+            class: class_ref("RequestComponent"),
+            modules: vec![],
+            scope: Scope::Unscoped,
+            entry_points: vec![ep("handler", key("Handler"))],
+            source: span("RequestComponent", 0),
+        };
+        let mut comp = component_with_params(
+            "App",
+            Scope::Singleton,
+            vec![factory_param("env", key("Env"))],
+        );
+        comp.entry_points.push(ep("requestComponent", sub_key));
+        let handler = inject("Handler", vec![key("Env")], Scope::Unscoped);
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[handler],
+            subcomponents: &[sub],
+        });
+        assert!(ds.is_empty(), "{ds:?}");
+        assert!(g.bindings.contains_key(&key("Env")));
+        assert!(g.subcomponent_factories[0]
+            .child_graph
+            .inherited_keys
+            .contains(&key("Env")));
+    }
+
+    fn lazy(name: &str) -> Key {
+        Key::Lazy {
+            inner: Box::new(key(name)),
+        }
+    }
+
+    #[test]
+    fn lazy_dep_synthesizes_a_binding_over_its_inner_key() {
+        let mut comp = empty_component("App", vec![], Scope::Unscoped);
+        comp.entry_points.push(ep("a", key("A")));
+        let a = inject("A", vec![lazy("B")], Scope::Unscoped);
+        let b = inject("B", vec![], Scope::Unscoped);
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[a, b],
+            subcomponents: &[],
+        });
+        assert!(ds.is_empty(), "{ds:?}");
+        let binding = &g.bindings[&lazy("B")];
+        assert!(matches!(binding.provider, Provider::Lazy));
+        assert_eq!(binding.deps, vec![key("B")]);
+        assert!(g.bindings.contains_key(&key("B")));
+    }
+
+    #[test]
+    fn lazy_entry_point_synthesizes_a_binding() {
+        let mut comp = empty_component("App", vec![], Scope::Unscoped);
+        comp.entry_points.push(ep("b", lazy("B")));
+        let b = inject("B", vec![], Scope::Unscoped);
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[b],
+            subcomponents: &[],
+        });
+        assert!(ds.is_empty(), "{ds:?}");
+        assert!(matches!(g.bindings[&lazy("B")].provider, Provider::Lazy));
+    }
+
+    #[test]
+    fn lazy_of_unbound_key_is_a_missing_binding() {
+        let mut comp = empty_component("App", vec![], Scope::Unscoped);
+        comp.entry_points.push(ep("a", key("A")));
+        let a = inject("A", vec![lazy("Ghost")], Scope::Unscoped);
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[a],
+            subcomponents: &[],
+        });
+        assert!(
+            ds.iter().any(|d| matches!(
+                &d.kind,
+                DiagnosticKind::MissingBinding { key: k, .. } if *k == key("Ghost")
+            )),
+            "expected MissingBinding for Ghost, got {ds:?}",
+        );
+    }
+
+    #[test]
+    fn lazy_edge_breaks_a_cycle() {
+        let mut comp = empty_component("App", vec![], Scope::Unscoped);
+        comp.entry_points.push(ep("a", key("A")));
+        let a = inject("A", vec![lazy("B")], Scope::Unscoped);
+        let b = inject("B", vec![key("A")], Scope::Unscoped);
+        let (_g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[a, b],
+            subcomponents: &[],
+        });
+        assert!(ds.is_empty(), "{ds:?}");
+    }
+
+    #[test]
+    fn subcomponent_lazy_over_parent_binding_inherits_the_inner_key() {
+        let sub_key = Key::class(
+            ModulePath::from_abs("/p/RequestComponent.ts"),
+            "RequestComponent",
+        );
+        let sub = SubcomponentDecl {
+            class: class_ref("RequestComponent"),
+            modules: vec![],
+            scope: Scope::Unscoped,
+            entry_points: vec![ep("handler", key("Handler"))],
+            source: span("RequestComponent", 0),
+        };
+        let mut comp = empty_component("App", vec![], Scope::Singleton);
+        comp.entry_points.push(ep("requestComponent", sub_key));
+        let handler = inject("Handler", vec![lazy("Pool")], Scope::Unscoped);
+        let pool = inject("Pool", vec![], Scope::Singleton);
+        let (g, ds) = build_and_validate(GraphInput {
+            component: &comp,
+            modules: &[],
+            inject_classes: &[handler, pool],
+            subcomponents: &[sub],
+        });
+        assert!(ds.is_empty(), "{ds:?}");
+        let child = &g.subcomponent_factories[0].child_graph;
+        assert!(child.bindings.contains_key(&lazy("Pool")));
+        assert!(child.inherited_keys.contains(&key("Pool")));
     }
 }

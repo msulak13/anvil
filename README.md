@@ -107,6 +107,8 @@ Pass `mode: "wasm"` to run codegen in-process via `@anvil-di/anvil-codegen-wasm`
 | Set multibindings | `@IntoSet` |
 | Async providers | `async @Provides` returning `Promise<T>` |
 | Subcomponent factory params | method params on `@Subcomponent` factory |
+| Component parameters | constructor params on the `@Component` class |
+| Deferred injection | `Lazy<T>` |
 
 ### Bellows — NestJS-style controller codegen
 
@@ -172,6 +174,8 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full pipeline and [
 | Bellows M3 | Type-driven `safeParse` validation prologues | done |
 | Bellows M4 | `anvil-unplugin` `PreBuildHook`/`PostBuildHook` pipeline | done |
 | Bellows M5 | `anvil-bellows-openapi` CLI — OpenAPI spec generation | done |
+| M16 | Component constructor parameters → `createX(...)` | done |
+| M17 | `Lazy<T>` injection; lazy edges break cycles | done |
 | M14+ | Token bindings, `@Named`, optional injection, v0.1 stable | planned |
 
 ## Building from source

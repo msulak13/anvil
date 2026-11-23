@@ -31,7 +31,7 @@ use oxc_span::SourceType;
 
 use anvil_core::graph::{build_and_validate, DependencyGraph, GraphInput, SubcomponentFactory};
 use anvil_core::ir::{
-    Binding, ClassRef, ComponentDecl, EntryPoint, Key, ModuleDecl, Provider, Scope,
+    Binding, ClassRef, ComponentDecl, EntryPoint, FactoryParam, Key, ModuleDecl, Provider, Scope,
     SubcomponentDecl,
 };
 
@@ -78,6 +78,14 @@ pub fn emit_component(
     // The component class is used in `extends ComponentName` — a value position.
     imports.add_value(&out_dir, &component.class);
     populate_imports(&mut imports, &out_dir, &graph, &parent_topo);
+    // Constructor parameter types appear in the dagger's signatures even
+    // when no binding consumes them.
+    let root_param_keys: Vec<Key> = component
+        .factory_params
+        .iter()
+        .map(|fp| fp.key.clone())
+        .collect();
+    import_key_args(&mut imports, &out_dir, &root_param_keys);
     // Imports for each child subcomponent's bindings + the subcomponent class itself.
     let mut child_topos: Vec<(usize, Vec<Key>)> =
         Vec::with_capacity(graph.subcomponent_factories.len());
@@ -115,6 +123,7 @@ fn key_module(key: &Key) -> &str {
         Key::Class { module, .. } => &module.abs,
         Key::Token { .. } => "<token>",
         Key::Set { element } => key_module(element),
+        Key::Lazy { inner } => key_module(inner),
     }
 }
 
@@ -134,6 +143,7 @@ fn type_string_of(key: &Key) -> String {
         }
         Key::Token { .. } => "unknown".to_owned(),
         Key::Set { element } => format!("Set<{}>", type_string_of(element)),
+        Key::Lazy { inner } => format!("Lazy<{}>", type_string_of(inner)),
     }
 }
 
@@ -163,6 +173,7 @@ fn factory_name_for(key: &Key) -> String {
         }
         Key::Token { name } => format!("get{}", token_pascal_case(name)),
         Key::Set { element } => format!("getSetOf{}", element_label(element)),
+        Key::Lazy { inner } => format!("getLazyOf{}", element_label(inner)),
     }
 }
 
@@ -179,6 +190,7 @@ fn cache_field_for(key: &Key) -> String {
         }
         Key::Token { name } => format!("_{}", lower_first(&token_pascal_case(name))),
         Key::Set { element } => format!("_setOf{}", element_label(element)),
+        Key::Lazy { inner } => format!("_lazyOf{}", element_label(inner)),
     }
 }
 
@@ -197,6 +209,7 @@ fn element_label(key: &Key) -> String {
         }
         Key::Token { name } => token_pascal_case(name),
         Key::Set { element } => format!("SetOf{}", element_label(element)),
+        Key::Lazy { inner } => format!("LazyOf{}", element_label(inner)),
     }
 }
 
@@ -264,7 +277,14 @@ fn dfs(k: &Key, graph: &DependencyGraph, visited: &mut HashSet<Key>, out: &mut V
         return;
     }
     if let Some(b) = graph.bindings.get(k) {
-        let mut deps: Vec<&Key> = b.deps.iter().collect();
+        // A `Lazy<T>` reads `T` only on `get()`, so it does not order after
+        // `T`. Descending would let a cycle broken by `Lazy` resolve a
+        // singleton before the one it reads.
+        let mut deps: Vec<&Key> = if matches!(b.provider, Provider::Lazy) {
+            Vec::new()
+        } else {
+            b.deps.iter().collect()
+        };
         deps.sort_by_key(|d| lex_key(d));
         for d in deps {
             dfs(d, graph, visited, out);
@@ -280,6 +300,8 @@ fn dfs(k: &Key, graph: &DependencyGraph, visited: &mut HashSet<Key>, out: &mut V
 
 /// Tracks which imported names are used as runtime values vs. type annotations only.
 ///
+const RUNTIME_PACKAGE: &str = "@anvil-di/anvil";
+
 /// Symbols used as values (e.g. `new X()`, `X.method()`, `extends X`) need a
 /// regular `import { X }`. Symbols used only in type positions (return types,
 /// field types, generic args) must use `import type { X }` when the consumer's
@@ -299,6 +321,13 @@ impl Imports {
             .entry(spec)
             .or_default()
             .insert(cref.name.clone());
+    }
+
+    fn add_runtime_value(&mut self, name: &str) {
+        self.value
+            .entry(RUNTIME_PACKAGE.to_owned())
+            .or_default()
+            .insert(name.to_owned());
     }
 
     fn add_type(&mut self, out_dir: &Path, cref: &ClassRef) {
@@ -360,6 +389,10 @@ fn populate_imports(imports: &mut Imports, out_dir: &Path, graph: &DependencyGra
                 // The inner type is surfaced through the TS cast; its import
                 // comes via the binding's deps (the actual implementation class).
             }
+            Key::Lazy { inner } => {
+                imports.add_runtime_value("Lazy");
+                import_key_args(imports, out_dir, std::slice::from_ref(inner.as_ref()));
+            }
         }
         match &b.provider {
             Provider::InjectCtor { class } => {
@@ -377,7 +410,7 @@ fn populate_imports(imports: &mut Imports, out_dir: &Path, graph: &DependencyGra
             // - `FactoryParam`'s type class is already imported when
             //   the binding's outer key was processed above. The
             //   binding's value comes from a stored ctor field.
-            Provider::Binds { .. } | Provider::FactoryParam { .. } => {}
+            Provider::Binds { .. } | Provider::FactoryParam { .. } | Provider::Lazy => {}
             Provider::SetMultibinding { contributors } => {
                 for c in contributors {
                     // `ContribModule.method(deps)` — value import.
@@ -405,6 +438,10 @@ fn import_key_args(imports: &mut Imports, out_dir: &Path, args: &[Key]) {
                     },
                 );
                 import_key_args(imports, out_dir, type_args);
+            }
+            Key::Lazy { inner } => {
+                imports.add_runtime_value("Lazy");
+                import_key_args(imports, out_dir, std::slice::from_ref(inner.as_ref()));
             }
             Key::Token { .. } | Key::Set { .. } => {}
         }
@@ -508,7 +545,46 @@ fn build_ts_source(
     // `createX()` returns `Promise<X>`.
     let parent_is_async = graph.is_async();
 
+    // M16: constructor parameters. Stored in ES private fields so they cannot
+    // collide with the user's own parameter properties or the `_x` cache fields.
+    let root_params_sig = component
+        .factory_params
+        .iter()
+        .map(|fp| format!("{}: {}", fp.name, type_string_of(&fp.key)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let root_param_names = component
+        .factory_params
+        .iter()
+        .map(|fp| fp.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
     writeln!(s, "export class {dagger_name} extends {comp_name} {{").expect("write to String");
+    if !component.factory_params.is_empty() {
+        // Only parameters a binding still reads get a field; an unread
+        // private field fails `noUnusedLocals`.
+        let stored: Vec<&FactoryParam> = component
+            .factory_params
+            .iter()
+            .filter(|fp| {
+                matches!(
+                    graph.bindings.get(&fp.key).map(|b| &b.provider),
+                    Some(Provider::FactoryParam { name }) if *name == fp.name
+                )
+            })
+            .collect();
+        let mut assignments = String::new();
+        for fp in &stored {
+            writeln!(s, "  #{}: {};", fp.name, type_string_of(&fp.key)).expect("write to String");
+            write!(assignments, " this.#{0} = {0};", fp.name).expect("write to String");
+        }
+        writeln!(
+            s,
+            "  constructor({root_params_sig}) {{ super({root_param_names});{assignments} }}"
+        )
+        .expect("write to String");
+    }
     emit_class_body(
         &mut s,
         graph,
@@ -524,13 +600,13 @@ fn build_ts_source(
     if parent_is_async {
         writeln!(
             s,
-            "  static async create(): Promise<{comp_name}> {{ const d = new {dagger_name}(); await {dagger_name}._resolve(d); return d; }}"
+            "  static async create({root_params_sig}): Promise<{comp_name}> {{ const d = new {dagger_name}({root_param_names}); await {dagger_name}._resolve(d); return d; }}"
         )
         .expect("write to String");
     } else {
         writeln!(
             s,
-            "  static create(): {comp_name} {{ return new {dagger_name}(); }}"
+            "  static create({root_params_sig}): {comp_name} {{ return new {dagger_name}({root_param_names}); }}"
         )
         .expect("write to String");
     }
@@ -538,13 +614,13 @@ fn build_ts_source(
     if parent_is_async {
         writeln!(
             s,
-            "export async function create{comp_name}(): Promise<{comp_name}> {{ return {dagger_name}.create(); }}"
+            "export async function create{comp_name}({root_params_sig}): Promise<{comp_name}> {{ return {dagger_name}.create({root_param_names}); }}"
         )
         .expect("write to String");
     } else {
         writeln!(
             s,
-            "export function create{comp_name}(): {comp_name} {{ return {dagger_name}.create(); }}"
+            "export function create{comp_name}({root_params_sig}): {comp_name} {{ return {dagger_name}.create({root_param_names}); }}"
         )
         .expect("write to String");
     }
@@ -668,7 +744,12 @@ fn emit_class_body(
                     .collect();
                 format!("new Set([{}])", parts.join(", "))
             }
+            Provider::FactoryParam { name } if parent_dagger.is_none() => format!("this.#{name}"),
             Provider::FactoryParam { name } => format!("this.{name}"),
+            Provider::Lazy => format!(
+                "new Lazy(() => {})",
+                dep_call(&b.deps[0], graph, parent_dagger)
+            ),
         };
         // M14: Token bindings need a cast so the generated code is type-safe.
         // The @Provides method returns the raw value (e.g. a string or Database
@@ -681,19 +762,18 @@ fn emit_class_body(
         raw_expr
     };
 
-    // M12: in async-resolving graphs, all Singleton values are eagerly
-    // populated by `_resolve` before any factory or entry point is
-    // called. Sync getters then just return the cached value
-    // (`return this._x!`) — no `??=`, no per-call await, no virality.
-    // Unscoped factories stay sync-fresh (an Unscoped binding can't be
-    // async because `AsyncBindingNeedsSingletonComponent` rejects that
-    // shape at validation time).
+    // M12: `_resolve` awaits only the async singletons, so their getters
+    // return the cached value (`return this._x!`). Every other singleton is
+    // built on first use with `??=`, as in a sync graph; topo order has
+    // already resolved any async value it reads. Building them eagerly in
+    // `_resolve` would defeat `Lazy<T>` and hand a `get()` made during
+    // resolution an unassigned field.
     for k in topo {
         let b = &graph.bindings[k];
         let type_string = type_string_for_binding(b);
         let factory = factory_name_for(k);
         let return_stmt = if matches!(b.scope, Scope::Singleton) {
-            if graph_is_async {
+            if graph.binding_is_async(k) {
                 let field = cache_field_for(k);
                 format!("return this.{field}!")
             } else {
@@ -718,12 +798,8 @@ fn emit_class_body(
         .expect("write to String");
     }
 
-    // M12: emit the async resolution phase. Walks the topo array in
-    // dep order and assigns each Singleton's resolved value to its
-    // cache field. Async @Provides methods are awaited; sync factories
-    // produce their value directly. Unscoped bindings and factory-param
-    // bindings are NOT resolved here — they're either fresh-per-call
-    // (Unscoped) or already supplied via the constructor (FactoryParam).
+    // M12: emit the async resolution phase. Walks the topo array in dep
+    // order and awaits each async singleton into its cache field.
     if graph_is_async {
         writeln!(
             s,
@@ -732,7 +808,7 @@ fn emit_class_body(
         .expect("write to String");
         for k in topo {
             let b = &graph.bindings[k];
-            if !matches!(b.scope, Scope::Singleton) {
+            if !matches!(b.scope, Scope::Singleton) || !graph.binding_is_async(k) {
                 continue;
             }
             let field = cache_field_for(k);
@@ -742,12 +818,7 @@ fn emit_class_body(
             // `d.` — every dep call goes through `this.<get>()` so
             // this is a closed transform.
             let raw = body_expr_for(k).replace("this.", "d.");
-            let prefix = if graph.binding_is_async(k) {
-                "await "
-            } else {
-                ""
-            };
-            writeln!(s, "    d.{field} = {prefix}{raw};").expect("write to String");
+            writeln!(s, "    d.{field} = await {raw};").expect("write to String");
         }
         s.push_str("  }\n");
     }

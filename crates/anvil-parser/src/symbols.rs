@@ -311,6 +311,10 @@ fn normalize_parsed(
         for cm in &mut c.modules {
             rewrite_classref(cm, &mut resolve_one, discovered)?;
         }
+        for fp in &mut c.factory_params {
+            rewrite_key(&mut fp.key, &mut resolve_one, discovered)?;
+            fp.source.path.clone_from(&self_path_string);
+        }
         for ep in &mut c.entry_points {
             rewrite_key(&mut ep.key, &mut resolve_one, discovered)?;
             ep.source.path.clone_from(&self_path_string);
@@ -402,6 +406,10 @@ fn normalize_parsed_with_map(
         for cm in &mut c.modules {
             rewrite_classref(cm, &mut resolve_one, discovered)?;
         }
+        for fp in &mut c.factory_params {
+            rewrite_key(&mut fp.key, &mut resolve_one, discovered)?;
+            fp.source.path.clone_from(&self_path_string);
+        }
         for ep in &mut c.entry_points {
             rewrite_key(&mut ep.key, &mut resolve_one, discovered)?;
             ep.source.path.clone_from(&self_path_string);
@@ -455,7 +463,7 @@ fn rewrite_binding(
                 }
             }
         }
-        anvil_core::ir::Provider::FactoryParam { .. } => {
+        anvil_core::ir::Provider::FactoryParam { .. } | anvil_core::ir::Provider::Lazy => {
             // FactoryParam bindings are graph-synthesized — the parser
             // never produces one and thus never feeds it through
             // resolution. Match arm exists for completeness against
@@ -486,6 +494,7 @@ fn rewrite_key(
         }
         Key::Token { .. } => Ok(()), // token names are stable string literals, no rewriting needed
         Key::Set { element } => rewrite_key(element, resolve_one, discovered),
+        Key::Lazy { inner } => rewrite_key(inner, resolve_one, discovered),
     }
 }
 
