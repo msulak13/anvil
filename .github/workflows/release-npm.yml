@@ -40,7 +40,7 @@ jobs:
             bin: anvil
             cross: true
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-latest
             package: anvil-cli-darwin-arm64
             bin: anvil
           - target: x86_64-pc-windows-msvc
@@ -85,7 +85,7 @@ jobs:
             bin: anvil-bellows
             cross: true
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-latest
             package: bellows-cli-darwin-arm64
             bin: anvil-bellows
           - target: x86_64-pc-windows-msvc
@@ -130,7 +130,7 @@ jobs:
             bin: anvil-bellows-openapi
             cross: true
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-latest
             package: bellows-openapi-cli-darwin-arm64
             bin: anvil-bellows-openapi
           - target: x86_64-pc-windows-msvc
