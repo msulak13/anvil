@@ -77,10 +77,9 @@ A bare-identifier decorator (`@X`, not `@X(...)`) on a `@Controller` class or ro
 |---|---|
 | None (declared in the use-site file) | Find the `const` in that file. |
 | `ImportOrigin::Relative(path)` | Parse `path` and find the `const`, the same way `resolve_authn_type_args` reads `AuthnService` classes. |
-| `ImportOrigin::Package("@anvil-di/…")` | Not a composite; ignored as today (`@Singleton`, `@Inject`). |
-| Any other `ImportOrigin::Package` | Diagnostic. |
+| `ImportOrigin::Package` | Not expanded. |
 
-Every bare decorator on a controller or route that doesn't come from `@anvil-di/*` must resolve to a composite. Resolved definitions are cached per `(file, name)`. Nested composites resolve recursively against the definition file's import map; a cycle is a diagnostic.
+A bare decorator that doesn't resolve to a `bellowsCompose` `const` is an ordinary decorator and is left alone. Resolved definitions are cached per `(file, name)`. Nested composites resolve recursively against the definition file's import map; a cycle is a diagnostic.
 
 ### Expansion
 
@@ -105,28 +104,24 @@ An unsupported kind at the use site is a diagnostic, not a silent drop.
 
 Each of these is a `ParseDiagnostic` (exit code 1):
 
-- A bare decorator doesn't resolve to a `bellowsCompose` `const`, including when it's reached through a barrel re-export.
-- The decorator comes from a non-`@anvil-di/*` package.
-- A composite is applied in call form (`@AdminRoute()`).
 - A composite contains `@Controller`, a route decorator, `@Deprecated`, or `@Returns` with a schema argument.
 - A composite contains a kind that isn't allowed where it's used.
 - Composites reference each other in a cycle.
 
 ## Consequences
 
-- A policy is defined once, and a missing or wrong policy fails the build, so composites are safer than copy-paste stacks.
+- A policy is defined once instead of copied onto every controller.
 - No IR, codegen, or OpenAPI builder changes. The work is in the `anvil-bellows` parser plus the runtime stub.
 - The per-kind `try_extract_*` functions collapse into one classifier that returns an owned `DecoratorItem` enum. Direct decorators and composite contents share it, which is needed because a composite's AST lives in a different allocator than the controller's.
 - `anvil-bellows-openapi` uses the same parser, so its tags, security, and responses pick up composites automatically.
-- Composites in workspace packages (bare specifiers) aren't supported until `anvil-bellows` resolves bare specifiers. The build fails on them rather than skipping them.
+- A composite imported from a package or through a barrel re-export isn't expanded, and the build doesn't flag it, so its policies don't apply. Supporting these needs `anvil-bellows` to resolve bare specifiers and follow re-exports.
 - `@Returns(status, Schema)` isn't allowed inside composites, because `SchemaRef` has no origin to carry the definition file's import.
 - Watch mode reruns only for files under `entry` (`bellowsCodegen().shouldRerun`). A composite defined outside `entry` doesn't trigger a rebuild when it changes.
-- Bare decorators on controllers that aren't composites, whether third-party or user-written, become a build error.
 
 ## Alternatives considered
 
 - **Read arbitrary user functions** (`function AdminRoute(t, c) { Authn(X)(t, c); … }`). The parser would need to evaluate code. One fixed call shape keeps recognition purely syntactic (ADR-0003).
 - **Array spread** (`@Middleware(...adminMiddleware)`). Covers one decorator kind per array, not a whole policy.
 - **Class inheritance** (`class AdminUsersController extends AdminBase`). Class-level only; method-level policies can't use it.
-- **Silently ignore unresolvable bare decorators** (current behavior for unknown names). Rejected because a dropped `@Authn` would ship an unauthenticated route with a green build.
+- **Require every bare decorator to resolve to a composite.** This would catch composites that fail to resolve, but it would break ordinary decorators on controllers.
 - **Call-form composites** (`@AdminRoute()`). They make room for parameters without a design for them; bare form keeps a composite a value.
