@@ -110,6 +110,7 @@ dependencies = [
  "oxc_ast",
  "oxc_codegen",
  "oxc_parser",
+ "oxc_resolver",
  "oxc_span",
  "predicates",
  "tempfile",

@@ -90,6 +90,27 @@ export function Middleware(..._fns: ExpressMiddleware[]): any {
   return (target: unknown) => target;
 }
 
+/**
+ * An interface rather than a type alias so `tsc` declaration emit keeps the
+ * name, which is how `anvil-bellows` recognizes a composite it can only see
+ * through a `.d.ts`.
+ */
+export interface BellowsComposite {
+  (target: unknown, ctx: ClassDecoratorContext | ClassMethodDecoratorContext): void;
+}
+
+/**
+ * Composes `@Middleware`, `@Authn`, `@Authz`, `@Tag`, `@Security`,
+ * `@Returns(status)` and other composites into one decorator, applied bare
+ * (`@AdminRoute`). `anvil-bellows` expands it statically, so it must be a
+ * top-level `const` initialized by this call.
+ */
+export function bellowsCompose(
+  ..._decorators: ((...args: never[]) => unknown)[]
+): BellowsComposite {
+  return () => {};
+}
+
 export function Tag(
   _name: string,
 ): <T extends abstract new (...args: never[]) => unknown>(
