@@ -9,6 +9,7 @@
 //!    formatting.
 
 pub mod codegen;
+mod composite;
 pub mod parser;
 
 pub use codegen::{emit_openapi_module, emit_routes_module, EmitError};

@@ -64,7 +64,7 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 | `packages/anvil-cli` | `@anvil-di/anvil-cli` | Launcher shim. Resolves the native binary via `optionalDependencies` or the `TSDI_CLI_BIN` env var. |
 | `packages/anvil-cli-<platform>-<arch>` | `@anvil-di/anvil-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Only win32-x64 committed; others filled by `release-cli.yml`. |
 | `packages/anvil-codegen-wasm` | `@anvil-di/anvil-codegen-wasm` | WASM build of `crates/tsdi-codegen-wasm`. `wasm-opt = false` — oxc emits `memory.copy` that bundled wasm-opt rejects. 1.4 MB unoptimized is fine. |
-| `packages/bellows` | `@anvil-di/bellows` | Runtime types + decorator stubs for NestJS-style controller codegen (`Validator<T>`, `Body<S>`, `Query<S>`, `Params<S>`, `Responds<S>`, `withJsonSchema`, `RouteDefinition`, + 11 Stage-3 decorator stubs). Also exports `PreBuildHook` + `bellowsCodegen()`. Bellows M1+M2. |
+| `packages/bellows` | `@anvil-di/bellows` | Runtime types + decorator stubs for NestJS-style controller codegen (`Validator<T>`, `Body<S>`, `Query<S>`, `Params<S>`, `Responds<S>`, `withJsonSchema`, `RouteDefinition`, + Stage-3 decorator stubs, `bellowsCompose` + `BellowsComposite`). Also exports `PreBuildHook` + `bellowsCodegen()`. Bellows M1+M2. |
 | `packages/bellows-cli` | `@anvil-di/bellows-cli` | Launcher shim for the `anvil-bellows` native binary. Mirrors `anvil-cli`. Env var: `ANVIL_BELLOWS_CLI_BIN`. |
 | `packages/bellows-cli-<platform>-<arch>` | `@anvil-di/bellows-cli-*` | Native binaries: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64. Filled by CI release workflow. |
 | `packages/bellows-openapi` | `@anvil-di/bellows-openapi` | Exports `bellowsOpenApi()` PostBuildHook factory. Runs `anvil-bellows-openapi` via env var or platform package. Bellows M5. |
@@ -96,6 +96,7 @@ If a change blurs these boundaries (e.g. teaching `tsdi-core` about Oxc), stop a
 | Bellows M3 | Type-driven adapter generation in `crates/anvil-bellows`. Parser detects `Body<typeof S>`, `Query<typeof S>`, `Params<typeof S>`, `Request`, `Response`, `Responds<typeof S>`, `Promise<Responds<typeof S>>` from the Oxc AST. Codegen emits `safeParse` validation prologues; routes with any `Unknown` param fall back to v0.1 passthrough. Fixture `03_schema_params` with tsc validation. |
 | Bellows M4 | `packages/anvil-unplugin`: `PreBuildHook`/`PostBuildHook` interfaces exported; `AnvilPluginOptions` gains `preBuild`/`postBuild` arrays. `buildStart` runs: preBuild hooks → anvil build → postBuild hooks. Watch mode accumulates changed files across the debounce window and re-runs hooks via `shouldRerun`. 7 new tests (order, watch trigger, watch skip, postBuild cascade). |
 | Bellows M5 | `crates/anvil-bellows-openapi` Rust crate + CLI (`--entry`, `--output`, `--format json\|yaml`, `--config`). Parser extensions: `@Tag`, `@Security`, `@Deprecated`, `@Returns(N)` on controllers/routes. `packages/bellows-openapi` npm package exports `bellowsOpenApi()` PostBuildHook. `packages/bellows-openapi-cli` + win32-x64 platform stub mirror the `bellows-cli` distribution model. |
+| Bellows composites | ADR-0008. `bellowsCompose(...)` composites applied bare (`@AdminRoute`), expanded by the parser (`crates/anvil-bellows/src/composite.rs`) into the existing per-kind lists — no IR/codegen/OpenAPI change. Resolves same-file, relative, barrel, `tsconfig` paths, and package imports via `oxc_resolver`; a `BellowsComposite`-typed const without a readable `bellowsCompose(...)` initializer is a diagnostic; other bare decorators are ignored. Fixture `11_composites` asserts output is identical to the hand-written stack. |
 
 ## Load-bearing implementation notes
 
@@ -167,6 +168,15 @@ Adding a new `Key` or `Provider` variant, or a new `Binding` field, is a codebas
 - New `Provider` variant: `graph.rs`, `tsdi-codegen::emit_component`, `symbols.rs::rewrite_binding`, `cli::explain::provider_label`.
 - New `Binding` field: every `Binding { ... }` literal (parser, codegen tests, graph test helpers).
 - Runtime stubs in test fixtures must export every decorator. Missing stubs surface as `oxc_resolver` errors, not TS type errors.
+
+### Bellows parser (`anvil-bellows`)
+
+- Decorators are matched by bare callee name; imports aren't checked. `@Deprecated` is the only bare (uncalled) bellows decorator — every other bare `@X` goes to composite lookup.
+- `origin: None` on a `MiddlewareRef`/`AuthRef` means "declared in the controller file". Composite expansion rewrites `None` to the definition file; skipping that makes codegen import from the controller.
+- `collect_import_map` normalizes `..` lexically. Without it `src/policies/../x.ts` and `src/x.ts` are different identities, which breaks `AuthnUser<T>` matching and leaks `./policies/../x` into generated imports.
+- Composite lookup uses `Resolver::resolve_file` (the only API `TsconfigDiscovery::Auto` honors). It panics on a non-file path, so unit tests that parse an in-memory `test.ts` never resolve imports.
+- Composite definition diagnostics are reported once per definition, not per use (`Composites::reported`).
+- Every path the composite resolver returns is passed through `std::fs::canonicalize`. On Windows `parse_entry` paths are `\\?\C:\…` and `oxc_resolver` returns `C:\…`; mixing them breaks `AuthnUser<T>` identity and generated relative imports.
 
 ### Bellows examples (`examples/todo-app`)
 

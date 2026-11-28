@@ -8,12 +8,14 @@ use std::path::{Path, PathBuf};
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    Argument, BindingPattern, ClassElement, Declaration, Decorator, Expression, FormalParameter,
-    ImportDeclarationSpecifier, MethodDefinitionKind, ObjectPropertyKind, PropertyKey, Statement,
-    TSLiteral, TSType, TSTypeName, TSTypeQueryExprName,
+    Argument, BindingPattern, CallExpression, ClassElement, Declaration, Decorator, Expression,
+    FormalParameter, ImportDeclarationSpecifier, MethodDefinitionKind, ObjectPropertyKind,
+    PropertyKey, Statement, TSLiteral, TSType, TSTypeName, TSTypeQueryExprName,
 };
 use oxc_parser::Parser;
 use oxc_span::SourceType;
+
+use crate::composite::{Composites, Site};
 
 /// An HTTP method extracted from a route decorator.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -310,13 +312,15 @@ pub struct ControllerFile {
     pub controllers: Vec<Controller>,
 }
 
-/// A non-fatal diagnostic emitted when a decorator argument is not a string literal.
+/// A non-fatal diagnostic about a decorator the parser can't use as written.
 #[derive(Debug, Clone)]
 pub struct ParseDiagnostic {
     /// Source file path.
     pub file: String,
     /// Decorator name (`Controller`, `Get`, etc.).
     pub decorator: String,
+    /// What is wrong, completing "@{decorator} …".
+    pub summary: String,
     /// Description of what was found instead of a literal.
     pub found: String,
     /// User-facing hint.
@@ -328,8 +332,8 @@ impl ParseDiagnostic {
     #[must_use]
     pub fn render(&self) -> String {
         format!(
-            "Error [anvil-bellows]: @{} argument is not a string literal.\n  Found {}\n  Hint: {}\n  → {}",
-            self.decorator, self.found, self.hint, self.file,
+            "Error [anvil-bellows]: @{} {}.\n  Found {}\n  Hint: {}\n  → {}",
+            self.decorator, self.summary, self.found, self.hint, self.file,
         )
     }
 }
@@ -349,6 +353,7 @@ pub fn parse_entry(
 
     let mut files = Vec::new();
     let mut diagnostics = Vec::new();
+    let mut composites = Composites::new();
 
     for entry in glob::glob(&pattern)? {
         let path = entry?;
@@ -367,7 +372,8 @@ pub fn parse_entry(
         }
 
         let source = std::fs::read_to_string(&path)?;
-        let (file_opt, mut diags) = parse_source(&source, &path.display().to_string(), &path);
+        let (file_opt, mut diags) =
+            parse_source(&source, &path.display().to_string(), &path, &mut composites);
         diagnostics.append(&mut diags);
         if let Some(f) = file_opt {
             files.push(f);
@@ -386,6 +392,7 @@ fn parse_source(
     source: &str,
     file_path: &str,
     abs_path: &Path,
+    composites: &mut Composites,
 ) -> (Option<ControllerFile>, Vec<ParseDiagnostic>) {
     let allocator = Allocator::default();
     let ret = Parser::new(&allocator, source, SourceType::ts()).parse();
@@ -424,8 +431,19 @@ fn parse_source(
             continue;
         };
 
-        let class_meta =
-            extract_class_metadata(&class.decorators, &import_map, file_path, &mut diagnostics);
+        let mut class_meta = DecoratorSet::default();
+        for dec in &class.decorators {
+            class_meta.add_decorator(
+                dec,
+                Site::Class,
+                composites,
+                source,
+                abs_path,
+                &import_map,
+                file_path,
+                &mut diagnostics,
+            );
+        }
         let mut routes: Vec<Route> = Vec::new();
         let mut ctor_params: Vec<CtorParam> = Vec::new();
 
@@ -467,11 +485,7 @@ fn parse_source(
 
             // Scan all method decorators: find HTTP method + collect modifiers.
             let mut route_opt: Option<Route> = None;
-            let mut deprecated = false;
-            let mut extra_responses: Vec<ExtraResponse> = Vec::new();
-            let mut method_middleware: Vec<MiddlewareRef> = Vec::new();
-            let mut method_authn: Vec<AuthRef> = Vec::new();
-            let mut method_authz: Vec<AuthRef> = Vec::new();
+            let mut method_meta = DecoratorSet::default();
 
             for dec in &m.decorators {
                 if let Some(route) = try_extract_route(
@@ -484,45 +498,40 @@ fn parse_source(
                     &mut diagnostics,
                 ) {
                     route_opt = Some(route);
-                } else if is_deprecated_decorator(dec) {
-                    deprecated = true;
-                } else if let Some(er) = try_extract_returns(dec) {
-                    extra_responses.push(er);
-                } else if let Some(mut mw) =
-                    try_extract_middleware(dec, &import_map, file_path, &mut diagnostics)
-                {
-                    method_middleware.append(&mut mw);
-                } else if let Some(mut refs) =
-                    try_extract_auth_refs(dec, "Authn", &import_map, file_path, &mut diagnostics)
-                {
-                    method_authn.append(&mut refs);
-                } else if let Some(mut refs) =
-                    try_extract_auth_refs(dec, "Authz", &import_map, file_path, &mut diagnostics)
-                {
-                    method_authz.append(&mut refs);
+                } else {
+                    method_meta.add_decorator(
+                        dec,
+                        Site::Method,
+                        composites,
+                        source,
+                        abs_path,
+                        &import_map,
+                        file_path,
+                        &mut diagnostics,
+                    );
                 }
             }
 
             if let Some(mut route) = route_opt {
-                route.deprecated = deprecated;
-                route.extra_responses = extra_responses;
+                route.deprecated = method_meta.deprecated;
+                route.extra_responses = method_meta.extra_responses;
                 route.middleware = class_meta
                     .middleware
                     .iter()
                     .cloned()
-                    .chain(method_middleware)
+                    .chain(method_meta.middleware)
                     .collect();
                 route.authn = class_meta
                     .authn
                     .iter()
                     .cloned()
-                    .chain(method_authn)
+                    .chain(method_meta.authn)
                     .collect();
                 route.authz = class_meta
                     .authz
                     .iter()
                     .cloned()
-                    .chain(method_authz)
+                    .chain(method_meta.authz)
                     .collect();
                 for a in &mut route.authn {
                     let resolved = resolve_authn_type_args(&a.name, a.origin.as_ref());
@@ -622,7 +631,10 @@ fn property_key_name<'a>(key: &'a PropertyKey<'a>) -> Option<&'a str> {
 
 /// Walk import declarations in `stmts` and build a map from local name to its
 /// import origin (relative source path, or bare package specifier).
-fn collect_import_map(stmts: &[Statement<'_>], file_dir: &Path) -> HashMap<String, ImportOrigin> {
+pub(crate) fn collect_import_map(
+    stmts: &[Statement<'_>],
+    file_dir: &Path,
+) -> HashMap<String, ImportOrigin> {
     let mut map: HashMap<String, ImportOrigin> = HashMap::new();
     for stmt in stmts {
         let Statement::ImportDeclaration(import) = stmt else {
@@ -635,7 +647,7 @@ fn collect_import_map(stmts: &[Statement<'_>], file_dir: &Path) -> HashMap<Strin
                 .strip_suffix(".js")
                 .or_else(|| raw_spec.strip_suffix(".ts"))
                 .unwrap_or(raw_spec);
-            ImportOrigin::Relative(file_dir.join(format!("{stem}.ts")))
+            ImportOrigin::Relative(normalize_lexically(&file_dir.join(format!("{stem}.ts"))))
         } else {
             ImportOrigin::Package(raw_spec.to_owned())
         };
@@ -656,6 +668,24 @@ fn collect_import_map(stmts: &[Statement<'_>], file_dir: &Path) -> HashMap<Strin
         }
     }
     map
+}
+
+/// Resolve `.` and `..` without touching the filesystem, so one file always
+/// has one path whichever directory imported it.
+fn normalize_lexically(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Extract a `CtorParam` from a formal parameter.
@@ -747,149 +777,175 @@ fn try_extract_route<'a>(
     })
 }
 
-/// Metadata collected from a controller class's own decorators (as opposed to
-/// its methods').
-struct ClassMetadata {
+/// A non-route decorator the parser reads. Owned, so a composite's contents
+/// outlive the definition file's AST.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DecoratorItem {
+    Middleware(Vec<MiddlewareRef>),
+    Authn(Vec<AuthRef>),
+    Authz(Vec<AuthRef>),
+    Tag(String),
+    Security(String),
+    Returns(ExtraResponse),
+    Deprecated,
+}
+
+impl DecoratorItem {
+    pub(crate) fn decorator_name(&self) -> &'static str {
+        match self {
+            Self::Middleware(_) => "Middleware",
+            Self::Authn(_) => "Authn",
+            Self::Authz(_) => "Authz",
+            Self::Tag(_) => "Tag",
+            Self::Security(_) => "Security",
+            Self::Returns(_) => "Returns",
+            Self::Deprecated => "Deprecated",
+        }
+    }
+}
+
+/// The decorators collected from one class or method, in source order per kind.
+#[derive(Default)]
+struct DecoratorSet {
     tags: Vec<String>,
     security: Vec<String>,
     middleware: Vec<MiddlewareRef>,
     authn: Vec<AuthRef>,
     authz: Vec<AuthRef>,
+    extra_responses: Vec<ExtraResponse>,
+    deprecated: bool,
 }
 
-/// Extract `@Tag("name")`, `@Security("scheme")`, `@Middleware(...)`,
-/// `@Authn(...)`, and `@Authz(...)` from class decorators.
-#[allow(clippy::similar_names)]
-fn extract_class_metadata(
-    decorators: &[Decorator<'_>],
-    import_map: &HashMap<String, ImportOrigin>,
-    file_path: &str,
-    diagnostics: &mut Vec<ParseDiagnostic>,
-) -> ClassMetadata {
-    let mut tags = Vec::new();
-    let mut security = Vec::new();
-    let mut middleware = Vec::new();
-    let mut authn = Vec::new();
-    let mut authz = Vec::new();
-    for dec in decorators {
-        if let Some(mut refs) = try_extract_middleware(dec, import_map, file_path, diagnostics) {
-            middleware.append(&mut refs);
-            continue;
-        }
-        if let Some(mut refs) =
-            try_extract_auth_refs(dec, "Authn", import_map, file_path, diagnostics)
-        {
-            authn.append(&mut refs);
-            continue;
-        }
-        if let Some(mut refs) =
-            try_extract_auth_refs(dec, "Authz", import_map, file_path, diagnostics)
-        {
-            authz.append(&mut refs);
-            continue;
-        }
-        let Expression::CallExpression(call) = &dec.expression else {
-            continue;
-        };
-        let Some(name) = decorator_ident_name(&call.callee) else {
-            continue;
-        };
-        let Some(arg) = call.arguments.first() else {
-            continue;
-        };
-        match name.as_str() {
-            "Tag" => {
-                if let Argument::StringLiteral(lit) = arg {
-                    tags.push(lit.value.to_string());
-                }
-            }
-            "Security" => {
-                if let Argument::StringLiteral(lit) = arg {
-                    security.push(lit.value.to_string());
-                }
-            }
-            _ => {}
+impl DecoratorSet {
+    fn add(&mut self, item: DecoratorItem) {
+        match item {
+            DecoratorItem::Middleware(mut refs) => self.middleware.append(&mut refs),
+            DecoratorItem::Authn(mut refs) => self.authn.append(&mut refs),
+            DecoratorItem::Authz(mut refs) => self.authz.append(&mut refs),
+            DecoratorItem::Tag(t) => self.tags.push(t),
+            DecoratorItem::Security(s) => self.security.push(s),
+            DecoratorItem::Returns(r) => self.extra_responses.push(r),
+            DecoratorItem::Deprecated => self.deprecated = true,
         }
     }
-    ClassMetadata {
-        tags,
-        security,
-        middleware,
-        authn,
-        authz,
+
+    /// Add one non-route decorator, expanding it when it is a composite.
+    #[allow(clippy::too_many_arguments)]
+    fn add_decorator(
+        &mut self,
+        dec: &Decorator<'_>,
+        site: Site,
+        composites: &mut Composites,
+        source: &str,
+        abs_path: &Path,
+        import_map: &HashMap<String, ImportOrigin>,
+        file_path: &str,
+        diagnostics: &mut Vec<ParseDiagnostic>,
+    ) {
+        if let Expression::Identifier(id) = &dec.expression {
+            if id.name.as_str() != "Deprecated" {
+                let expanded = composites.expand(
+                    abs_path,
+                    source,
+                    id.name.as_str(),
+                    site,
+                    file_path,
+                    diagnostics,
+                );
+                for item in expanded.into_iter().flatten() {
+                    self.add(item);
+                }
+                return;
+            }
+        }
+        if let Some(item) = classify_decorator(&dec.expression, import_map, file_path, diagnostics)
+        {
+            self.add(item);
+        }
     }
 }
 
-/// Try to extract a `@Middleware(fn1, fn2, ...)` decorator's identifier
-/// arguments, resolving each to its import origin when possible.
-fn try_extract_middleware(
-    dec: &Decorator<'_>,
+/// Classify `@Middleware`, `@Authn`, `@Authz`, `@Tag`, `@Security`,
+/// `@Returns`, and `@Deprecated`. `None` for any other decorator, and for
+/// `@Tag`/`@Security`/`@Returns` arguments the parser can't read.
+pub(crate) fn classify_decorator(
+    expr: &Expression<'_>,
     import_map: &HashMap<String, ImportOrigin>,
     file_path: &str,
     diagnostics: &mut Vec<ParseDiagnostic>,
-) -> Option<Vec<MiddlewareRef>> {
-    let Expression::CallExpression(call) = &dec.expression else {
+) -> Option<DecoratorItem> {
+    if is_deprecated_decorator(expr) {
+        return Some(DecoratorItem::Deprecated);
+    }
+    let Expression::CallExpression(call) = expr else {
         return None;
     };
-    if decorator_ident_name(&call.callee).as_deref() != Some("Middleware") {
-        return None;
-    }
-    let mut refs = Vec::new();
-    for arg in &call.arguments {
-        if let Argument::Identifier(id) = arg {
-            let name = id.name.to_string();
-            let origin = import_map.get(&name).cloned();
-            refs.push(MiddlewareRef { name, origin });
-        } else {
-            diagnostics.push(ParseDiagnostic {
-                file: file_path.to_owned(),
-                decorator: "Middleware".to_owned(),
-                found: describe_arg(arg),
-                hint: "use a bare identifier imported (or declared) at module scope".to_owned(),
-            });
+    let name = decorator_ident_name(&call.callee)?;
+    match name.as_str() {
+        "Middleware" => Some(DecoratorItem::Middleware(
+            identifier_args(call, "Middleware", import_map, file_path, diagnostics)
+                .into_iter()
+                .map(|(name, origin)| MiddlewareRef { name, origin })
+                .collect(),
+        )),
+        "Authn" | "Authz" => {
+            let refs = identifier_args(call, &name, import_map, file_path, diagnostics)
+                .into_iter()
+                .map(|(name, origin)| AuthRef {
+                    name,
+                    origin,
+                    scheme: None,
+                    user_identity: None,
+                })
+                .collect();
+            Some(if name == "Authn" {
+                DecoratorItem::Authn(refs)
+            } else {
+                DecoratorItem::Authz(refs)
+            })
         }
+        "Tag" | "Security" => {
+            let Some(Argument::StringLiteral(lit)) = call.arguments.first() else {
+                return None;
+            };
+            let value = lit.value.to_string();
+            Some(if name == "Tag" {
+                DecoratorItem::Tag(value)
+            } else {
+                DecoratorItem::Security(value)
+            })
+        }
+        "Returns" => try_extract_returns(call).map(DecoratorItem::Returns),
+        _ => None,
     }
-    Some(refs)
 }
 
-/// Try to extract a `@Authn(Class1, Class2, ...)` or `@Authz(...)` decorator's
-/// identifier arguments, resolving each to its import origin when possible.
-/// `decorator_name` is `"Authn"` or `"Authz"`; the returned refs' `scheme` is
-/// always `None` here — callers resolve it separately for `@Authn` refs.
-fn try_extract_auth_refs(
-    dec: &Decorator<'_>,
+/// Read a decorator's bare-identifier arguments, resolving each to its import
+/// origin when possible. Any other argument is a diagnostic.
+fn identifier_args(
+    call: &CallExpression<'_>,
     decorator_name: &str,
     import_map: &HashMap<String, ImportOrigin>,
     file_path: &str,
     diagnostics: &mut Vec<ParseDiagnostic>,
-) -> Option<Vec<AuthRef>> {
-    let Expression::CallExpression(call) = &dec.expression else {
-        return None;
-    };
-    if decorator_ident_name(&call.callee).as_deref() != Some(decorator_name) {
-        return None;
-    }
+) -> Vec<(String, Option<ImportOrigin>)> {
     let mut refs = Vec::new();
     for arg in &call.arguments {
         if let Argument::Identifier(id) = arg {
             let name = id.name.to_string();
             let origin = import_map.get(&name).cloned();
-            refs.push(AuthRef {
-                name,
-                origin,
-                scheme: None,
-                user_identity: None,
-            });
+            refs.push((name, origin));
         } else {
             diagnostics.push(ParseDiagnostic {
                 file: file_path.to_owned(),
                 decorator: decorator_name.to_owned(),
+                summary: "argument is not a bare identifier".to_owned(),
                 found: describe_arg(arg),
                 hint: "use a bare identifier imported (or declared) at module scope".to_owned(),
             });
         }
     }
-    Some(refs)
+    refs
 }
 
 /// The `U` and `Scheme` type arguments read off a class's
@@ -1023,6 +1079,7 @@ fn validate_authn_user_param(route: &Route, file_path: &str) -> Option<ParseDiag
         return Some(ParseDiagnostic {
             file: file_path.to_owned(),
             decorator: "AuthnUser".to_owned(),
+            summary: "parameter is invalid".to_owned(),
             found: "no @Authn services declared on this route".to_owned(),
             hint: "declare at least one @Authn(...) service, or remove the AuthnUser<T> parameter"
                 .to_owned(),
@@ -1038,6 +1095,7 @@ fn validate_authn_user_param(route: &Route, file_path: &str) -> Option<ParseDiag
             return Some(ParseDiagnostic {
                 file: file_path.to_owned(),
                 decorator: "AuthnUser".to_owned(),
+                summary: "parameter is invalid".to_owned(),
                 found: format!(
                     "@Authn service `{}` has no directly-resolvable user type in its \
                      `implements AuthnService<U, Scheme>` clause",
@@ -1054,6 +1112,7 @@ fn validate_authn_user_param(route: &Route, file_path: &str) -> Option<ParseDiag
                 return Some(ParseDiagnostic {
                     file: file_path.to_owned(),
                     decorator: "AuthnUser".to_owned(),
+                    summary: "parameter is invalid".to_owned(),
                     found: "this route's @Authn services declare different user types".to_owned(),
                     hint: "AuthnUser<T> requires all @Authn services on a route to agree on \
                            the same user type — consider a shared base type"
@@ -1070,6 +1129,7 @@ fn validate_authn_user_param(route: &Route, file_path: &str) -> Option<ParseDiag
             return Some(ParseDiagnostic {
                 file: file_path.to_owned(),
                 decorator: "AuthnUser".to_owned(),
+                summary: "parameter is invalid".to_owned(),
                 found: format!(
                     "AuthnUser<{}> is not a directly-resolvable named type",
                     u.type_name
@@ -1083,6 +1143,7 @@ fn validate_authn_user_param(route: &Route, file_path: &str) -> Option<ParseDiag
             return Some(ParseDiagnostic {
                 file: file_path.to_owned(),
                 decorator: "AuthnUser".to_owned(),
+                summary: "parameter is invalid".to_owned(),
                 found: format!(
                     "AuthnUser<{}> does not match this route's @Authn user type",
                     u.type_name
@@ -1111,6 +1172,7 @@ fn validate_sse_route(route: &Route, file_path: &str) -> Option<ParseDiagnostic>
     Some(ParseDiagnostic {
         file: file_path.to_owned(),
         decorator: "Sse".to_owned(),
+        summary: "handler is invalid".to_owned(),
         found: "handler declares a Responds<S>/Produces<S, C> return type".to_owned(),
         hint: "@Sse handlers must return void — write events with the injected SseStream \
                instead of returning a value"
@@ -1119,8 +1181,8 @@ fn validate_sse_route(route: &Route, file_path: &str) -> Option<ParseDiagnostic>
 }
 
 /// Return true when `@Deprecated` is present (with or without arguments).
-fn is_deprecated_decorator(dec: &Decorator<'_>) -> bool {
-    match &dec.expression {
+fn is_deprecated_decorator(expr: &Expression<'_>) -> bool {
+    match expr {
         Expression::CallExpression(call) => {
             decorator_ident_name(&call.callee).as_deref() == Some("Deprecated")
         }
@@ -1130,13 +1192,7 @@ fn is_deprecated_decorator(dec: &Decorator<'_>) -> bool {
 }
 
 /// Try to extract an `ExtraResponse` from `@Returns(status, schema?)`.
-fn try_extract_returns(dec: &Decorator<'_>) -> Option<ExtraResponse> {
-    let Expression::CallExpression(call) = &dec.expression else {
-        return None;
-    };
-    if decorator_ident_name(&call.callee).as_deref() != Some("Returns") {
-        return None;
-    }
+fn try_extract_returns(call: &CallExpression<'_>) -> Option<ExtraResponse> {
     let status_arg = call.arguments.first()?;
     let Argument::NumericLiteral(lit) = status_arg else {
         return None;
@@ -1367,6 +1423,7 @@ fn extract_string_arg<'a>(
             diagnostics.push(ParseDiagnostic {
                 file: file_path.to_owned(),
                 decorator: decorator.to_owned(),
+                summary: "argument is not a string literal".to_owned(),
                 found: describe_arg(other),
                 hint: "use a string literal, or re-run with --tsc to resolve constants".to_owned(),
             });
@@ -1386,7 +1443,7 @@ fn describe_arg(arg: &Argument<'_>) -> String {
 }
 
 /// Extract the bare identifier name from a decorator callee expression.
-fn decorator_ident_name(callee: &Expression<'_>) -> Option<String> {
+pub(crate) fn decorator_ident_name(callee: &Expression<'_>) -> Option<String> {
     match callee {
         Expression::Identifier(id) => Some(id.name.to_string()),
         _ => None,
@@ -1411,7 +1468,7 @@ mod tests {
     use super::*;
 
     fn parse(src: &str) -> (Option<ControllerFile>, Vec<ParseDiagnostic>) {
-        parse_source(src, "test.ts", Path::new("test.ts"))
+        parse_source(src, "test.ts", Path::new("test.ts"), &mut Composites::new())
     }
 
     #[test]
@@ -2055,6 +2112,7 @@ export class AdminController {
             src,
             &controller_path.display().to_string(),
             &controller_path,
+            &mut Composites::new(),
         );
         assert!(diags.is_empty(), "{diags:?}");
         let ctrl = &file.unwrap().controllers[0];
@@ -2096,6 +2154,7 @@ export class AdminController {
             src,
             &controller_path.display().to_string(),
             &controller_path,
+            &mut Composites::new(),
         );
         assert!(diags.is_empty(), "{diags:?}");
         let ctrl = &file.unwrap().controllers[0];
@@ -2181,6 +2240,7 @@ export class AdminController {
             src,
             &controller_path.display().to_string(),
             &controller_path,
+            &mut Composites::new(),
         );
         assert!(diags.is_empty(), "{diags:?}");
         let ctrl = &file.unwrap().controllers[0];
@@ -2244,6 +2304,7 @@ export class AdminController {
             src,
             &controller_path.display().to_string(),
             &controller_path,
+            &mut Composites::new(),
         );
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].decorator, "AuthnUser");
@@ -2333,6 +2394,7 @@ export class AdminController {
             src,
             &controller_path.display().to_string(),
             &controller_path,
+            &mut Composites::new(),
         );
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].decorator, "AuthnUser");

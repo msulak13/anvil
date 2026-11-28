@@ -23,6 +23,9 @@
 //! - `10_ctor_param_package_import` — a controller constructor param whose
 //!   type is imported from a bare package specifier (not a relative path),
 //!   verifying the import is copied into the generated file (issue #18).
+//! - `11_composites` — nested `bellowsCompose` composites behind a barrel in
+//!   a subdirectory, verifying the output is byte-identical to the same
+//!   controller with the decorators written out (`hand-written/`).
 
 use std::path::{Path, PathBuf};
 
@@ -166,7 +169,11 @@ fn write_stubs(root: &Path) {
          export const Tag = (..._: any[]): any => {};\n\
          export const Returns = (..._: any[]): any => {};\n\
          export const Security = (..._: any[]): any => {};\n\
-         export const Deprecated = (..._: any[]): any => {};\n",
+         export const Deprecated = (..._: any[]): any => {};\n\
+         export interface BellowsComposite {\n\
+           (target: unknown, ctx: ClassDecoratorContext | ClassMethodDecoratorContext): void;\n\
+         }\n\
+         export const bellowsCompose = (..._: any[]): BellowsComposite => () => {};\n",
     )
     .unwrap();
 
@@ -749,4 +756,61 @@ fn fixture_10_ctor_param_package_import_copies_bare_specifier_import() {
     // get its import copied into the generated file.
     assert!(produced.contains("import type { AcmeClient } from \"acme-sdk\";"));
     assert!(produced.contains("client: AcmeClient"));
+}
+
+// ---------------------------------------------------------------------------
+// Fixture 11 — composite decorators
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixture_11_composites_snapshot() {
+    run_fixture("11_composites");
+}
+
+#[test]
+fn fixture_11_composites_tsc() {
+    let tsc = tsc_bin();
+    if !tsc.exists() {
+        eprintln!("skipping tsc check — tsc not found at {}", tsc.display());
+        return;
+    }
+
+    let (tmp, _) = run_fixture("11_composites");
+
+    Command::new(tsc)
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .current_dir(tmp.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn fixture_11_composites_match_hand_written_decorators() {
+    let fixture = fixtures_dir().join("11_composites");
+    let (_composed_tmp, composed) = run_fixture("11_composites");
+
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    copy_dir(&fixture.join("input"), &src);
+    std::fs::remove_dir_all(src.join("policies")).unwrap();
+    copy_dir(&fixture.join("hand-written"), &src);
+    write_stubs(tmp.path());
+    let output = src.join("routes.module.ts");
+    Command::cargo_bin("anvil-bellows")
+        .unwrap()
+        .arg("--entry")
+        .arg(&src)
+        .arg("--output")
+        .arg(&output)
+        .assert()
+        .success();
+
+    for name in ["routes.module.ts", "schema-route.module.anvil.ts"] {
+        assert_eq!(
+            std::fs::read_to_string(composed.with_file_name(name)).unwrap(),
+            std::fs::read_to_string(output.with_file_name(name)).unwrap(),
+            "{name} differs between composed and hand-written decorators"
+        );
+    }
 }
