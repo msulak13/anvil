@@ -32,7 +32,7 @@ Briefly, what else did we look at, and why didn't we pick it?
 | 0003 | [No TypeScript type checker](./0003-no-type-checker.md)      | Accepted |
 | 0004 | [Per-component output file](./0004-per-component-output-file.md) | Accepted |
 | 0005 | [NestJS-like controllers plugin](./0005-nestjs-controllers-plugin.md) | Proposed |
-| 0008 | [Composite decorators for bellows controllers](./0008-bellows-composite-decorators.md) | Proposed |
+| 0008 | [Composite decorators for bellows controllers](./0008-bellows-composite-decorators.md) | Accepted |
 
 ## When to write a new one
 

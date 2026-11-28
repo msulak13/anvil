@@ -1,6 +1,6 @@
 # 0008 — Composite Decorators for Bellows Controllers
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-11-27
 **Depends on:** ADR-0003 (no type checker), ADR-0006 (`anvil-bellows`)
 
