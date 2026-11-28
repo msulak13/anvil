@@ -176,6 +176,7 @@ Adding a new `Key` or `Provider` variant, or a new `Binding` field, is a codebas
 - `collect_import_map` normalizes `..` lexically. Without it `src/policies/../x.ts` and `src/x.ts` are different identities, which breaks `AuthnUser<T>` matching and leaks `./policies/../x` into generated imports.
 - Composite lookup uses `Resolver::resolve_file` (the only API `TsconfigDiscovery::Auto` honors). It panics on a non-file path, so unit tests that parse an in-memory `test.ts` never resolve imports.
 - Composite definition diagnostics are reported once per definition, not per use (`Composites::reported`).
+- Every path the composite resolver returns is passed through `std::fs::canonicalize`. On Windows `parse_entry` paths are `\\?\C:\…` and `oxc_resolver` returns `C:\…`; mixing them breaks `AuthnUser<T>` identity and generated relative imports.
 
 ### Bellows examples (`examples/todo-app`)
 

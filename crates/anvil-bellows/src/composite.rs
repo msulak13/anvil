@@ -310,10 +310,10 @@ impl Composites {
         if !importer.is_file() {
             return None;
         }
-        self.resolver
-            .resolve_file(importer, spec)
-            .ok()
-            .map(|r| r.full_path())
+        // Canonicalized to match `parse_entry`'s paths: on Windows that is
+        // the `\\?\` form, which `oxc_resolver` doesn't return.
+        let path = self.resolver.resolve_file(importer, spec).ok()?.full_path();
+        Some(std::fs::canonicalize(&path).unwrap_or(path))
     }
 }
 
